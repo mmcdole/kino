@@ -1,0 +1,41 @@
+# Goplex Configuration Example
+# Copy this file to ~/.config/goplex/config.yaml
+
+# Plex Server Configuration
+server:
+  # URL of your Plex Media Server
+  url: "http://192.168.1.100:32400"
+  # Authentication token (auto-populated after PIN auth)
+  token: "YOUR_PLEX_TOKEN"
+
+# Media Player Configuration
+player:
+  # Command to launch the media player
+  command: "mpv"
+  # Arguments passed to the player
+  args:
+    - "--input-ipc-server=/tmp/goplex.sock"
+    - "--no-terminal"
+
+# Scrobbling Configuration
+scrobble:
+  # How often to report progress to Plex (e.g., "10s", "30s")
+  interval: 10s
+  # Mark as played when this percentage is reached (0.0-1.0)
+  threshold: 0.9
+
+# User Interface Configuration
+ui:
+  # Theme: "default", "dark", or "light"
+  theme: "default"
+  # Number of columns in grid view
+  grid_columns: 4
+  # Default view mode: "grid" or "list"
+  default_view: "grid"
+
+# Logging Configuration
+logging:
+  # Log file location (use ~ for home directory)
+  file: "~/.local/share/goplex/goplex.log"
+  # Log level: "DEBUG", "INFO", "WARN", "ERROR"
+  level: "INFO"

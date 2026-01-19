@@ -1,0 +1,13 @@
+# Binary
+goplex
+
+# Build artifacts
+combine-go.sh
+combined.go.txt
+
+# Screenshots
+*.jpg
+*.png
+
+# Config with secrets
+config.yaml
