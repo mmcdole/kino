@@ -23,56 +23,61 @@ const (
 	StateHelp
 )
 
-// Layout proportions
+// Layout proportions for Miller Columns
 const (
-	SidebarWidthPercent   = 20
-	InspectorWidthPercent = 30
-	MinSidebarWidth       = 20
-	MinInspectorWidth     = 25
+	// 3-Column Smart Ratios (Inspector visible)
+	ParentColumnPercent3   = 25 // Parent context
+	ActiveColumnPercent3   = 35 // Active/focused
+	InspectorColumnPercent = 30 // Inspector (summary)
 
-	// Vertical layout: status bar + help bar (breadcrumb moved to Browser pane title)
+	// 3-Column Focus Mode (Inspector hidden) - show more navigation context
+	GrandparentColumnPercent = 25 // Grandparent context
+	ParentColumnPercent2     = 30 // Parent context
+	ActiveColumnPercent2     = 45 // Active/focused
+
+	// Root level (single column + inspector)
+	RootColumnPercent   = 40
+	RootInspectorPercent = 60
+
+	MinColumnWidth = 15
+
+	// Vertical layout: status bar + help bar
 	ChromeHeight = 2
 )
 
 // Model is the main Bubble Tea model for the application
 type Model struct {
 	// Application state
-	State        ApplicationState
-	Ready        bool
+	State ApplicationState
+	Ready bool
 
 	// Services
-	LibrarySvc   *service.LibraryService
-	PlaybackSvc  *service.PlaybackService
-	SearchSvc    *service.SearchService
+	LibrarySvc  *service.LibraryService
+	PlaybackSvc *service.PlaybackService
+	SearchSvc   *service.SearchService
 
-	// UI Components
-	Sidebar      components.Sidebar
-	Grid         components.Grid
-	Inspector    components.Inspector
-	Omnibar      components.Omnibar
-
-	// Navigation
-	NavStack     []NavContext
-	CurrentNav   NavContext
-	FocusPane    Pane
+	// UI Components - Miller Columns
+	ColumnStack *ColumnStack         // Stack of navigable list columns
+	Inspector   components.Inspector // View projection (always shows details for middle column selection)
+	Omnibar     components.Omnibar     // Search modal
 
 	// Data
-	Libraries    []domain.Library
+	Libraries []domain.Library
 
 	// Dimensions
-	Width        int
-	Height       int
+	Width  int
+	Height int
 
 	// UI state
-	StatusMsg       string
-	StatusIsErr     bool
-	Loading         bool
-	SpinnerFrame    int
+	StatusMsg     string
+	StatusIsErr   bool
+	Loading       bool
+	SpinnerFrame  int
+	ShowInspector bool // Toggle inspector visibility (default true)
 
 	// Sync state
-	LibraryStates    map[string]components.LibrarySyncState // Tracks progress per library
-	SyncingCount     int                                    // Libraries still syncing
-	TotalSyncedItems int                                    // Grand total across all
+	LibraryStates map[string]components.LibrarySyncState // Tracks progress per library
+	SyncingCount  int                                    // Libraries still syncing
 
 	// Pending cursor position for navigation after load
 	pendingCursor int
@@ -89,15 +94,11 @@ func NewModel(
 		LibrarySvc:    librarySvc,
 		PlaybackSvc:   playbackSvc,
 		SearchSvc:     searchSvc,
-		Sidebar:       components.NewSidebar(),
-		Grid:          components.NewGrid(),
+		ColumnStack:   NewColumnStack(),
 		Inspector:     components.NewInspector(),
 		Omnibar:       components.NewOmnibar(),
-		FocusPane:     PaneSidebar,
 		LibraryStates: make(map[string]components.LibrarySyncState),
-		CurrentNav: NavContext{
-			Level: BrowseLevelLibrary,
-		},
+		ShowInspector: false, // Inspector hidden by default - show 3 nav columns
 	}
 }
 
@@ -127,14 +128,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case TickMsg:
 		m.SpinnerFrame++
 		if m.SyncingCount > 0 {
-			m.Sidebar.SetSpinnerFrame(m.SpinnerFrame)
-			m.Sidebar.RefreshItems()
+			m.ColumnStack.UpdateSpinnerFrame(m.SpinnerFrame)
 		}
 		return m, TickCmd(100 * time.Millisecond)
 
 	case LibrariesLoadedMsg:
 		m.Libraries = msg.Libraries
-		m.Sidebar.SetLibraries(msg.Libraries)
 
 		// Initialize all states to Syncing
 		m.LibraryStates = make(map[string]components.LibrarySyncState)
@@ -142,25 +141,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
 		}
 		m.SyncingCount = len(msg.Libraries)
-		m.Sidebar.SetLibraryStates(m.LibraryStates)
 
-		// Auto-select first library
-		if len(msg.Libraries) > 0 {
-			m.Sidebar.SetFocused(true)
-			m.CurrentNav = NavContext{
-				Level:       BrowseLevelLibrary,
-				LibraryID:   msg.Libraries[0].ID,
-				LibraryName: msg.Libraries[0].Name,
-			}
-		}
+		// Create the library column as the root
+		libCol := components.NewLibraryColumn(msg.Libraries)
+		libCol.SetLibraryStates(m.LibraryStates)
+		m.Inspector.SetLibraryStates(m.LibraryStates)
+		m.ColumnStack.Reset(libCol)
 
 		// Start parallel sync of ALL libraries
 		m.Loading = true
 		return m, SyncAllLibrariesCmd(m.LibrarySvc, m.SearchSvc, msg.Libraries, false)
 
 	case MoviesLoadedMsg:
-		m.Grid.SetMovies(msg.Movies)
-		m.CurrentNav.LibraryID = msg.LibraryID
 		m.Loading = false
 
 		// If manual load succeeded and library was in error state, clear it
@@ -168,23 +160,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			state.Status = components.StatusIdle
 			state.Error = nil
 			m.LibraryStates[msg.LibraryID] = state
-			m.Sidebar.SetLibraryStates(m.LibraryStates)
+			m.updateLibraryStates()
 		}
 
-		// Apply pending cursor position from filter navigation
-		if m.pendingCursor > 0 {
-			m.Grid.SetCursor(m.pendingCursor)
-			m.pendingCursor = 0
+		// Update top column with movies
+		if top := m.ColumnStack.Top(); top != nil {
+			top.SetItems(msg.Movies)
+			if m.pendingCursor > 0 {
+				top.SetSelectedIndex(m.pendingCursor)
+				m.pendingCursor = 0
+			}
 		}
-		m.updateBreadcrumb()
+
 		m.updateInspector()
 		// Index movies for global filter
 		m.indexMoviesForFilter(msg.Movies, msg.LibraryID)
 		return m, nil
 
 	case ShowsLoadedMsg:
-		m.Grid.SetShows(msg.Shows)
-		m.CurrentNav.LibraryID = msg.LibraryID
 		m.Loading = false
 
 		// If manual load succeeded and library was in error state, clear it
@@ -192,50 +185,50 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			state.Status = components.StatusIdle
 			state.Error = nil
 			m.LibraryStates[msg.LibraryID] = state
-			m.Sidebar.SetLibraryStates(m.LibraryStates)
+			m.updateLibraryStates()
 		}
 
-		// Apply pending cursor position from filter navigation
-		if m.pendingCursor > 0 {
-			m.Grid.SetCursor(m.pendingCursor)
-			m.pendingCursor = 0
+		// Update top column with shows
+		if top := m.ColumnStack.Top(); top != nil {
+			top.SetItems(msg.Shows)
+			if m.pendingCursor > 0 {
+				top.SetSelectedIndex(m.pendingCursor)
+				m.pendingCursor = 0
+			}
 		}
-		m.updateBreadcrumb()
+
 		m.updateInspector()
 		// Index shows for global filter
 		m.indexShowsForFilter(msg.Shows, msg.LibraryID)
 		return m, nil
 
 	case SeasonsLoadedMsg:
-		m.Grid.SetSeasons(msg.Seasons)
 		m.Loading = false
-		// Apply pending cursor position from filter navigation
-		if m.pendingCursor > 0 {
-			m.Grid.SetCursor(m.pendingCursor)
-			m.pendingCursor = 0
+
+		// Update top column with seasons
+		if top := m.ColumnStack.Top(); top != nil {
+			top.SetItems(msg.Seasons)
+			if m.pendingCursor > 0 {
+				top.SetSelectedIndex(m.pendingCursor)
+				m.pendingCursor = 0
+			}
 		}
-		m.updateBreadcrumb()
+
 		m.updateInspector()
 		return m, nil
 
 	case EpisodesLoadedMsg:
-		m.Grid.SetEpisodes(msg.Episodes)
 		m.Loading = false
-		// Apply pending cursor position from filter navigation
-		if m.pendingCursor > 0 {
-			m.Grid.SetCursor(m.pendingCursor)
-			m.pendingCursor = 0
-		}
-		m.updateBreadcrumb()
-		m.updateInspector()
-		// Index episodes for global filter
-		m.indexEpisodesForFilter(msg.Episodes, msg.SeasonID)
-		return m, nil
 
-	case OnDeckLoadedMsg:
-		m.Grid.SetOnDeck(msg.Items)
-		m.Loading = false
-		m.updateBreadcrumb()
+		// Update top column with episodes
+		if top := m.ColumnStack.Top(); top != nil {
+			top.SetItems(msg.Episodes)
+			if m.pendingCursor > 0 {
+				top.SetSelectedIndex(m.pendingCursor)
+				m.pendingCursor = 0
+			}
+		}
+
 		m.updateInspector()
 		return m, nil
 
@@ -299,26 +292,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if msg.Done {
 				state.Status = components.StatusSynced
-				m.TotalSyncedItems += msg.Loaded
 				m.SyncingCount--
 
-				// Trigger delayed cleanup (flash pattern: show checkmark briefly, then clear)
+				// Trigger delayed cleanup
 				cmds = append(cmds, ClearLibraryStatusCmd(msg.LibraryID, 2*time.Second))
 
-				// If this is the selected library, populate the grid
-				if msg.LibraryID == m.CurrentNav.LibraryID {
-					lib := m.findLibrary(msg.LibraryID)
-					if lib != nil {
-						cmds = append(cmds, m.loadLibraryContent(*lib))
+				// If we're at library level and this is selected library, show its content
+				if m.ColumnStack.Len() == 1 {
+					if libCol, ok := m.ColumnStack.Top().(*components.ListColumn); ok {
+						if lib := libCol.SelectedLibrary(); lib != nil && lib.ID == msg.LibraryID {
+							// Don't auto-drill; user must press l/Enter
+						}
 					}
 				}
 			}
 		}
 
 		m.LibraryStates[msg.LibraryID] = state
-		m.Sidebar.SetLibraryStates(m.LibraryStates)
+		m.updateLibraryStates()
 
-		// If there's a continuation command, run it to get the next chunk
+		// If there's a continuation command, run it
 		if msg.NextCmd != nil {
 			if cmd, ok := msg.NextCmd.(tea.Cmd); ok {
 				cmds = append(cmds, cmd)
@@ -328,7 +321,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Check if all done
 		if m.SyncingCount == 0 {
 			m.Loading = false
-			m.StatusMsg = fmt.Sprintf("Synced %d items", m.TotalSyncedItems)
+			m.StatusMsg = fmt.Sprintf("Synced %d items", m.totalLoadedCount())
 			cmds = append(cmds, ClearStatusCmd(3*time.Second))
 		}
 
@@ -336,24 +329,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ClearLibraryStatusMsg:
 		if state, ok := m.LibraryStates[msg.LibraryID]; ok {
-			// Only clear if still showing Synced (not re-syncing or errored)
 			if state.Status == components.StatusSynced {
 				state.Status = components.StatusIdle
 				m.LibraryStates[msg.LibraryID] = state
-				m.Sidebar.SetLibraryStates(m.LibraryStates)
+				m.updateLibraryStates()
 			}
 		}
 		return m, nil
 	}
 
-	// Update focused component
-	switch m.FocusPane {
-	case PaneSidebar:
-		m.Sidebar, _ = m.Sidebar.Update(msg)
-	case PaneBrowser:
-		m.Grid, _ = m.Grid.Update(msg)
-	case PaneInspector:
-		m.Inspector, _ = m.Inspector.Update(msg)
+	// Update the focused column (top of stack)
+	if top := m.ColumnStack.Top(); top != nil {
+		oldCursor := top.SelectedIndex()
+		var cmd tea.Cmd
+		newCol, cmd := top.Update(msg)
+		// Replace the top column with updated version
+		if lc, ok := newCol.(*components.ListColumn); ok {
+			m.ColumnStack.columns[len(m.ColumnStack.columns)-1] = lc
+		}
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		if oldCursor != top.SelectedIndex() {
+			m.updateInspector()
+		}
 	}
 
 	// Update omnibar if visible
@@ -365,7 +364,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 
-		// Handle real-time filtering when query changes
+		// Handle real-time filtering
 		if m.Omnibar.IsFilterMode() && m.Omnibar.QueryChanged() {
 			query := m.Omnibar.Query()
 			results := m.SearchSvc.FilterLocal(query)
@@ -374,7 +373,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if selected {
 			if m.Omnibar.IsFilterMode() {
-				// Filter mode: navigate to item in context
 				result := m.Omnibar.SelectedFilterResult()
 				if result != nil {
 					m.Omnibar.Hide()
@@ -384,7 +382,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			} else {
-				// Search mode: play the result
 				result := m.Omnibar.SelectedResult()
 				if result != nil {
 					m.Omnibar.Hide()
@@ -418,13 +415,11 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.Omnibar.IsVisible() {
 		var cmd tea.Cmd
 		var selected bool
-		var cmds []tea.Cmd
 		m.Omnibar, cmd, selected = m.Omnibar.Update(msg)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 
-		// Handle real-time filtering when query changes
 		if m.Omnibar.IsFilterMode() && m.Omnibar.QueryChanged() {
 			query := m.Omnibar.Query()
 			results := m.SearchSvc.FilterLocal(query)
@@ -433,7 +428,6 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		if selected {
 			if m.Omnibar.IsFilterMode() {
-				// Filter mode: navigate to item in context
 				if result := m.Omnibar.SelectedFilterResult(); result != nil {
 					m.Omnibar.Hide()
 					navCmd := m.navigateToFilteredItem(*result)
@@ -442,7 +436,6 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					}
 				}
 			} else {
-				// Search mode: play the result
 				if result := m.Omnibar.SelectedResult(); result != nil {
 					m.Omnibar.Hide()
 					cmds = append(cmds, PlayItemCmd(m.PlaybackSvc, *result, false))
@@ -452,14 +445,17 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 	}
 
-	// Handle Grid filter typing mode - let Grid process its own input
-	if m.FocusPane == PaneBrowser && m.Grid.IsFilterTyping() {
-		oldCursor := m.Grid.Cursor()
-		m.Grid, _ = m.Grid.Update(msg)
-		if oldCursor != m.Grid.Cursor() {
-			m.updateInspector()
+	// Handle filter typing mode
+	if top := m.ColumnStack.Top(); top != nil {
+		if lc, ok := top.(*components.ListColumn); ok && lc.IsFilterTyping() {
+			oldCursor := lc.SelectedIndex()
+			newCol, _ := lc.Update(msg)
+			m.ColumnStack.columns[len(m.ColumnStack.columns)-1] = newCol
+			if oldCursor != top.SelectedIndex() {
+				m.updateInspector()
+			}
+			return m, nil
 		}
-		return m, nil
 	}
 
 	// Global keys
@@ -472,15 +468,16 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "/":
-		// Activate filter when Grid is focused
-		if m.FocusPane == PaneBrowser {
-			m.Grid.ToggleFilter()
-			return m, nil
+		// Activate filter in middle column
+		if top := m.ColumnStack.Top(); top != nil {
+			if lc, ok := top.(*components.ListColumn); ok {
+				lc.ToggleFilter()
+			}
 		}
 		return m, nil
 
 	case "s":
-		// Global search via Omnibar - load all content first
+		// Global search via Omnibar
 		m.Omnibar.ShowFilterMode()
 		m.Omnibar.SetSize(m.Width, m.Height)
 		m.Omnibar.SetLoading(true)
@@ -489,237 +486,252 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			LoadAllForGlobalSearchCmd(m.LibrarySvc, m.SearchSvc, m.Libraries),
 		)
 
-	case "h", "left":
-		m.moveFocus(-1)
-		return m, nil
+	case "h", "left", "backspace":
+		// Go back (pop column stack)
+		return m.handleBack()
 
 	case "l", "right":
-		m.moveFocus(1)
-		return m, nil
+		// Drill into (push new column)
+		return m.handleDrillIn()
 
 	case "enter":
+		// Enter can drill in OR play depending on selection
 		return m.handleEnter()
 
-	case "shift+enter":
-		// Play from beginning (no resume)
-		if m.FocusPane == PaneBrowser {
-			item := m.Grid.SelectedItem()
-			if mediaItem, ok := item.(domain.MediaItem); ok {
-				return m, PlayItemCmd(m.PlaybackSvc, mediaItem, false)
+	case "r":
+		// Refresh single selected library
+		if m.ColumnStack.Len() >= 1 {
+			if libCol, ok := m.ColumnStack.Get(0).(*components.ListColumn); ok {
+				if lib := libCol.SelectedLibrary(); lib != nil {
+					m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
+					m.SyncingCount++
+					m.Loading = true
+					m.updateLibraryStates()
+					return m, SyncLibraryCmd(m.LibrarySvc, m.SearchSvc, *lib, true)
+				}
 			}
 		}
 		return m, nil
 
-	case "backspace":
-		return m.handleBack()
-
-	case "o":
-		// Jump to On Deck
-		m.Loading = true
-		m.CurrentNav = NavContext{Level: BrowseLevelLibrary, LibraryName: "On Deck"}
-		return m, LoadOnDeckCmd(m.LibrarySvc)
-
-	case "r":
-		// Refresh single selected library (force)
-		if lib := m.Sidebar.SelectedLibrary(); lib != nil {
-			m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
-			m.SyncingCount++
-			m.Loading = true
-			m.Sidebar.SetLibraryStates(m.LibraryStates)
-			return m, SyncLibraryCmd(m.LibrarySvc, m.SearchSvc, *lib, true)
-		}
-		return m, nil
-
 	case "R":
-		// Refresh ALL libraries (force)
+		// Refresh ALL libraries
 		m.SearchSvc.ClearFilterIndex()
 		m.LibraryStates = make(map[string]components.LibrarySyncState)
 		for _, lib := range m.Libraries {
 			m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
 		}
 		m.SyncingCount = len(m.Libraries)
-		m.TotalSyncedItems = 0
 		m.Loading = true
-		m.Sidebar.SetLibraryStates(m.LibraryStates)
+		m.updateLibraryStates()
+
+		// Reset to library view
+		libCol := components.NewLibraryColumn(m.Libraries)
+		libCol.SetLibraryStates(m.LibraryStates)
+		m.Inspector.SetLibraryStates(m.LibraryStates)
+		m.ColumnStack.Reset(libCol)
+
 		return m, SyncAllLibrariesCmd(m.LibrarySvc, m.SearchSvc, m.Libraries, true)
 
 	case "w":
-		// Mark as watched (Browser action)
-		if m.FocusPane == PaneBrowser {
-			if item := m.Grid.SelectedMediaItem(); item != nil {
-				return m, MarkWatchedCmd(m.PlaybackSvc, item.ID, item.Title)
+		// Mark as watched
+		if top := m.ColumnStack.Top(); top != nil {
+			if lc, ok := top.(*components.ListColumn); ok {
+				if item := lc.SelectedMediaItem(); item != nil {
+					return m, MarkWatchedCmd(m.PlaybackSvc, item.ID, item.Title)
+				}
 			}
 		}
 		return m, nil
 
 	case "u":
-		// Mark as unwatched (Browser action)
-		if m.FocusPane == PaneBrowser {
-			if item := m.Grid.SelectedMediaItem(); item != nil {
-				return m, MarkUnwatchedCmd(m.PlaybackSvc, item.ID, item.Title)
+		// Mark as unwatched
+		if top := m.ColumnStack.Top(); top != nil {
+			if lc, ok := top.(*components.ListColumn); ok {
+				if item := lc.SelectedMediaItem(); item != nil {
+					return m, MarkUnwatchedCmd(m.PlaybackSvc, item.ID, item.Title)
+				}
 			}
 		}
 		return m, nil
 
 	case "p":
-		// Play from beginning (Browser action)
-		if m.FocusPane == PaneBrowser {
-			if item := m.Grid.SelectedMediaItem(); item != nil {
-				return m, PlayItemCmd(m.PlaybackSvc, *item, false)
+		// Play from beginning
+		if top := m.ColumnStack.Top(); top != nil {
+			if lc, ok := top.(*components.ListColumn); ok {
+				if item := lc.SelectedMediaItem(); item != nil {
+					return m, PlayItemCmd(m.PlaybackSvc, *item, false)
+				}
 			}
 		}
 		return m, nil
+
+	case "i":
+		// Toggle inspector visibility
+		m.ShowInspector = !m.ShowInspector
+		m.updateLayout()
+		return m, nil
 	}
 
-	// Let components handle remaining keys
-	switch m.FocusPane {
-	case PaneSidebar:
-		oldIndex := m.Sidebar.SelectedIndex()
-		m.Sidebar, _ = m.Sidebar.Update(msg)
-		newIndex := m.Sidebar.SelectedIndex()
-
-		if oldIndex != newIndex {
-			lib := m.Sidebar.SelectedLibrary()
-			if lib != nil {
-				m.Loading = true
-				cmds = append(cmds, m.loadLibraryContent(*lib))
-			}
+	// Let the focused column handle remaining keys (j/k/g/G navigation)
+	if top := m.ColumnStack.Top(); top != nil {
+		oldCursor := top.SelectedIndex()
+		newCol, cmd := top.Update(msg)
+		// Replace the top column
+		if lc, ok := newCol.(*components.ListColumn); ok {
+			m.ColumnStack.columns[len(m.ColumnStack.columns)-1] = lc
 		}
-
-	case PaneBrowser:
-		oldCursor := m.Grid.Cursor()
-		m.Grid, _ = m.Grid.Update(msg)
-		newCursor := m.Grid.Cursor()
-
-		if oldCursor != newCursor {
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		if oldCursor != top.SelectedIndex() {
 			m.updateInspector()
 		}
-
-	case PaneInspector:
-		m.Inspector, _ = m.Inspector.Update(msg)
 	}
 
 	return m, tea.Batch(cmds...)
 }
 
+// handleDrillIn handles drilling into the selected item (l key)
+func (m Model) handleDrillIn() (tea.Model, tea.Cmd) {
+	top := m.ColumnStack.Top()
+	if top == nil {
+		return m, nil
+	}
+
+	if !top.CanDrillInto() {
+		// Can't drill into leaf items - play instead
+		if lc, ok := top.(*components.ListColumn); ok {
+			if item := lc.SelectedMediaItem(); item != nil {
+				resume := item.ViewOffset > 0 && !item.IsPlayed
+				return m, PlayItemCmd(m.PlaybackSvc, *item, resume)
+			}
+		}
+		return m, nil
+	}
+
+	return m.drillIntoSelection()
+}
+
 // handleEnter handles the enter key press
 func (m Model) handleEnter() (tea.Model, tea.Cmd) {
-	switch m.FocusPane {
-	case PaneSidebar:
-		lib := m.Sidebar.SelectedLibrary()
-		if lib != nil {
-			m.FocusPane = PaneBrowser
-			m.Grid.SetFocused(true)
-			m.Sidebar.SetFocused(false)
-			m.Loading = true
-			return m, m.loadLibraryContent(*lib)
-		}
+	top := m.ColumnStack.Top()
+	if top == nil {
+		return m, nil
+	}
 
-	case PaneBrowser:
-		item := m.Grid.SelectedItem()
-		if item == nil {
-			return m, nil
-		}
+	if top.CanDrillInto() {
+		return m.drillIntoSelection()
+	}
 
-		switch v := item.(type) {
-		case domain.MediaItem:
-			return m.handleItemSelection(v)
-
-		case domain.Show:
-			// Drill into show -> seasons
-			m.pushNavContext()
-			m.CurrentNav.Level = BrowseLevelShow
-			m.CurrentNav.ShowID = v.ID
-			m.CurrentNav.ShowTitle = v.Title
-			m.Loading = true
-			return m, LoadSeasonsCmd(m.LibrarySvc, v.ID)
-
-		case domain.Season:
-			// Drill into season -> episodes
-			m.pushNavContext()
-			m.CurrentNav.Level = BrowseLevelSeason
-			m.CurrentNav.SeasonID = v.ID
-			m.CurrentNav.SeasonNum = v.SeasonNum
-			m.Loading = true
-			return m, LoadEpisodesCmd(m.LibrarySvc, v.ID)
+	// Not drillable - play the item
+	if lc, ok := top.(*components.ListColumn); ok {
+		if item := lc.SelectedMediaItem(); item != nil {
+			resume := item.ViewOffset > 0 && !item.IsPlayed
+			return m, PlayItemCmd(m.PlaybackSvc, *item, resume)
 		}
 	}
 
+	return m, nil
+}
+
+// drillIntoSelection pushes a new column for the selected item
+func (m Model) drillIntoSelection() (tea.Model, tea.Cmd) {
+	top := m.ColumnStack.Top()
+	if top == nil {
+		return m, nil
+	}
+
+	item := top.SelectedItem()
+	if item == nil {
+		return m, nil
+	}
+
+	cursor := top.SelectedIndex()
+
+	switch v := item.(type) {
+	case domain.Library:
+		// Drill into library -> movies or shows
+		var newCol *components.ListColumn
+		var cmd tea.Cmd
+
+		if v.Type == "movie" {
+			newCol = components.NewListColumn(components.ColumnTypeMovies, v.Name)
+			newCol.SetLoading(true)
+			cmd = LoadMoviesCmd(m.LibrarySvc, v.ID)
+		} else {
+			newCol = components.NewListColumn(components.ColumnTypeShows, v.Name)
+			newCol.SetLoading(true)
+			cmd = LoadShowsCmd(m.LibrarySvc, v.ID)
+		}
+
+		m.ColumnStack.Push(newCol, cursor)
+		m.Loading = true
+		m.updateLayout()
+		return m, cmd
+
+	case *domain.Show:
+		// Drill into show -> seasons
+		newCol := components.NewListColumn(components.ColumnTypeSeasons, v.Title)
+		newCol.SetLoading(true)
+
+		m.ColumnStack.Push(newCol, cursor)
+		m.Loading = true
+		m.updateLayout()
+		return m, LoadSeasonsCmd(m.LibrarySvc, v.ID)
+
+	case *domain.Season:
+		// Drill into season -> episodes
+		title := v.ShowTitle
+		if v.SeasonNum == 0 {
+			title += " - Specials"
+		} else {
+			title += fmt.Sprintf(" - S%02d", v.SeasonNum)
+		}
+		newCol := components.NewListColumn(components.ColumnTypeEpisodes, title)
+		newCol.SetLoading(true)
+
+		m.ColumnStack.Push(newCol, cursor)
+		m.Loading = true
+		m.updateLayout()
+		return m, LoadEpisodesCmd(m.LibrarySvc, v.ID)
+	}
+
+	return m, nil
+}
+
+// handleBack handles navigation back (h/backspace)
+func (m Model) handleBack() (tea.Model, tea.Cmd) {
+	if !m.ColumnStack.CanGoBack() {
+		return m, nil
+	}
+
+	_, savedCursor := m.ColumnStack.Pop()
+
+	// Restore cursor position on the new top
+	if top := m.ColumnStack.Top(); top != nil {
+		top.SetSelectedIndex(savedCursor)
+	}
+
+	m.updateLayout()
+	m.updateInspector()
 	return m, nil
 }
 
 // handleItemSelection handles selection of a playable item
 func (m Model) handleItemSelection(item domain.MediaItem) (Model, tea.Cmd) {
-	// Resume from saved position if available, otherwise play from start
 	resume := item.ViewOffset > 0 && !item.IsPlayed
 	return m, PlayItemCmd(m.PlaybackSvc, item, resume)
 }
 
-// handleBack handles the backspace key (navigation back)
-func (m Model) handleBack() (tea.Model, tea.Cmd) {
-	if len(m.NavStack) == 0 {
-		return m, nil
-	}
-
-	// Pop navigation context
-	m.CurrentNav = m.NavStack[len(m.NavStack)-1]
-	m.NavStack = m.NavStack[:len(m.NavStack)-1]
-
-	// Restore cursor position
-	m.Grid.SetCursor(m.CurrentNav.CursorPos)
-
-	// Reload content for the level
-	m.Loading = true
-	switch m.CurrentNav.Level {
-	case BrowseLevelLibrary:
-		lib := m.findLibrary(m.CurrentNav.LibraryID)
-		if lib != nil {
-			return m, m.loadLibraryContent(*lib)
+// updateLibraryStates updates the library states in the library column and inspector
+func (m *Model) updateLibraryStates() {
+	// Find the library column (should be at index 0)
+	if m.ColumnStack.Len() > 0 {
+		if libCol, ok := m.ColumnStack.Get(0).(*components.ListColumn); ok {
+			libCol.SetLibraryStates(m.LibraryStates)
 		}
-	case BrowseLevelShow:
-		return m, LoadSeasonsCmd(m.LibrarySvc, m.CurrentNav.ShowID)
-	case BrowseLevelSeason:
-		return m, LoadEpisodesCmd(m.LibrarySvc, m.CurrentNav.SeasonID)
 	}
-
-	return m, nil
-}
-
-// pushNavContext saves the current navigation context
-func (m *Model) pushNavContext() {
-	m.CurrentNav.CursorPos = m.Grid.Cursor()
-	m.NavStack = append(m.NavStack, m.CurrentNav)
-}
-
-// moveFocus moves focus between panes
-func (m *Model) moveFocus(direction int) {
-	newPane := int(m.FocusPane) + direction
-	if newPane < 0 {
-		newPane = 0
-	}
-	if newPane > int(PaneInspector) {
-		newPane = int(PaneInspector)
-	}
-
-	m.FocusPane = Pane(newPane)
-	m.Sidebar.SetFocused(m.FocusPane == PaneSidebar)
-	m.Grid.SetFocused(m.FocusPane == PaneBrowser)
-	m.Inspector.SetFocused(m.FocusPane == PaneInspector)
-}
-
-// loadLibraryContent loads content for a library
-func (m *Model) loadLibraryContent(lib domain.Library) tea.Cmd {
-	m.CurrentNav = NavContext{
-		Level:       BrowseLevelLibrary,
-		LibraryID:   lib.ID,
-		LibraryName: lib.Name,
-	}
-	m.NavStack = nil // Clear navigation history when switching libraries
-
-	if lib.Type == "movie" {
-		return LoadMoviesCmd(m.LibrarySvc, lib.ID)
-	}
-	return LoadShowsCmd(m.LibrarySvc, lib.ID)
+	m.Inspector.SetLibraryStates(m.LibraryStates)
 }
 
 // refreshCurrentView refreshes the current view
@@ -727,16 +739,50 @@ func (m *Model) refreshCurrentView() tea.Cmd {
 	m.LibrarySvc.RefreshAll()
 	m.Loading = true
 
-	switch m.CurrentNav.Level {
-	case BrowseLevelLibrary:
-		lib := m.findLibrary(m.CurrentNav.LibraryID)
-		if lib != nil {
-			return m.loadLibraryContent(*lib)
+	top := m.ColumnStack.Top()
+	if top == nil {
+		return LoadLibrariesCmd(m.LibrarySvc)
+	}
+
+	// Get context from column stack to reload
+	if lc, ok := top.(*components.ListColumn); ok {
+		switch lc.ColumnType() {
+		case components.ColumnTypeMovies:
+			// Find the library from the library column
+			if m.ColumnStack.Len() > 0 {
+				if libCol, ok := m.ColumnStack.Get(0).(*components.ListColumn); ok {
+					if lib := libCol.SelectedLibrary(); lib != nil {
+						return LoadMoviesCmd(m.LibrarySvc, lib.ID)
+					}
+				}
+			}
+		case components.ColumnTypeShows:
+			if m.ColumnStack.Len() > 0 {
+				if libCol, ok := m.ColumnStack.Get(0).(*components.ListColumn); ok {
+					if lib := libCol.SelectedLibrary(); lib != nil {
+						return LoadShowsCmd(m.LibrarySvc, lib.ID)
+					}
+				}
+			}
+		case components.ColumnTypeSeasons:
+			// Get show from parent column
+			if m.ColumnStack.Len() > 1 {
+				if showCol, ok := m.ColumnStack.Get(m.ColumnStack.Len()-2).(*components.ListColumn); ok {
+					if show := showCol.SelectedShow(); show != nil {
+						return LoadSeasonsCmd(m.LibrarySvc, show.ID)
+					}
+				}
+			}
+		case components.ColumnTypeEpisodes:
+			// Get season from parent column
+			if m.ColumnStack.Len() > 1 {
+				if seasonCol, ok := m.ColumnStack.Get(m.ColumnStack.Len()-2).(*components.ListColumn); ok {
+					if season := seasonCol.SelectedSeason(); season != nil {
+						return LoadEpisodesCmd(m.LibrarySvc, season.ID)
+					}
+				}
+			}
 		}
-	case BrowseLevelShow:
-		return LoadSeasonsCmd(m.LibrarySvc, m.CurrentNav.ShowID)
-	case BrowseLevelSeason:
-		return LoadEpisodesCmd(m.LibrarySvc, m.CurrentNav.SeasonID)
 	}
 
 	return LoadLibrariesCmd(m.LibrarySvc)
@@ -752,15 +798,13 @@ func (m Model) findLibrary(id string) *domain.Library {
 	return nil
 }
 
-// updateInspector updates the inspector with the selected item
+// updateInspector updates the inspector with the selected item from middle column
 func (m *Model) updateInspector() {
-	item := m.Grid.SelectedItem()
-	m.Inspector.SetItem(item)
-}
-
-// updateBreadcrumb updates the Grid's breadcrumb based on CurrentNav
-func (m *Model) updateBreadcrumb() {
-	m.Grid.SetBreadcrumb(m.CurrentNav.Breadcrumb())
+	if top := m.ColumnStack.Top(); top != nil {
+		m.Inspector.SetItem(top.SelectedItem())
+	} else {
+		m.Inspector.SetItem(nil)
+	}
 }
 
 // updateLayout updates component sizes based on window size
@@ -769,27 +813,99 @@ func (m *Model) updateLayout() {
 		return
 	}
 
-	// Use full terminal width for panels
 	availableWidth := m.Width
-
-	// Calculate panel widths using proportions
-	// Note: lipgloss Width(w).Height(h) means TOTAL size INCLUDING borders
-	sidebarWidth := availableWidth * SidebarWidthPercent / 100
-	if sidebarWidth < MinSidebarWidth {
-		sidebarWidth = MinSidebarWidth
-	}
-	inspectorWidth := availableWidth * InspectorWidthPercent / 100
-	if inspectorWidth < MinInspectorWidth {
-		inspectorWidth = MinInspectorWidth
-	}
-	browserWidth := availableWidth - sidebarWidth - inspectorWidth
-
 	contentHeight := m.Height - ChromeHeight
 
-	m.Sidebar.SetSize(sidebarWidth, contentHeight)
-	m.Grid.SetSize(browserWidth, contentHeight)
-	m.Inspector.SetSize(inspectorWidth, contentHeight)
 	m.Omnibar.SetSize(m.Width, m.Height)
+
+	stackLen := m.ColumnStack.Len()
+	if stackLen == 0 {
+		return
+	}
+
+	// Calculate column widths based on stack depth and inspector visibility
+	if stackLen == 1 {
+		// Root level: single column (Libraries)
+		if m.ShowInspector {
+			leftWidth := availableWidth * RootColumnPercent / 100
+			if leftWidth < MinColumnWidth {
+				leftWidth = MinColumnWidth
+			}
+			rightWidth := availableWidth - leftWidth
+			m.ColumnStack.Get(0).SetSize(leftWidth, contentHeight)
+			m.Inspector.SetSize(rightWidth, contentHeight)
+		} else {
+			m.ColumnStack.Get(0).SetSize(availableWidth, contentHeight)
+		}
+	} else if stackLen == 2 {
+		// 2 columns in stack
+		topIdx := stackLen - 1
+		if m.ShowInspector {
+			parentWidth := availableWidth * ParentColumnPercent3 / 100
+			if parentWidth < MinColumnWidth {
+				parentWidth = MinColumnWidth
+			}
+			inspectorWidth := availableWidth * InspectorColumnPercent / 100
+			if inspectorWidth < MinColumnWidth {
+				inspectorWidth = MinColumnWidth
+			}
+			activeWidth := availableWidth - parentWidth - inspectorWidth
+			if activeWidth < MinColumnWidth {
+				activeWidth = MinColumnWidth
+			}
+			m.ColumnStack.Get(topIdx - 1).SetSize(parentWidth, contentHeight)
+			m.ColumnStack.Get(topIdx).SetSize(activeWidth, contentHeight)
+			m.Inspector.SetSize(inspectorWidth, contentHeight)
+		} else {
+			parentWidth := availableWidth * ParentColumnPercent2 / 100
+			if parentWidth < MinColumnWidth {
+				parentWidth = MinColumnWidth
+			}
+			activeWidth := availableWidth - parentWidth
+			if activeWidth < MinColumnWidth {
+				activeWidth = MinColumnWidth
+			}
+			m.ColumnStack.Get(topIdx - 1).SetSize(parentWidth, contentHeight)
+			m.ColumnStack.Get(topIdx).SetSize(activeWidth, contentHeight)
+		}
+	} else {
+		// 3+ columns in stack
+		topIdx := stackLen - 1
+		if m.ShowInspector {
+			parentWidth := availableWidth * ParentColumnPercent3 / 100
+			if parentWidth < MinColumnWidth {
+				parentWidth = MinColumnWidth
+			}
+			inspectorWidth := availableWidth * InspectorColumnPercent / 100
+			if inspectorWidth < MinColumnWidth {
+				inspectorWidth = MinColumnWidth
+			}
+			activeWidth := availableWidth - parentWidth - inspectorWidth
+			if activeWidth < MinColumnWidth {
+				activeWidth = MinColumnWidth
+			}
+			m.ColumnStack.Get(topIdx - 1).SetSize(parentWidth, contentHeight)
+			m.ColumnStack.Get(topIdx).SetSize(activeWidth, contentHeight)
+			m.Inspector.SetSize(inspectorWidth, contentHeight)
+		} else {
+			// 3-Column Navigation: [Grandparent | Parent | Active]
+			grandparentWidth := availableWidth * GrandparentColumnPercent / 100
+			if grandparentWidth < MinColumnWidth {
+				grandparentWidth = MinColumnWidth
+			}
+			parentWidth := availableWidth * ParentColumnPercent2 / 100
+			if parentWidth < MinColumnWidth {
+				parentWidth = MinColumnWidth
+			}
+			activeWidth := availableWidth - grandparentWidth - parentWidth
+			if activeWidth < MinColumnWidth {
+				activeWidth = MinColumnWidth
+			}
+			m.ColumnStack.Get(topIdx - 2).SetSize(grandparentWidth, contentHeight)
+			m.ColumnStack.Get(topIdx - 1).SetSize(parentWidth, contentHeight)
+			m.ColumnStack.Get(topIdx).SetSize(activeWidth, contentHeight)
+		}
+	}
 }
 
 // View renders the application
@@ -803,13 +919,154 @@ func (m Model) View() string {
 		return m.renderHelp()
 	}
 
-	// Main layout (breadcrumb is now inside the Grid component)
-	content := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		m.Sidebar.View(),
-		m.Grid.View(),
-		m.Inspector.View(),
-	)
+	availableWidth := m.Width
+	contentHeight := m.Height - ChromeHeight
+	stackLen := m.ColumnStack.Len()
+
+	var content string
+
+	if stackLen == 0 {
+		// No columns - shouldn't happen
+		content = ""
+	} else if stackLen == 1 {
+		// Root level: single column (Libraries)
+		col := m.ColumnStack.Get(0)
+
+		if m.ShowInspector {
+			// [Libraries | Inspector]
+			leftWidth := availableWidth * RootColumnPercent / 100
+			if leftWidth < MinColumnWidth {
+				leftWidth = MinColumnWidth
+			}
+			rightWidth := availableWidth - leftWidth
+
+			col.SetSize(leftWidth, contentHeight)
+			m.Inspector.SetSize(rightWidth, contentHeight)
+			m.Inspector.SetItem(col.SelectedItem())
+
+			content = lipgloss.JoinHorizontal(
+				lipgloss.Top,
+				col.View(),
+				m.Inspector.View(),
+			)
+		} else {
+			// [Libraries] - full width
+			col.SetSize(availableWidth, contentHeight)
+			content = col.View()
+		}
+	} else if stackLen == 2 {
+		// 2 columns in stack
+		topIdx := stackLen - 1
+		parentCol := m.ColumnStack.Get(topIdx - 1)
+		currentCol := m.ColumnStack.Get(topIdx)
+
+		if m.ShowInspector {
+			// 3-Column: [Parent | Active | Inspector]
+			parentWidth := availableWidth * ParentColumnPercent3 / 100
+			if parentWidth < MinColumnWidth {
+				parentWidth = MinColumnWidth
+			}
+			inspectorWidth := availableWidth * InspectorColumnPercent / 100
+			if inspectorWidth < MinColumnWidth {
+				inspectorWidth = MinColumnWidth
+			}
+			activeWidth := availableWidth - parentWidth - inspectorWidth
+			if activeWidth < MinColumnWidth {
+				activeWidth = MinColumnWidth
+			}
+
+			parentCol.SetSize(parentWidth, contentHeight)
+			currentCol.SetSize(activeWidth, contentHeight)
+			m.Inspector.SetSize(inspectorWidth, contentHeight)
+			m.Inspector.SetItem(currentCol.SelectedItem())
+
+			content = lipgloss.JoinHorizontal(
+				lipgloss.Top,
+				parentCol.View(),
+				currentCol.View(),
+				m.Inspector.View(),
+			)
+		} else {
+			// 2-Column: [Parent | Active]
+			parentWidth := availableWidth * ParentColumnPercent2 / 100
+			if parentWidth < MinColumnWidth {
+				parentWidth = MinColumnWidth
+			}
+			activeWidth := availableWidth - parentWidth
+			if activeWidth < MinColumnWidth {
+				activeWidth = MinColumnWidth
+			}
+
+			parentCol.SetSize(parentWidth, contentHeight)
+			currentCol.SetSize(activeWidth, contentHeight)
+
+			content = lipgloss.JoinHorizontal(
+				lipgloss.Top,
+				parentCol.View(),
+				currentCol.View(),
+			)
+		}
+	} else {
+		// 3+ columns in stack
+		topIdx := stackLen - 1
+		currentCol := m.ColumnStack.Get(topIdx)
+		parentCol := m.ColumnStack.Get(topIdx - 1)
+
+		if m.ShowInspector {
+			// 3-Column: [Parent | Active | Inspector]
+			parentWidth := availableWidth * ParentColumnPercent3 / 100
+			if parentWidth < MinColumnWidth {
+				parentWidth = MinColumnWidth
+			}
+			inspectorWidth := availableWidth * InspectorColumnPercent / 100
+			if inspectorWidth < MinColumnWidth {
+				inspectorWidth = MinColumnWidth
+			}
+			activeWidth := availableWidth - parentWidth - inspectorWidth
+			if activeWidth < MinColumnWidth {
+				activeWidth = MinColumnWidth
+			}
+
+			parentCol.SetSize(parentWidth, contentHeight)
+			currentCol.SetSize(activeWidth, contentHeight)
+			m.Inspector.SetSize(inspectorWidth, contentHeight)
+			m.Inspector.SetItem(currentCol.SelectedItem())
+
+			content = lipgloss.JoinHorizontal(
+				lipgloss.Top,
+				parentCol.View(),
+				currentCol.View(),
+				m.Inspector.View(),
+			)
+		} else {
+			// 3-Column Navigation: [Grandparent | Parent | Active]
+			grandparentCol := m.ColumnStack.Get(topIdx - 2)
+
+			grandparentWidth := availableWidth * GrandparentColumnPercent / 100
+			if grandparentWidth < MinColumnWidth {
+				grandparentWidth = MinColumnWidth
+			}
+			parentWidth := availableWidth * ParentColumnPercent2 / 100
+			if parentWidth < MinColumnWidth {
+				parentWidth = MinColumnWidth
+			}
+			activeWidth := availableWidth - grandparentWidth - parentWidth
+			if activeWidth < MinColumnWidth {
+				activeWidth = MinColumnWidth
+			}
+
+			grandparentCol.SetSize(grandparentWidth, contentHeight)
+			parentCol.SetSize(parentWidth, contentHeight)
+			currentCol.SetSize(activeWidth, contentHeight)
+
+			content = lipgloss.JoinHorizontal(
+				lipgloss.Top,
+				grandparentCol.View(),
+				parentCol.View(),
+				currentCol.View(),
+			)
+		}
+	}
 
 	// Status bar
 	statusText := m.StatusMsg
@@ -819,7 +1076,7 @@ func (m Model) View() string {
 	statusBar := RenderStatusBar(statusText, "", m.Width)
 
 	// Help bar
-	helpBar := RenderHelp(KeyHelpForPane(m.FocusPane), m.Width)
+	helpBar := RenderHelp(MillerColumnsKeyHelp(), m.Width)
 
 	// Combine all
 	view := lipgloss.JoinVertical(
@@ -842,31 +1099,18 @@ func (m Model) View() string {
 // renderHelp renders the help screen
 func (m Model) renderHelp() string {
 	help := `
-GOPLEX - Plex TUI
+NAVIGATION                      PLAYBACK
+  h  Go back                      Enter  Play/resume
+  l  Drill in / Play              p      Play from beginning
+  j/k  Navigate up/down           w      Mark watched
+  g/G  First/last item            u      Mark unwatched
 
-NAVIGATION
-  h / l        Switch pane focus (Sidebar ↔ Browser ↔ Inspector)
-  j / k        Navigate items up/down
-  g / G        Jump to first/last item
-  Enter        Play/resume item OR drill into Show/Season
-  Shift+Enter  Play from beginning
-  Backspace    Go back one level
-
-BROWSER ACTIONS
-  w            Mark item as watched
-  u            Mark item as unwatched
-  p            Play from beginning (same as Shift+Enter)
-
-SEARCH & VIEW
-  /            Filter current list (fuzzy match)
-  s            Global filter (cached items)
-  o            Jump to On Deck
-  r            Refresh current view
-
-OTHER
-  q            Quit
-  ?            Show/hide this help
-  Esc          Close modal / Cancel filter
+SEARCH & VIEW                   OTHER
+  /  Filter current column        q    Quit
+  s  Global search                ?    This help
+  i  Toggle inspector             Esc  Close / Cancel
+  r  Refresh library
+  R  Refresh all
 
 Press any key to return...
 `
@@ -877,7 +1121,7 @@ Press any key to return...
 }
 
 // indexMoviesForFilter indexes movies for the global filter
-func (m *Model) indexMoviesForFilter(movies []domain.MediaItem, libID string) {
+func (m *Model) indexMoviesForFilter(movies []*domain.MediaItem, libID string) {
 	libName := m.findLibraryName(libID)
 	items := make([]service.FilterItem, len(movies))
 
@@ -898,7 +1142,7 @@ func (m *Model) indexMoviesForFilter(movies []domain.MediaItem, libID string) {
 }
 
 // indexShowsForFilter indexes shows for the global filter
-func (m *Model) indexShowsForFilter(shows []domain.Show, libID string) {
+func (m *Model) indexShowsForFilter(shows []*domain.Show, libID string) {
 	libName := m.findLibraryName(libID)
 	items := make([]service.FilterItem, len(shows))
 
@@ -924,7 +1168,6 @@ func (m *Model) indexEpisodesForFilter(episodes []domain.MediaItem, seasonID str
 		return
 	}
 
-	// Get context from first episode
 	first := episodes[0]
 	libName := m.findLibraryName(first.LibraryID)
 
@@ -959,98 +1202,89 @@ func (m Model) findLibraryName(libID string) string {
 	return ""
 }
 
+// totalLoadedCount calculates the sum of loaded items across all libraries
+func (m Model) totalLoadedCount() int {
+	total := 0
+	for _, state := range m.LibraryStates {
+		total += state.Loaded
+	}
+	return total
+}
+
 // navigateToFilteredItem navigates to a filtered item in its context
 func (m *Model) navigateToFilteredItem(item service.FilterItem) tea.Cmd {
-	// Clear navigation stack
-	m.NavStack = nil
+	// Reset stack to library level first
+	libCol := components.NewLibraryColumn(m.Libraries)
+	libCol.SetLibraryStates(m.LibraryStates)
+	m.Inspector.SetLibraryStates(m.LibraryStates)
 
-	// Move focus to browser
-	m.FocusPane = PaneBrowser
-	m.Sidebar.SetFocused(false)
-	m.Grid.SetFocused(true)
-	m.Inspector.SetFocused(false)
+	// Find and select the library
+	for i, lib := range m.Libraries {
+		if lib.ID == item.NavContext.LibraryID {
+			libCol.SetSelectedIndex(i)
+			break
+		}
+	}
+
+	m.ColumnStack.Reset(libCol)
 
 	switch item.Type {
 	case domain.MediaTypeMovie:
 		// Navigate to library and highlight movie
-		m.CurrentNav = NavContext{
-			Level:       BrowseLevelLibrary,
-			LibraryID:   item.NavContext.LibraryID,
-			LibraryName: item.NavContext.LibraryName,
+		lib := m.findLibrary(item.NavContext.LibraryID)
+		if lib == nil {
+			return nil
 		}
+		moviesCol := components.NewListColumn(components.ColumnTypeMovies, lib.Name)
+		moviesCol.SetLoading(true)
+		m.ColumnStack.Push(moviesCol, 0)
 		m.pendingCursor = item.NavContext.ItemIndex
 		m.Loading = true
-
-		// Select the library in sidebar
-		m.selectLibraryInSidebar(item.NavContext.LibraryID)
-
 		return LoadMoviesCmd(m.LibrarySvc, item.NavContext.LibraryID)
 
 	case domain.MediaTypeShow:
 		// Navigate to library and highlight show
-		m.CurrentNav = NavContext{
-			Level:       BrowseLevelLibrary,
-			LibraryID:   item.NavContext.LibraryID,
-			LibraryName: item.NavContext.LibraryName,
+		lib := m.findLibrary(item.NavContext.LibraryID)
+		if lib == nil {
+			return nil
 		}
+		showsCol := components.NewListColumn(components.ColumnTypeShows, lib.Name)
+		showsCol.SetLoading(true)
+		m.ColumnStack.Push(showsCol, 0)
 		m.pendingCursor = item.NavContext.ItemIndex
 		m.Loading = true
-
-		// Select the library in sidebar
-		m.selectLibraryInSidebar(item.NavContext.LibraryID)
-
 		return LoadShowsCmd(m.LibrarySvc, item.NavContext.LibraryID)
 
 	case domain.MediaTypeEpisode:
-		// Build navigation stack: library -> show -> season
-		// First, push library level
-		libCtx := NavContext{
-			Level:       BrowseLevelLibrary,
-			LibraryID:   item.NavContext.LibraryID,
-			LibraryName: item.NavContext.LibraryName,
-			CursorPos:   0, // Will be at show position
+		// Navigate: Library -> Show -> Season -> Episode
+		lib := m.findLibrary(item.NavContext.LibraryID)
+		if lib == nil {
+			return nil
 		}
-		m.NavStack = append(m.NavStack, libCtx)
 
-		// Then, push show level
-		showCtx := NavContext{
-			Level:       BrowseLevelShow,
-			LibraryID:   item.NavContext.LibraryID,
-			LibraryName: item.NavContext.LibraryName,
-			ShowID:      item.NavContext.ShowID,
-			ShowTitle:   item.NavContext.ShowTitle,
-			CursorPos:   0, // Will be at season position
-		}
-		m.NavStack = append(m.NavStack, showCtx)
+		// Push shows column
+		showsCol := components.NewListColumn(components.ColumnTypeShows, lib.Name)
+		m.ColumnStack.Push(showsCol, 0)
 
-		// Set current nav to season level
-		m.CurrentNav = NavContext{
-			Level:       BrowseLevelSeason,
-			LibraryID:   item.NavContext.LibraryID,
-			LibraryName: item.NavContext.LibraryName,
-			ShowID:      item.NavContext.ShowID,
-			ShowTitle:   item.NavContext.ShowTitle,
-			SeasonID:    item.NavContext.SeasonID,
-			SeasonNum:   item.NavContext.SeasonNum,
+		// Push seasons column
+		seasonsCol := components.NewListColumn(components.ColumnTypeSeasons, item.NavContext.ShowTitle)
+		m.ColumnStack.Push(seasonsCol, 0)
+
+		// Push episodes column
+		title := item.NavContext.ShowTitle
+		if item.NavContext.SeasonNum == 0 {
+			title += " - Specials"
+		} else {
+			title += fmt.Sprintf(" - S%02d", item.NavContext.SeasonNum)
 		}
+		episodesCol := components.NewListColumn(components.ColumnTypeEpisodes, title)
+		episodesCol.SetLoading(true)
+		m.ColumnStack.Push(episodesCol, 0)
+
 		m.pendingCursor = item.NavContext.ItemIndex
 		m.Loading = true
-
-		// Select the library in sidebar
-		m.selectLibraryInSidebar(item.NavContext.LibraryID)
-
 		return LoadEpisodesCmd(m.LibrarySvc, item.NavContext.SeasonID)
 	}
 
 	return nil
-}
-
-// selectLibraryInSidebar selects a library in the sidebar by ID
-func (m *Model) selectLibraryInSidebar(libID string) {
-	for i, lib := range m.Libraries {
-		if lib.ID == libID {
-			m.Sidebar.SetSelectedIndex(i)
-			break
-		}
-	}
 }

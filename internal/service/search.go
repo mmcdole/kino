@@ -30,6 +30,25 @@ type FilterItem struct {
 	NavContext NavigationContext
 }
 
+// FilterResult represents a search result with match metadata for highlighting
+type FilterResult struct {
+	FilterItem
+	MatchedIndexes []int // Character positions that matched
+	Score          int   // Match score (lower is better)
+}
+
+// FilterIndex implements sahilm/fuzzy.Source for zero-allocation fuzzy matching
+type FilterIndex struct {
+	items       []FilterItem
+	lowerTitles []string // Pre-computed lowercase titles
+}
+
+// String returns the lowercase title at index i (implements fuzzy.Source)
+func (idx *FilterIndex) String(i int) string { return idx.lowerTitles[i] }
+
+// Len returns the number of items (implements fuzzy.Source)
+func (idx *FilterIndex) Len() int { return len(idx.items) }
+
 // SearchService handles fuzzy search across libraries
 type SearchService struct {
 	repo   domain.SearchRepository
@@ -40,9 +59,9 @@ type SearchService struct {
 	titleIndex map[string]domain.MediaItem // title -> item
 	indexed    bool
 
-	// Filter index for global filter feature
+	// Filter index for global filter feature (using FilterIndex for zero-allocation search)
 	filterMu      sync.RWMutex
-	filterIndex   []FilterItem
+	filterIndex   *FilterIndex
 	filterIndexed map[string]bool // Track indexed item IDs to avoid duplicates
 }
 
@@ -55,6 +74,7 @@ func NewSearchService(repo domain.SearchRepository, logger *slog.Logger) *Search
 		repo:          repo,
 		logger:        logger,
 		titleIndex:    make(map[string]domain.MediaItem),
+		filterIndex:   &FilterIndex{},
 		filterIndexed: make(map[string]bool),
 	}
 }
@@ -252,6 +272,7 @@ func FilterUnwatched(items []domain.MediaItem) []domain.MediaItem {
 }
 
 // IndexForFilter adds items to the global filter index, deduplicating by item ID
+// Pre-computes lowercase titles at index time for zero-allocation search
 func (s *SearchService) IndexForFilter(items []FilterItem) {
 	s.filterMu.Lock()
 	defer s.filterMu.Unlock()
@@ -263,7 +284,11 @@ func (s *SearchService) IndexForFilter(items []FilterItem) {
 		switch v := item.Item.(type) {
 		case domain.MediaItem:
 			key = "media:" + v.ID
+		case *domain.MediaItem:
+			key = "media:" + v.ID
 		case domain.Show:
+			key = "show:" + v.ID
+		case *domain.Show:
 			key = "show:" + v.ID
 		default:
 			key = item.Title // fallback
@@ -275,42 +300,35 @@ func (s *SearchService) IndexForFilter(items []FilterItem) {
 		}
 
 		s.filterIndexed[key] = true
-		s.filterIndex = append(s.filterIndex, item)
+		s.filterIndex.items = append(s.filterIndex.items, item)
+		s.filterIndex.lowerTitles = append(s.filterIndex.lowerTitles, strings.ToLower(item.Title))
 		added++
 	}
 
-	s.logger.Debug("indexed items for filter", "added", added, "skipped", len(items)-added, "total", len(s.filterIndex))
+	s.logger.Debug("indexed items for filter", "added", added, "skipped", len(items)-added, "total", len(s.filterIndex.items))
 }
 
-// FilterLocal performs fuzzy search against the filter index
-func (s *SearchService) FilterLocal(query string) []FilterItem {
+// FilterLocal performs fuzzy search against the filter index using custom fuzzy matching
+// Returns FilterResult with match metadata for highlighting
+func (s *SearchService) FilterLocal(query string) []FilterResult {
 	s.filterMu.RLock()
 	defer s.filterMu.RUnlock()
 
-	if query == "" || len(s.filterIndex) == 0 {
+	if query == "" || s.filterIndex.Len() == 0 {
 		return nil
 	}
 
-	query = strings.ToLower(query)
+	// Use our custom fuzzy search (already returns sorted results)
+	matches := FuzzySearch(query, s.filterIndex.lowerTitles)
 
-	// Collect all titles for fuzzy matching
-	titles := make([]string, len(s.filterIndex))
-	for i, item := range s.filterIndex {
-		titles[i] = strings.ToLower(item.Title)
-	}
-
-	// Perform fuzzy search
-	matches := fuzzy.RankFindFold(query, titles)
-
-	// Sort by score (lower is better)
-	sort.Slice(matches, func(i, j int) bool {
-		return matches[i].Distance < matches[j].Distance
-	})
-
-	// Convert back to FilterItems
-	results := make([]FilterItem, 0, len(matches))
-	for _, match := range matches {
-		results = append(results, s.filterIndex[match.OriginalIndex])
+	// Convert to FilterResult
+	results := make([]FilterResult, len(matches))
+	for i, match := range matches {
+		results[i] = FilterResult{
+			FilterItem:     s.filterIndex.items[match.Index],
+			MatchedIndexes: match.MatchedIndexes,
+			Score:          match.Score,
+		}
 	}
 
 	return results
@@ -321,7 +339,7 @@ func (s *SearchService) ClearFilterIndex() {
 	s.filterMu.Lock()
 	defer s.filterMu.Unlock()
 
-	s.filterIndex = nil
+	s.filterIndex = &FilterIndex{}
 	s.filterIndexed = make(map[string]bool)
 	s.logger.Debug("cleared filter index")
 }
@@ -330,5 +348,5 @@ func (s *SearchService) ClearFilterIndex() {
 func (s *SearchService) FilterIndexCount() int {
 	s.filterMu.RLock()
 	defer s.filterMu.RUnlock()
-	return len(s.filterIndex)
+	return s.filterIndex.Len()
 }

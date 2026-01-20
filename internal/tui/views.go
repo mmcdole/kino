@@ -9,7 +9,7 @@ import (
 	"github.com/drake/goplex/internal/tui/styles"
 )
 
-// Pane represents a UI pane
+// Pane represents a UI pane (kept for compatibility but not used in Miller Columns)
 type Pane int
 
 const (
@@ -198,6 +198,19 @@ func DefaultKeyHelp() []KeyHelp {
 	return KeyHelpForPane(PaneBrowser)
 }
 
+// MillerColumnsKeyHelp returns the key bindings for Miller Columns navigation
+func MillerColumnsKeyHelp() []KeyHelp {
+	return []KeyHelp{
+		{Key: "h", Desc: "back"},
+		{Key: "l", Desc: "open"},
+		{Key: "j/k", Desc: "nav"},
+		{Key: "Enter", Desc: "play"},
+		{Key: "i", Desc: "info"},
+		{Key: "/", Desc: "filter"},
+		{Key: "?", Desc: "help"},
+	}
+}
+
 // RenderMovieItem renders a movie item for the list
 func RenderMovieItem(item domain.MediaItem, selected bool, width int) string {
 	style := styles.NormalItemStyle
@@ -336,12 +349,14 @@ func RenderLibraryItem(lib domain.Library, selected bool, focused bool, width in
 // RenderInspector renders the inspector panel content
 func RenderInspector(item interface{}, width int) string {
 	switch v := item.(type) {
-	case domain.MediaItem:
-		return renderMediaItemInspector(v, width)
-	case domain.Show:
-		return renderShowInspector(v, width)
-	case domain.Season:
-		return renderSeasonInspector(v, width)
+	case *domain.MediaItem:
+		return renderMediaItemInspector(*v, width)
+	case *domain.Show:
+		return renderShowInspector(*v, width)
+	case *domain.Season:
+		return renderSeasonInspector(*v, width)
+	case domain.Library:
+		return styles.DimStyle.Render("Library: " + v.Name)
 	default:
 		return styles.DimStyle.Render("No item selected")
 	}

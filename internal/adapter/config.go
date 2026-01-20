@@ -25,8 +25,9 @@ type ServerConfig struct {
 
 // PlayerConfig holds media player configuration
 type PlayerConfig struct {
-	Command string   `mapstructure:"command"`
-	Args    []string `mapstructure:"args"`
+	Command   string   `mapstructure:"command"`
+	Args      []string `mapstructure:"args"`
+	StartFlag string   `mapstructure:"start_flag"` // e.g., "--start=" or "--start-time="
 }
 
 // UIConfig holds UI configuration

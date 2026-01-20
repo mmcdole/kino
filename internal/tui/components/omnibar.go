@@ -16,7 +16,7 @@ import (
 type Omnibar struct {
 	input         textinput.Model
 	results       []domain.MediaItem
-	filterResults []service.FilterItem
+	filterResults []service.FilterResult // Changed to FilterResult for match highlighting
 	filterMode    bool
 	cursor        int
 	visible       bool
@@ -95,8 +95,8 @@ func (o *Omnibar) SetResults(results []domain.MediaItem) {
 	o.loading = false
 }
 
-// SetFilterResults sets the filter results
-func (o *Omnibar) SetFilterResults(results []service.FilterItem) {
+// SetFilterResults sets the filter results with match highlighting data
+func (o *Omnibar) SetFilterResults(results []service.FilterResult) {
 	o.filterResults = results
 	o.cursor = 0
 	o.loading = false
@@ -137,12 +137,12 @@ func (o Omnibar) SelectedResult() *domain.MediaItem {
 	return &o.results[o.cursor]
 }
 
-// SelectedFilterResult returns the selected filter result
+// SelectedFilterResult returns the selected filter result's FilterItem
 func (o Omnibar) SelectedFilterResult() *service.FilterItem {
 	if len(o.filterResults) == 0 || o.cursor >= len(o.filterResults) {
 		return nil
 	}
-	return &o.filterResults[o.cursor]
+	return &o.filterResults[o.cursor].FilterItem
 }
 
 // ResultCount returns the number of results (filter or search mode)
@@ -260,6 +260,77 @@ func (o Omnibar) View() string {
 	)
 }
 
+// highlightMatches renders text with matched characters highlighted
+// Uses ANSI codes directly to avoid lipgloss padding issues
+func highlightMatches(text string, matchedIndexes []int, selected bool) string {
+	if len(matchedIndexes) == 0 {
+		if selected {
+			return styles.SelectedItemStyle.Render(text)
+		}
+		return styles.NormalItemStyle.Render(text)
+	}
+
+	// Create a set of matched indexes for O(1) lookup
+	matchSet := make(map[int]bool)
+	for _, idx := range matchedIndexes {
+		matchSet[idx] = true
+	}
+
+	// ANSI escape codes for inline styling (no padding)
+	// Orange/bold for matches, gray for normal text
+	const (
+		reset     = "\033[0m"
+		orange    = "\033[38;5;208m" // PlexOrange approximate
+		orangeBold = "\033[38;5;208;1m"
+		gray      = "\033[38;5;250m" // LightGray approximate
+		white     = "\033[38;5;255m"
+		bgSlate   = "\033[48;5;238m" // SlateLight approximate
+	)
+
+	var matchStart, matchEnd, normalStart, normalEnd string
+	if selected {
+		// Selected: white bg for normal, orange+bold+bg for match
+		normalStart = white + bgSlate
+		normalEnd = reset
+		matchStart = orangeBold + bgSlate
+		matchEnd = reset
+	} else {
+		// Not selected: gray for normal, orange+bold for match
+		normalStart = gray
+		normalEnd = reset
+		matchStart = orangeBold
+		matchEnd = reset
+	}
+
+	// Batch consecutive characters with the same style
+	var result strings.Builder
+	runes := []rune(text)
+	i := 0
+	for i < len(runes) {
+		isMatch := matchSet[i]
+
+		// Collect consecutive characters with the same match state
+		var batch strings.Builder
+		for i < len(runes) && matchSet[i] == isMatch {
+			batch.WriteRune(runes[i])
+			i++
+		}
+
+		// Render the batch with ANSI codes
+		if isMatch {
+			result.WriteString(matchStart)
+			result.WriteString(batch.String())
+			result.WriteString(matchEnd)
+		} else {
+			result.WriteString(normalStart)
+			result.WriteString(batch.String())
+			result.WriteString(normalEnd)
+		}
+	}
+
+	return result.String()
+}
+
 // renderFilterResults renders the filter mode results
 func (o Omnibar) renderFilterResults(b *strings.Builder, modalWidth, maxResults int) {
 	if len(o.filterResults) == 0 && o.input.Value() != "" {
@@ -301,25 +372,26 @@ func (o Omnibar) renderFilterResults(b *strings.Builder, modalWidth, maxResults 
 
 		// Build display title
 		title := result.Title
+		matchedIndexes := result.MatchedIndexes
 		maxTitleWidth := modalWidth - 25
 		if result.Type == domain.MediaTypeEpisode {
 			// For episodes, show: ShowTitle - S01E01 Title
-			if item, ok := result.Item.(domain.MediaItem); ok {
+			if item, ok := result.Item.(*domain.MediaItem); ok {
 				title = fmt.Sprintf("%s - %s %s", item.ShowTitle, item.EpisodeCode(), item.Title)
+				// Reset matched indexes since the title format changed
+				matchedIndexes = nil
 			}
 		} else if result.Type == domain.MediaTypeMovie {
 			// For movies, show: Title (Year)
-			if item, ok := result.Item.(domain.MediaItem); ok && item.Year > 0 {
+			if item, ok := result.Item.(*domain.MediaItem); ok && item.Year > 0 {
 				title = fmt.Sprintf("%s (%d)", item.Title, item.Year)
+				// Matched indexes still apply to the title portion
 			}
 		}
 		title = styles.Truncate(title, maxTitleWidth)
 
-		style := styles.NormalItemStyle
-		if selected {
-			style = styles.SelectedItemStyle
-		}
-		line.WriteString(style.Render(title))
+		// Apply highlighting to the title
+		line.WriteString(highlightMatches(title, matchedIndexes, selected))
 
 		b.WriteString(line.String())
 		b.WriteString("\n")

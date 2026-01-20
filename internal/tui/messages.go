@@ -27,31 +27,26 @@ type LibrariesLoadedMsg struct {
 
 // MoviesLoadedMsg signals that movies have been loaded
 type MoviesLoadedMsg struct {
-	Movies    []domain.MediaItem
+	Movies    []*domain.MediaItem
 	LibraryID string
 }
 
 // ShowsLoadedMsg signals that shows have been loaded
 type ShowsLoadedMsg struct {
-	Shows     []domain.Show
+	Shows     []*domain.Show
 	LibraryID string
 }
 
 // SeasonsLoadedMsg signals that seasons have been loaded
 type SeasonsLoadedMsg struct {
-	Seasons []domain.Season
+	Seasons []*domain.Season
 	ShowID  string
 }
 
 // EpisodesLoadedMsg signals that episodes have been loaded
 type EpisodesLoadedMsg struct {
-	Episodes []domain.MediaItem
+	Episodes []*domain.MediaItem
 	SeasonID string
-}
-
-// OnDeckLoadedMsg signals that on deck items have been loaded
-type OnDeckLoadedMsg struct {
-	Items []domain.MediaItem
 }
 
 // SearchResultsMsg signals that search results are ready

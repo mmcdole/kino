@@ -17,17 +17,20 @@ const (
 
 // Inspector displays detailed metadata for the selected item
 type Inspector struct {
-	item       interface{}
-	width      int
-	height     int
-	focused    bool
-	offset     int // scroll offset
-	maxVisible int // max visible lines
+	item          interface{}
+	width         int
+	height        int
+	focused       bool
+	offset        int // scroll offset
+	maxVisible    int // max visible lines
+	libraryStates map[string]LibrarySyncState
 }
 
 // NewInspector creates a new inspector component
 func NewInspector() Inspector {
-	return Inspector{}
+	return Inspector{
+		libraryStates: make(map[string]LibrarySyncState),
+	}
 }
 
 // SetItem sets the item to display
@@ -66,12 +69,27 @@ func (i *Inspector) SetSeason(season *domain.Season) {
 	i.offset = 0
 }
 
+// SetLibrary sets a library to display
+func (i *Inspector) SetLibrary(lib *domain.Library) {
+	if lib == nil {
+		i.item = nil
+		return
+	}
+	i.item = *lib
+	i.offset = 0
+}
+
+// SetLibraryStates sets the library sync states for displaying item counts
+func (i *Inspector) SetLibraryStates(states map[string]LibrarySyncState) {
+	i.libraryStates = states
+}
+
 // SetSize updates the component dimensions
 func (i *Inspector) SetSize(width, height int) {
 	i.width = width
 	i.height = height
-	// Calculate max visible lines (reserve space for border and scroll indicators)
-	i.maxVisible = height - InspectorBorderHeight - InspectorScrollIndicators
+	// Calculate max visible lines (reserve space for border, scroll indicators, and title)
+	i.maxVisible = height - InspectorBorderHeight - InspectorScrollIndicators - 1 // -1 for title
 	if i.maxVisible < 1 {
 		i.maxVisible = 1
 	}
@@ -192,7 +210,10 @@ func (i Inspector) View() string {
 		footer = styles.DimStyle.Render("↓ more")
 	}
 
-	content := header + "\n" + strings.Join(visibleLines, "\n") + "\n" + footer
+	// Title line (styled, matching other columns)
+	titleLine := styles.AccentStyle.Render(styles.Truncate("Info", contentWidth))
+
+	content := titleLine + "\n" + header + "\n" + strings.Join(visibleLines, "\n") + "\n" + footer
 
 	// Subtract frame (border) size so total rendered size equals i.width x i.height
 	frameW, frameH := style.GetFrameSize()
@@ -206,12 +227,22 @@ func (i Inspector) View() string {
 // renderInspector renders the inspector panel content
 func (i Inspector) renderInspector(width int) string {
 	switch v := i.item.(type) {
+	case *domain.MediaItem:
+		return i.renderMediaItemInspector(*v, width)
 	case domain.MediaItem:
 		return i.renderMediaItemInspector(v, width)
+	case *domain.Show:
+		return i.renderShowInspector(*v, width)
 	case domain.Show:
 		return i.renderShowInspector(v, width)
+	case *domain.Season:
+		return i.renderSeasonInspector(*v, width)
 	case domain.Season:
 		return i.renderSeasonInspector(v, width)
+	case *domain.Library:
+		return i.renderLibraryInspector(*v, width)
+	case domain.Library:
+		return i.renderLibraryInspector(v, width)
 	default:
 		return styles.DimStyle.Render("No item selected")
 	}
@@ -225,12 +256,12 @@ func (i Inspector) renderMediaItemInspector(item domain.MediaItem, width int) st
 	if item.Type == domain.MediaTypeEpisode {
 		title = fmt.Sprintf("%s - %s", item.EpisodeCode(), item.Title)
 	}
-	b.WriteString(styles.TitleStyle.Width(width).Render(title))
+	b.WriteString(styles.TitleStyle.Render(styles.Truncate(title, width)))
 	b.WriteString("\n")
 
 	// Show title for episodes
 	if item.ShowTitle != "" {
-		b.WriteString(styles.SubtitleStyle.Render(item.ShowTitle))
+		b.WriteString(styles.SubtitleStyle.Render(styles.Truncate(item.ShowTitle, width)))
 		b.WriteString("\n")
 	}
 
@@ -272,7 +303,7 @@ func (i Inspector) renderShowInspector(show domain.Show, width int) string {
 	var b strings.Builder
 
 	// Title
-	b.WriteString(styles.TitleStyle.Width(width).Render(show.Title))
+	b.WriteString(styles.TitleStyle.Render(styles.Truncate(show.Title, width)))
 	b.WriteString("\n")
 
 	// Year
@@ -306,11 +337,11 @@ func (i Inspector) renderSeasonInspector(season domain.Season, width int) string
 	var b strings.Builder
 
 	// Title
-	b.WriteString(styles.TitleStyle.Width(width).Render(season.DisplayTitle()))
+	b.WriteString(styles.TitleStyle.Render(styles.Truncate(season.DisplayTitle(), width)))
 	b.WriteString("\n")
 
 	// Show title
-	b.WriteString(styles.SubtitleStyle.Render(season.ShowTitle))
+	b.WriteString(styles.SubtitleStyle.Render(styles.Truncate(season.ShowTitle, width)))
 	b.WriteString("\n\n")
 
 	// Episode count
@@ -325,6 +356,33 @@ func (i Inspector) renderSeasonInspector(season domain.Season, width int) string
 
 	// Progress bar
 	b.WriteString(styles.RenderProgressBar(progress, width))
+
+	return b.String()
+}
+
+func (i Inspector) renderLibraryInspector(lib domain.Library, width int) string {
+	var b strings.Builder
+
+	// Library name as title
+	b.WriteString(styles.TitleStyle.Render(styles.Truncate(lib.Name, width)))
+	b.WriteString("\n\n")
+
+	// Library type
+	typeLabel := "Movies"
+	if lib.IsShowLibrary() {
+		typeLabel = "TV Shows"
+	}
+	b.WriteString(styles.DimStyle.Render(fmt.Sprintf("Type: %s", typeLabel)))
+	b.WriteString("\n")
+
+	// Item count from sync state
+	if state, ok := i.libraryStates[lib.ID]; ok && state.Loaded > 0 {
+		b.WriteString(styles.DimStyle.Render(fmt.Sprintf("Items: %d", state.Loaded)))
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n")
+	b.WriteString(styles.SubtitleStyle.Render("Press Enter to browse"))
 
 	return b.String()
 }

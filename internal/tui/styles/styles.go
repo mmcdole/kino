@@ -191,14 +191,32 @@ var (
 				Bold(true)
 )
 
+// Match highlight styles for search results
+var (
+	MatchHighlightStyle = lipgloss.NewStyle().
+				Foreground(PlexOrange).
+				Bold(true)
+
+	MatchHighlightSelectedStyle = lipgloss.NewStyle().
+					Foreground(PlexOrange).
+					Background(SlateLight).
+					Bold(true)
+)
+
 // Helper functions
 
 // Truncate truncates a string to the given width with ellipsis
 func Truncate(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
 	if len(s) <= width {
 		return s
 	}
 	if width <= 3 {
+		if width > len(s) {
+			return s
+		}
 		return s[:width]
 	}
 	return s[:width-3] + "..."

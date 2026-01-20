@@ -151,7 +151,7 @@ func (c *Client) GetLibraryDetails(ctx context.Context, libID string) (*domain.L
 // Returns (items, totalSize, error)
 // Note: If limit=0, Plex uses its default page size (typically 50-100).
 // The SERVICE layer is responsible for pagination loops if "all" items are needed.
-func (c *Client) GetMovies(ctx context.Context, libID string, offset, limit int) ([]domain.MediaItem, int, error) {
+func (c *Client) GetMovies(ctx context.Context, libID string, offset, limit int) ([]*domain.MediaItem, int, error) {
 	query := url.Values{}
 	query.Set("X-Plex-Container-Start", strconv.Itoa(offset))
 	if limit > 0 {
@@ -182,7 +182,7 @@ func (c *Client) GetMovies(ctx context.Context, libID string, offset, limit int)
 // Returns (items, totalSize, error)
 // Note: If limit=0, Plex uses its default page size (typically 50-100).
 // The SERVICE layer is responsible for pagination loops if "all" items are needed.
-func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) ([]domain.Show, int, error) {
+func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) ([]*domain.Show, int, error) {
 	query := url.Values{}
 	query.Set("X-Plex-Container-Start", strconv.Itoa(offset))
 	if limit > 0 {
@@ -209,8 +209,100 @@ func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) 
 	return MapShows(container.Metadata, c.baseURL), totalSize, nil
 }
 
+const defaultBatchSize = 200
+
+// GetAllMovies fetches all movies, handling pagination internally
+func (c *Client) GetAllMovies(ctx context.Context, libID string) ([]*domain.MediaItem, error) {
+	var allMovies []*domain.MediaItem
+	offset := 0
+
+	for {
+		movies, total, err := c.GetMovies(ctx, libID, offset, defaultBatchSize)
+		if err != nil {
+			return nil, err
+		}
+
+		allMovies = append(allMovies, movies...)
+
+		if len(allMovies) >= total || len(movies) == 0 {
+			break
+		}
+		offset += defaultBatchSize
+	}
+
+	return allMovies, nil
+}
+
+// GetAllShows fetches all shows, handling pagination internally
+func (c *Client) GetAllShows(ctx context.Context, libID string) ([]*domain.Show, error) {
+	var allShows []*domain.Show
+	offset := 0
+
+	for {
+		shows, total, err := c.GetShows(ctx, libID, offset, defaultBatchSize)
+		if err != nil {
+			return nil, err
+		}
+
+		allShows = append(allShows, shows...)
+
+		if len(allShows) >= total || len(shows) == 0 {
+			break
+		}
+		offset += defaultBatchSize
+	}
+
+	return allShows, nil
+}
+
+// GetMoviesWithProgress fetches movies with progress callback for UI updates
+func (c *Client) GetMoviesWithProgress(ctx context.Context, libID string, progress func([]*domain.MediaItem, int, int)) error {
+	offset := 0
+	loaded := 0
+
+	for {
+		movies, total, err := c.GetMovies(ctx, libID, offset, defaultBatchSize)
+		if err != nil {
+			return err
+		}
+
+		loaded += len(movies)
+		progress(movies, loaded, total)
+
+		if loaded >= total || len(movies) == 0 {
+			break
+		}
+		offset += defaultBatchSize
+	}
+
+	return nil
+}
+
+// GetShowsWithProgress fetches shows with progress callback for UI updates
+func (c *Client) GetShowsWithProgress(ctx context.Context, libID string, progress func([]*domain.Show, int, int)) error {
+	offset := 0
+	loaded := 0
+
+	for {
+		shows, total, err := c.GetShows(ctx, libID, offset, defaultBatchSize)
+		if err != nil {
+			return err
+		}
+
+		loaded += len(shows)
+		progress(shows, loaded, total)
+
+		if loaded >= total || len(shows) == 0 {
+			break
+		}
+		offset += defaultBatchSize
+	}
+
+	return nil
+}
+
 // GetSeasons returns all seasons for a TV show
-func (c *Client) GetSeasons(ctx context.Context, showID string) ([]domain.Season, error) {
+func (c *Client) GetSeasons(ctx context.Context, showID string) ([]*domain.Season, error) {
 	path := fmt.Sprintf("/library/metadata/%s/children", showID)
 	body, err := c.doRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
@@ -226,7 +318,7 @@ func (c *Client) GetSeasons(ctx context.Context, showID string) ([]domain.Season
 }
 
 // GetEpisodes returns all episodes for a season
-func (c *Client) GetEpisodes(ctx context.Context, seasonID string) ([]domain.MediaItem, error) {
+func (c *Client) GetEpisodes(ctx context.Context, seasonID string) ([]*domain.MediaItem, error) {
 	path := fmt.Sprintf("/library/metadata/%s/children", seasonID)
 	body, err := c.doRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
@@ -241,23 +333,8 @@ func (c *Client) GetEpisodes(ctx context.Context, seasonID string) ([]domain.Med
 	return MapEpisodes(container.Metadata, c.baseURL), nil
 }
 
-// GetOnDeck returns items from the "Continue Watching" section
-func (c *Client) GetOnDeck(ctx context.Context) ([]domain.MediaItem, error) {
-	body, err := c.doRequest(ctx, http.MethodGet, "/library/onDeck", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	container, err := c.parseResponse(body)
-	if err != nil {
-		return nil, err
-	}
-
-	return MapOnDeck(container.Metadata, c.baseURL), nil
-}
-
 // GetRecentlyAdded returns recently added items from a library
-func (c *Client) GetRecentlyAdded(ctx context.Context, libID string, limit int) ([]domain.MediaItem, error) {
+func (c *Client) GetRecentlyAdded(ctx context.Context, libID string, limit int) ([]*domain.MediaItem, error) {
 	query := url.Values{}
 	query.Set("X-Plex-Container-Size", strconv.Itoa(limit))
 
@@ -290,7 +367,13 @@ func (c *Client) Search(ctx context.Context, query string) ([]domain.MediaItem, 
 		return nil, err
 	}
 
-	return MapOnDeck(container.Metadata, c.baseURL), nil
+	// Convert pointer slice to value slice for the Search interface
+	ptrs := MapOnDeck(container.Metadata, c.baseURL)
+	results := make([]domain.MediaItem, len(ptrs))
+	for i, p := range ptrs {
+		results[i] = *p
+	}
+	return results, nil
 }
 
 // ResolvePlayableURL returns a direct playback URL for an item
@@ -350,7 +433,7 @@ func (c *Client) GetNextEpisode(ctx context.Context, episodeID string) (*domain.
 	// Find the next episode
 	for i, ep := range episodes {
 		if ep.ID == episodeID && i+1 < len(episodes) {
-			return &episodes[i+1], nil
+			return episodes[i+1], nil
 		}
 	}
 

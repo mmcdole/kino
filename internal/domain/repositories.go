@@ -14,23 +14,33 @@ type LibraryRepository interface {
 
 	// GetMovies returns paginated movies from a movie library
 	// Returns (items, totalSize, error) for pagination support
-	GetMovies(ctx context.Context, libID string, offset, limit int) ([]MediaItem, int, error)
+	GetMovies(ctx context.Context, libID string, offset, limit int) ([]*MediaItem, int, error)
 
 	// GetShows returns paginated TV shows from a show library
 	// Returns (items, totalSize, error) for pagination support
-	GetShows(ctx context.Context, libID string, offset, limit int) ([]Show, int, error)
+	GetShows(ctx context.Context, libID string, offset, limit int) ([]*Show, int, error)
+
+	// GetAllMovies returns all movies in a library (handles pagination internally)
+	GetAllMovies(ctx context.Context, libID string) ([]*MediaItem, error)
+
+	// GetAllShows returns all TV shows in a library (handles pagination internally)
+	GetAllShows(ctx context.Context, libID string) ([]*Show, error)
+
+	// GetMoviesWithProgress fetches movies and reports progress via callback
+	// The callback receives each batch as it's fetched: (batch, loadedSoFar, total)
+	GetMoviesWithProgress(ctx context.Context, libID string, progress func([]*MediaItem, int, int)) error
+
+	// GetShowsWithProgress fetches shows and reports progress via callback
+	GetShowsWithProgress(ctx context.Context, libID string, progress func([]*Show, int, int)) error
 
 	// GetSeasons returns all seasons for a TV show
-	GetSeasons(ctx context.Context, showID string) ([]Season, error)
+	GetSeasons(ctx context.Context, showID string) ([]*Season, error)
 
 	// GetEpisodes returns all episodes for a season
-	GetEpisodes(ctx context.Context, seasonID string) ([]MediaItem, error)
-
-	// GetOnDeck returns items from the "Continue Watching" section
-	GetOnDeck(ctx context.Context) ([]MediaItem, error)
+	GetEpisodes(ctx context.Context, seasonID string) ([]*MediaItem, error)
 
 	// GetRecentlyAdded returns recently added items from a library
-	GetRecentlyAdded(ctx context.Context, libID string, limit int) ([]MediaItem, error)
+	GetRecentlyAdded(ctx context.Context, libID string, limit int) ([]*MediaItem, error)
 }
 
 // SearchRepository provides search functionality across libraries

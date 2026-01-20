@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -78,20 +79,6 @@ func LoadEpisodesCmd(svc *service.LibraryService, seasonID string) tea.Cmd {
 			return ErrMsg{Err: err, Context: "loading episodes"}
 		}
 		return EpisodesLoadedMsg{Episodes: episodes, SeasonID: seasonID}
-	}
-}
-
-// LoadOnDeckCmd loads on deck items
-func LoadOnDeckCmd(svc *service.LibraryService) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		items, err := svc.GetOnDeck(ctx)
-		if err != nil {
-			return ErrMsg{Err: err, Context: "loading on deck"}
-		}
-		return OnDeckLoadedMsg{Items: items}
 	}
 }
 
@@ -194,7 +181,7 @@ func LoadAllForGlobalSearchCmd(libSvc *service.LibraryService, searchSvc *servic
 					skippedLibraries++
 					continue // Skip - not cached yet
 				}
-				// Index movies
+				// Index movies (already pointers)
 				items := make([]service.FilterItem, len(movies))
 				for i, movie := range movies {
 					items[i] = service.FilterItem{
@@ -217,7 +204,7 @@ func LoadAllForGlobalSearchCmd(libSvc *service.LibraryService, searchSvc *servic
 					skippedLibraries++
 					continue // Skip - not cached yet
 				}
-				// Index shows
+				// Index shows (already pointers)
 				items := make([]service.FilterItem, len(shows))
 				for i, show := range shows {
 					items[i] = service.FilterItem{
@@ -254,11 +241,17 @@ func SyncLibraryCmd(
 	force bool,
 ) tea.Cmd {
 	return func() tea.Msg {
+		// Use a generous timeout instead of Background
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+
 		// Create a channel for this sync operation
 		progressCh := make(chan service.SyncProgress)
 
 		// Start the background work
-		go libSvc.SmartSync(context.Background(), lib, force, progressCh)
+		go func() {
+			defer cancel()
+			libSvc.SmartSync(ctx, lib, force, progressCh)
+		}()
 
 		// Read the first message and return it with continuation context
 		return readSyncProgress(lib, progressCh, searchSvc)
@@ -274,8 +267,13 @@ func readSyncProgress(
 ) tea.Msg {
 	progress, ok := <-progressCh
 	if !ok {
-		// Channel closed unexpectedly - return nil
-		return nil
+		// Channel closed unexpectedly - sync was cancelled or errored
+		return LibrarySyncProgressMsg{
+			LibraryID:   lib.ID,
+			LibraryType: lib.Type,
+			Done:        true,
+			Error:       fmt.Errorf("sync cancelled"),
+		}
 	}
 
 	// Index chunk immediately for incremental search
@@ -283,9 +281,9 @@ func readSyncProgress(
 		// Calculate offset: total loaded minus current chunk size
 		var chunkSize int
 		switch v := progress.Items.(type) {
-		case []domain.MediaItem:
+		case []*domain.MediaItem:
 			chunkSize = len(v)
-		case []domain.Show:
+		case []*domain.Show:
 			chunkSize = len(v)
 		}
 		offset := progress.Loaded - chunkSize
@@ -340,7 +338,7 @@ func SyncAllLibrariesCmd(
 // offset is the starting index of this chunk in the full library list
 func indexChunkForSearch(searchSvc *service.SearchService, items interface{}, lib domain.Library, offset int) {
 	switch v := items.(type) {
-	case []domain.MediaItem:
+	case []*domain.MediaItem:
 		filterItems := make([]service.FilterItem, len(v))
 		for i, movie := range v {
 			filterItems[i] = service.FilterItem{
@@ -356,7 +354,7 @@ func indexChunkForSearch(searchSvc *service.SearchService, items interface{}, li
 		}
 		searchSvc.IndexForFilter(filterItems)
 
-	case []domain.Show:
+	case []*domain.Show:
 		filterItems := make([]service.FilterItem, len(v))
 		for i, show := range v {
 			filterItems[i] = service.FilterItem{

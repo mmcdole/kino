@@ -40,13 +40,14 @@ func MapLibrary(d Directory) *domain.Library {
 }
 
 // MapMovies converts Plex metadata to domain media items (movies)
-func MapMovies(metadata []Metadata, serverURL string) []domain.MediaItem {
-	items := make([]domain.MediaItem, 0, len(metadata))
+func MapMovies(metadata []Metadata, serverURL string) []*domain.MediaItem {
+	items := make([]*domain.MediaItem, 0, len(metadata))
 	for _, m := range metadata {
 		if m.Type != "movie" {
 			continue
 		}
-		items = append(items, mapMovie(m, serverURL))
+		item := mapMovie(m, serverURL)
+		items = append(items, &item)
 	}
 	return items
 }
@@ -81,13 +82,14 @@ func mapMovie(m Metadata, serverURL string) domain.MediaItem {
 }
 
 // MapShows converts Plex metadata to domain shows
-func MapShows(metadata []Metadata, serverURL string) []domain.Show {
-	shows := make([]domain.Show, 0, len(metadata))
+func MapShows(metadata []Metadata, serverURL string) []*domain.Show {
+	shows := make([]*domain.Show, 0, len(metadata))
 	for _, m := range metadata {
 		if m.Type != "show" {
 			continue
 		}
-		shows = append(shows, mapShow(m, serverURL))
+		show := mapShow(m, serverURL)
+		shows = append(shows, &show)
 	}
 	return shows
 }
@@ -115,13 +117,14 @@ func mapShow(m Metadata, serverURL string) domain.Show {
 }
 
 // MapSeasons converts Plex metadata to domain seasons
-func MapSeasons(metadata []Metadata, serverURL string) []domain.Season {
-	seasons := make([]domain.Season, 0, len(metadata))
+func MapSeasons(metadata []Metadata, serverURL string) []*domain.Season {
+	seasons := make([]*domain.Season, 0, len(metadata))
 	for _, m := range metadata {
 		if m.Type != "season" {
 			continue
 		}
-		seasons = append(seasons, mapSeason(m, serverURL))
+		season := mapSeason(m, serverURL)
+		seasons = append(seasons, &season)
 	}
 	return seasons
 }
@@ -141,13 +144,14 @@ func mapSeason(m Metadata, serverURL string) domain.Season {
 }
 
 // MapEpisodes converts Plex metadata to domain media items (episodes)
-func MapEpisodes(metadata []Metadata, serverURL string) []domain.MediaItem {
-	items := make([]domain.MediaItem, 0, len(metadata))
+func MapEpisodes(metadata []Metadata, serverURL string) []*domain.MediaItem {
+	items := make([]*domain.MediaItem, 0, len(metadata))
 	for _, m := range metadata {
 		if m.Type != "episode" {
 			continue
 		}
-		items = append(items, mapEpisode(m, serverURL))
+		item := mapEpisode(m, serverURL)
+		items = append(items, &item)
 	}
 	return items
 }
@@ -187,14 +191,16 @@ func mapEpisode(m Metadata, serverURL string) domain.MediaItem {
 }
 
 // MapOnDeck converts Plex metadata to domain media items for On Deck
-func MapOnDeck(metadata []Metadata, serverURL string) []domain.MediaItem {
-	items := make([]domain.MediaItem, 0, len(metadata))
+func MapOnDeck(metadata []Metadata, serverURL string) []*domain.MediaItem {
+	items := make([]*domain.MediaItem, 0, len(metadata))
 	for _, m := range metadata {
 		switch m.Type {
 		case "movie":
-			items = append(items, mapMovie(m, serverURL))
+			item := mapMovie(m, serverURL)
+			items = append(items, &item)
 		case "episode":
-			items = append(items, mapEpisode(m, serverURL))
+			item := mapEpisode(m, serverURL)
+			items = append(items, &item)
 		}
 	}
 	return items

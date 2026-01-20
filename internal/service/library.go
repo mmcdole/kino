@@ -36,7 +36,7 @@ type SyncProgress struct {
 	LibraryType string
 	Loaded      int         // Items loaded so far
 	Total       int         // Total items (from first response)
-	Items       interface{} // Current chunk: []MediaItem or []Show
+	Items       interface{} // Current chunk: []*MediaItem or []*Show
 	Done        bool
 	FromDisk    bool
 	Error       error
@@ -132,7 +132,7 @@ func (s *LibraryService) SmartSync(
 			s.logger.Debug("disk cache valid", "key", cacheKey, "cacheTS", entry.ServerUpdatedAt, "serverTS", lib.UpdatedAt)
 
 			if lib.Type == "movie" {
-				var movies []domain.MediaItem
+				var movies []*domain.MediaItem
 				if err := json.Unmarshal(entry.Items, &movies); err == nil {
 					s.setCache(cacheKey, movies)
 					progressCh <- SyncProgress{
@@ -147,7 +147,7 @@ func (s *LibraryService) SmartSync(
 					return
 				}
 			} else if lib.Type == "show" {
-				var shows []domain.Show
+				var shows []*domain.Show
 				if err := json.Unmarshal(entry.Items, &shows); err == nil {
 					s.setCache(cacheKey, shows)
 					progressCh <- SyncProgress{
@@ -177,9 +177,17 @@ func (s *LibraryService) SmartSync(
 func (s *LibraryService) syncMovies(ctx context.Context, lib domain.Library, serverTS int64, progressCh chan<- SyncProgress) {
 	cacheKey := "movies:" + lib.ID
 	offset := 0
-	var allMovies []domain.MediaItem
+	var allMovies []*domain.MediaItem
 
 	for {
+		// Check for cancellation before fetching
+		select {
+		case <-ctx.Done():
+			s.logger.Info("sync cancelled", "libID", lib.ID)
+			return
+		default:
+		}
+
 		movies, total, err := s.repo.GetMovies(ctx, lib.ID, offset, syncChunkSize)
 		if err != nil {
 			s.logger.Error("failed to get movies chunk", "error", err, "offset", offset)
@@ -190,13 +198,19 @@ func (s *LibraryService) syncMovies(ctx context.Context, lib domain.Library, ser
 		allMovies = append(allMovies, movies...)
 		done := len(allMovies) >= total || len(movies) == 0
 
-		progressCh <- SyncProgress{
+		// Send progress, but check for cancellation
+		select {
+		case progressCh <- SyncProgress{
 			LibraryID:   lib.ID,
 			LibraryType: lib.Type,
 			Loaded:      len(allMovies),
 			Total:       total,
 			Items:       movies, // Just this chunk
 			Done:        done,
+		}:
+		case <-ctx.Done():
+			s.logger.Info("sync cancelled during progress send", "libID", lib.ID)
+			return
 		}
 
 		if done {
@@ -215,9 +229,17 @@ func (s *LibraryService) syncMovies(ctx context.Context, lib domain.Library, ser
 func (s *LibraryService) syncShows(ctx context.Context, lib domain.Library, serverTS int64, progressCh chan<- SyncProgress) {
 	cacheKey := "shows:" + lib.ID
 	offset := 0
-	var allShows []domain.Show
+	var allShows []*domain.Show
 
 	for {
+		// Check for cancellation before fetching
+		select {
+		case <-ctx.Done():
+			s.logger.Info("sync cancelled", "libID", lib.ID)
+			return
+		default:
+		}
+
 		shows, total, err := s.repo.GetShows(ctx, lib.ID, offset, syncChunkSize)
 		if err != nil {
 			s.logger.Error("failed to get shows chunk", "error", err, "offset", offset)
@@ -228,13 +250,19 @@ func (s *LibraryService) syncShows(ctx context.Context, lib domain.Library, serv
 		allShows = append(allShows, shows...)
 		done := len(allShows) >= total || len(shows) == 0
 
-		progressCh <- SyncProgress{
+		// Send progress, but check for cancellation
+		select {
+		case progressCh <- SyncProgress{
 			LibraryID:   lib.ID,
 			LibraryType: lib.Type,
 			Loaded:      len(allShows),
 			Total:       total,
 			Items:       shows, // Just this chunk
 			Done:        done,
+		}:
+		case <-ctx.Done():
+			s.logger.Info("sync cancelled during progress send", "libID", lib.ID)
+			return
 		}
 
 		if done {
@@ -258,38 +286,28 @@ func (s *LibraryService) getCacheKeyForLib(lib domain.Library) string {
 }
 
 // GetMovies returns all movies from a library
-func (s *LibraryService) GetMovies(ctx context.Context, libID string) ([]domain.MediaItem, error) {
+func (s *LibraryService) GetMovies(ctx context.Context, libID string) ([]*domain.MediaItem, error) {
 	cacheKey := "movies:" + libID
 
 	// 1. Check memory cache
 	if cached, ok := s.getFromCache(cacheKey); ok {
 		s.logger.Debug("memory cache hit", "key", cacheKey)
-		return cached.([]domain.MediaItem), nil
+		return cached.([]*domain.MediaItem), nil
 	}
 
 	// 2. Check disk cache (with legacy format support)
-	var movies []domain.MediaItem
+	var movies []*domain.MediaItem
 	if s.loadFromDiskLegacy(cacheKey, &movies) {
 		s.logger.Debug("disk cache hit", "key", cacheKey, "count", len(movies))
 		s.setCache(cacheKey, movies) // Populate memory cache
 		return movies, nil
 	}
 
-	// 3. Fetch from API using pagination loop
-	offset := 0
-	var allMovies []domain.MediaItem
-	for {
-		batch, total, err := s.repo.GetMovies(ctx, libID, offset, syncChunkSize)
-		if err != nil {
-			s.logger.Error("failed to get movies", "error", err, "libID", libID)
-			return nil, err
-		}
-
-		allMovies = append(allMovies, batch...)
-		if len(allMovies) >= total || len(batch) == 0 {
-			break
-		}
-		offset += syncChunkSize
+	// 3. Fetch from API (adapter handles pagination)
+	allMovies, err := s.repo.GetAllMovies(ctx, libID)
+	if err != nil {
+		s.logger.Error("failed to get movies", "error", err, "libID", libID)
+		return nil, err
 	}
 
 	// 4. Store in both caches
@@ -301,38 +319,28 @@ func (s *LibraryService) GetMovies(ctx context.Context, libID string) ([]domain.
 }
 
 // GetShows returns all TV shows from a library
-func (s *LibraryService) GetShows(ctx context.Context, libID string) ([]domain.Show, error) {
+func (s *LibraryService) GetShows(ctx context.Context, libID string) ([]*domain.Show, error) {
 	cacheKey := "shows:" + libID
 
 	// 1. Check memory cache
 	if cached, ok := s.getFromCache(cacheKey); ok {
 		s.logger.Debug("memory cache hit", "key", cacheKey)
-		return cached.([]domain.Show), nil
+		return cached.([]*domain.Show), nil
 	}
 
 	// 2. Check disk cache (with legacy format support)
-	var shows []domain.Show
+	var shows []*domain.Show
 	if s.loadFromDiskLegacy(cacheKey, &shows) {
 		s.logger.Debug("disk cache hit", "key", cacheKey, "count", len(shows))
 		s.setCache(cacheKey, shows) // Populate memory cache
 		return shows, nil
 	}
 
-	// 3. Fetch from API using pagination loop
-	offset := 0
-	var allShows []domain.Show
-	for {
-		batch, total, err := s.repo.GetShows(ctx, libID, offset, syncChunkSize)
-		if err != nil {
-			s.logger.Error("failed to get shows", "error", err, "libID", libID)
-			return nil, err
-		}
-
-		allShows = append(allShows, batch...)
-		if len(allShows) >= total || len(batch) == 0 {
-			break
-		}
-		offset += syncChunkSize
+	// 3. Fetch from API (adapter handles pagination)
+	allShows, err := s.repo.GetAllShows(ctx, libID)
+	if err != nil {
+		s.logger.Error("failed to get shows", "error", err, "libID", libID)
+		return nil, err
 	}
 
 	// 4. Store in both caches
@@ -344,31 +352,31 @@ func (s *LibraryService) GetShows(ctx context.Context, libID string) ([]domain.S
 }
 
 // GetCachedMovies returns movies only if cached in memory, nil otherwise (non-blocking)
-func (s *LibraryService) GetCachedMovies(libID string) []domain.MediaItem {
+func (s *LibraryService) GetCachedMovies(libID string) []*domain.MediaItem {
 	cacheKey := "movies:" + libID
 	if cached, ok := s.getFromCache(cacheKey); ok {
-		return cached.([]domain.MediaItem)
+		return cached.([]*domain.MediaItem)
 	}
 	return nil
 }
 
 // GetCachedShows returns shows only if cached in memory, nil otherwise (non-blocking)
-func (s *LibraryService) GetCachedShows(libID string) []domain.Show {
+func (s *LibraryService) GetCachedShows(libID string) []*domain.Show {
 	cacheKey := "shows:" + libID
 	if cached, ok := s.getFromCache(cacheKey); ok {
-		return cached.([]domain.Show)
+		return cached.([]*domain.Show)
 	}
 	return nil
 }
 
 // GetSeasons returns all seasons for a TV show
-func (s *LibraryService) GetSeasons(ctx context.Context, showID string) ([]domain.Season, error) {
+func (s *LibraryService) GetSeasons(ctx context.Context, showID string) ([]*domain.Season, error) {
 	cacheKey := "seasons:" + showID
 
 	// Check cache
 	if cached, ok := s.getFromCache(cacheKey); ok {
 		s.logger.Debug("cache hit", "key", cacheKey)
-		return cached.([]domain.Season), nil
+		return cached.([]*domain.Season), nil
 	}
 
 	// Fetch from repository
@@ -386,13 +394,13 @@ func (s *LibraryService) GetSeasons(ctx context.Context, showID string) ([]domai
 }
 
 // GetEpisodes returns all episodes for a season
-func (s *LibraryService) GetEpisodes(ctx context.Context, seasonID string) ([]domain.MediaItem, error) {
+func (s *LibraryService) GetEpisodes(ctx context.Context, seasonID string) ([]*domain.MediaItem, error) {
 	cacheKey := "episodes:" + seasonID
 
 	// Check cache
 	if cached, ok := s.getFromCache(cacheKey); ok {
 		s.logger.Debug("cache hit", "key", cacheKey)
-		return cached.([]domain.MediaItem), nil
+		return cached.([]*domain.MediaItem), nil
 	}
 
 	// Fetch from repository
@@ -409,32 +417,8 @@ func (s *LibraryService) GetEpisodes(ctx context.Context, seasonID string) ([]do
 	return episodes, nil
 }
 
-// GetOnDeck returns items from the "Continue Watching" section
-func (s *LibraryService) GetOnDeck(ctx context.Context) ([]domain.MediaItem, error) {
-	cacheKey := "ondeck"
-
-	// Check cache
-	if cached, ok := s.getFromCache(cacheKey); ok {
-		s.logger.Debug("cache hit", "key", cacheKey)
-		return cached.([]domain.MediaItem), nil
-	}
-
-	// Fetch from repository
-	items, err := s.repo.GetOnDeck(ctx)
-	if err != nil {
-		s.logger.Error("failed to get on deck", "error", err)
-		return nil, err
-	}
-
-	// Store in cache
-	s.setCache(cacheKey, items)
-	s.logger.Debug("loaded on deck", "count", len(items))
-
-	return items, nil
-}
-
 // GetRecentlyAdded returns recently added items from a library
-func (s *LibraryService) GetRecentlyAdded(ctx context.Context, libID string, limit int) ([]domain.MediaItem, error) {
+func (s *LibraryService) GetRecentlyAdded(ctx context.Context, libID string, limit int) ([]*domain.MediaItem, error) {
 	if limit <= 0 {
 		limit = defaultPageSize
 	}
@@ -444,7 +428,7 @@ func (s *LibraryService) GetRecentlyAdded(ctx context.Context, libID string, lim
 	// Check cache
 	if cached, ok := s.getFromCache(cacheKey); ok {
 		s.logger.Debug("cache hit", "key", cacheKey)
-		return cached.([]domain.MediaItem), nil
+		return cached.([]*domain.MediaItem), nil
 	}
 
 	// Fetch from repository
@@ -503,9 +487,6 @@ func (s *LibraryService) InvalidateItem(item domain.MediaItem) {
 	case domain.MediaTypeEpisode:
 		delete(s.cache, "episodes:"+item.ParentID)
 	}
-
-	// Also invalidate on deck
-	delete(s.cache, "ondeck")
 
 	s.logger.Debug("invalidated cache for item", "itemID", item.ID)
 }
@@ -572,7 +553,7 @@ func (s *LibraryService) loadDiskCacheEntry(key string) (*diskCacheEntry, bool) 
 	return &entry, true
 }
 
-// saveDiskCacheEntry saves data with server timestamp
+// saveDiskCacheEntry saves data with server timestamp using atomic write
 func (s *LibraryService) saveDiskCacheEntry(key string, data interface{}, serverTS int64) {
 	if s.cacheDir == "" {
 		return
@@ -599,8 +580,19 @@ func (s *LibraryService) saveDiskCacheEntry(key string, data interface{}, server
 	}
 
 	path := s.diskCachePath(key)
-	if err := os.WriteFile(path, entryBytes, 0644); err != nil {
-		s.logger.Error("failed to write cache", "error", err, "path", path)
+	tmpPath := path + ".tmp"
+
+	// Write to temp file first
+	if err := os.WriteFile(tmpPath, entryBytes, 0644); err != nil {
+		s.logger.Error("failed to write temp cache", "error", err, "path", tmpPath)
+		return
+	}
+
+	// Atomic rename
+	if err := os.Rename(tmpPath, path); err != nil {
+		s.logger.Error("failed to rename cache file", "error", err, "path", path)
+		os.Remove(tmpPath) // Clean up temp file
+		return
 	}
 }
 
@@ -631,7 +623,7 @@ func (s *LibraryService) loadFromDiskLegacy(key string, target interface{}) bool
 	return json.Unmarshal(data, target) == nil
 }
 
-// saveToDisk saves data to disk cache (legacy format for backward compat)
+// saveToDisk saves data to disk cache using atomic write (legacy format for backward compat)
 func (s *LibraryService) saveToDisk(key string, data interface{}) {
 	if s.cacheDir == "" {
 		return
@@ -641,13 +633,23 @@ func (s *LibraryService) saveToDisk(key string, data interface{}) {
 	defer s.diskMu.Unlock()
 
 	path := s.diskCachePath(key)
+	tmpPath := path + ".tmp"
+
 	bytes, err := json.Marshal(data)
 	if err != nil {
 		s.logger.Error("failed to marshal cache", "error", err)
 		return
 	}
-	if err := os.WriteFile(path, bytes, 0644); err != nil {
-		s.logger.Error("failed to write cache", "error", err, "path", path)
+
+	if err := os.WriteFile(tmpPath, bytes, 0644); err != nil {
+		s.logger.Error("failed to write temp cache", "error", err, "path", tmpPath)
+		return
+	}
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		s.logger.Error("failed to rename cache file", "error", err, "path", path)
+		os.Remove(tmpPath)
+		return
 	}
 }
 

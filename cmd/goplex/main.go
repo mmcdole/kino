@@ -47,7 +47,7 @@ func run() error {
 	plexClient := plex.NewClient(cfg.Server.URL, cfg.Server.Token, logger)
 
 	// Create launcher (uses configured player or system default)
-	launcher := adapter.NewLauncher(cfg.Player.Command, cfg.Player.Args, logger)
+	launcher := adapter.NewLauncher(cfg.Player.Command, cfg.Player.Args, cfg.Player.StartFlag, logger)
 
 	// Create services
 	librarySvc := service.NewLibraryService(plexClient, logger)
