@@ -15,11 +15,12 @@ import (
 type NavigationContext struct {
 	LibraryID   string
 	LibraryName string
+	MovieID     string // For movie deep links
 	ShowID      string
 	ShowTitle   string
 	SeasonID    string
 	SeasonNum   int
-	ItemIndex   int // Cursor position in the list
+	EpisodeID   string // For episode deep links
 }
 
 // FilterItem represents an item in the global filter index

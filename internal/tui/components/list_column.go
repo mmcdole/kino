@@ -189,22 +189,36 @@ func (c *ListColumn) Update(msg tea.Msg) (Column, tea.Cmd) {
 				c.cursor--
 				c.ensureVisible()
 			}
-		case "g":
+		case "g", "home":
 			c.cursor = 0
 			c.offset = 0
-		case "G":
+		case "G", "end":
 			c.cursor = count - 1
 			c.ensureVisible()
 		case "ctrl+d":
-			// Page down
+			// Half page down
 			c.cursor += c.maxVisible / 2
 			if c.cursor >= count {
 				c.cursor = count - 1
 			}
 			c.ensureVisible()
 		case "ctrl+u":
-			// Page up
+			// Half page up
 			c.cursor -= c.maxVisible / 2
+			if c.cursor < 0 {
+				c.cursor = 0
+			}
+			c.ensureVisible()
+		case "pgdown":
+			// Full page down
+			c.cursor += c.maxVisible
+			if c.cursor >= count {
+				c.cursor = count - 1
+			}
+			c.ensureVisible()
+		case "pgup":
+			// Full page up
+			c.cursor -= c.maxVisible
 			if c.cursor < 0 {
 				c.cursor = 0
 			}
@@ -436,6 +450,59 @@ func (c *ListColumn) SelectedMediaItem() *domain.MediaItem {
 	default:
 		return nil
 	}
+}
+
+// FindIndexByID finds the index of an item by its ID. Returns -1 if not found.
+func (c *ListColumn) FindIndexByID(id string) int {
+	if id == "" {
+		return -1
+	}
+	switch c.columnType {
+	case ColumnTypeLibraries:
+		for i, lib := range c.libraries {
+			if lib.ID == id {
+				return i
+			}
+		}
+	case ColumnTypeMovies:
+		for i, m := range c.movies {
+			if m.ID == id {
+				return i
+			}
+		}
+	case ColumnTypeShows:
+		for i, s := range c.shows {
+			if s.ID == id {
+				return i
+			}
+		}
+	case ColumnTypeSeasons:
+		for i, s := range c.seasons {
+			if s.ID == id {
+				return i
+			}
+		}
+	case ColumnTypeEpisodes:
+		for i, e := range c.episodes {
+			if e.ID == id {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// SetSelectedByID finds an item by ID and selects it. Returns true on success.
+func (c *ListColumn) SetSelectedByID(id string) bool {
+	if id == "" {
+		return true
+	}
+	idx := c.FindIndexByID(id)
+	if idx < 0 {
+		return false
+	}
+	c.SetSelectedIndex(idx)
+	return true
 }
 
 // ToggleFilter activates the filter input

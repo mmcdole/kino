@@ -23,6 +23,54 @@ const (
 	StateHelp
 )
 
+// NavAwaitKind specifies what async load the plan is waiting for
+type NavAwaitKind int
+
+const (
+	AwaitNone NavAwaitKind = iota
+	AwaitMovies   // AwaitID = LibraryID
+	AwaitShows    // AwaitID = LibraryID
+	AwaitSeasons  // AwaitID = ShowID
+	AwaitEpisodes // AwaitID = SeasonID
+)
+
+// NavTarget represents a single navigation step
+type NavTarget struct {
+	ID string // item ID to select (empty = no-op, just land)
+}
+
+// NavPlan represents a multi-step navigation flow
+type NavPlan struct {
+	Targets     []NavTarget
+	CurrentStep int
+	AwaitKind   NavAwaitKind
+	AwaitID     string
+}
+
+func (p *NavPlan) IsComplete() bool {
+	return p == nil || p.CurrentStep >= len(p.Targets)
+}
+
+func (p *NavPlan) Current() *NavTarget {
+	if p.IsComplete() {
+		return nil
+	}
+	return &p.Targets[p.CurrentStep]
+}
+
+func (p *NavPlan) Advance() {
+	if p != nil {
+		p.CurrentStep++
+	}
+}
+
+// drillResult contains the result of drilling into an item
+type drillResult struct {
+	AwaitKind NavAwaitKind
+	AwaitID   string
+	Cmd       tea.Cmd
+}
+
 // Layout proportions for Miller Columns
 const (
 	// 3-Column Smart Ratios (Inspector visible)
@@ -79,8 +127,8 @@ type Model struct {
 	LibraryStates map[string]components.LibrarySyncState // Tracks progress per library
 	SyncingCount  int                                    // Libraries still syncing
 
-	// Pending cursor position for navigation after load
-	pendingCursor int
+	// Navigation plan for deep linking
+	navPlan *NavPlan
 }
 
 // NewModel creates a new application model
@@ -166,15 +214,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Update top column with movies
 		if top := m.ColumnStack.Top(); top != nil {
 			top.SetItems(msg.Movies)
-			if m.pendingCursor > 0 {
-				top.SetSelectedIndex(m.pendingCursor)
-				m.pendingCursor = 0
-			}
 		}
 
 		m.updateInspector()
 		// Index movies for global filter
 		m.indexMoviesForFilter(msg.Movies, msg.LibraryID)
+
+		// Advance nav plan if waiting for this load
+		if cmd := m.advanceNavPlanAfterLoad(AwaitMovies, msg.LibraryID); cmd != nil {
+			return m, cmd
+		}
 		return m, nil
 
 	case ShowsLoadedMsg:
@@ -191,15 +240,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Update top column with shows
 		if top := m.ColumnStack.Top(); top != nil {
 			top.SetItems(msg.Shows)
-			if m.pendingCursor > 0 {
-				top.SetSelectedIndex(m.pendingCursor)
-				m.pendingCursor = 0
-			}
 		}
 
 		m.updateInspector()
 		// Index shows for global filter
 		m.indexShowsForFilter(msg.Shows, msg.LibraryID)
+
+		// Advance nav plan if waiting for this load
+		if cmd := m.advanceNavPlanAfterLoad(AwaitShows, msg.LibraryID); cmd != nil {
+			return m, cmd
+		}
 		return m, nil
 
 	case SeasonsLoadedMsg:
@@ -208,13 +258,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Update top column with seasons
 		if top := m.ColumnStack.Top(); top != nil {
 			top.SetItems(msg.Seasons)
-			if m.pendingCursor > 0 {
-				top.SetSelectedIndex(m.pendingCursor)
-				m.pendingCursor = 0
-			}
 		}
 
 		m.updateInspector()
+
+		// Advance nav plan if waiting for this load
+		if cmd := m.advanceNavPlanAfterLoad(AwaitSeasons, msg.ShowID); cmd != nil {
+			return m, cmd
+		}
 		return m, nil
 
 	case EpisodesLoadedMsg:
@@ -223,13 +274,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Update top column with episodes
 		if top := m.ColumnStack.Top(); top != nil {
 			top.SetItems(msg.Episodes)
-			if m.pendingCursor > 0 {
-				top.SetSelectedIndex(m.pendingCursor)
-				m.pendingCursor = 0
-			}
 		}
 
 		m.updateInspector()
+
+		// Advance nav plan if waiting for this load
+		if cmd := m.advanceNavPlanAfterLoad(AwaitEpisodes, msg.SeasonID); cmd != nil {
+			return m, cmd
+		}
 		return m, nil
 
 	case SearchResultsMsg:
@@ -255,6 +307,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case ErrMsg:
+		m.clearNavPlan()
 		m.StatusMsg = msg.Error()
 		m.StatusIsErr = true
 		m.Loading = false
@@ -467,6 +520,15 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.State = StateHelp
 		return m, nil
 
+	case "esc":
+		// Cancel active nav plan if any
+		if m.navPlan != nil {
+			m.clearNavPlan()
+			m.StatusMsg = "Navigation cancelled"
+			return m, ClearStatusCmd(2 * time.Second)
+		}
+		return m, nil
+
 	case "/":
 		// Activate filter in middle column
 		if top := m.ColumnStack.Top(); top != nil {
@@ -634,69 +696,84 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// drillIntoSelection pushes a new column for the selected item
-func (m Model) drillIntoSelection() (tea.Model, tea.Cmd) {
+// drillSelected pushes a new column for the selected item and returns await info
+func (m *Model) drillSelected() *drillResult {
 	top := m.ColumnStack.Top()
-	if top == nil {
-		return m, nil
+	if top == nil || !top.CanDrillInto() {
+		return nil
 	}
-
 	item := top.SelectedItem()
 	if item == nil {
-		return m, nil
+		return nil
 	}
-
 	cursor := top.SelectedIndex()
 
 	switch v := item.(type) {
 	case domain.Library:
-		// Drill into library -> movies or shows
-		var newCol *components.ListColumn
-		var cmd tea.Cmd
-
 		if v.Type == "movie" {
-			newCol = components.NewListColumn(components.ColumnTypeMovies, v.Name)
-			newCol.SetLoading(true)
-			cmd = LoadMoviesCmd(m.LibrarySvc, v.ID)
-		} else {
-			newCol = components.NewListColumn(components.ColumnTypeShows, v.Name)
-			newCol.SetLoading(true)
-			cmd = LoadShowsCmd(m.LibrarySvc, v.ID)
+			col := components.NewListColumn(components.ColumnTypeMovies, v.Name)
+			col.SetLoading(true)
+			m.ColumnStack.Push(col, cursor)
+			m.Loading = true
+			m.updateLayout()
+			return &drillResult{
+				AwaitKind: AwaitMovies,
+				AwaitID:   v.ID,
+				Cmd:       LoadMoviesCmd(m.LibrarySvc, v.ID),
+			}
+		}
+		// v.Type == "show"
+		col := components.NewListColumn(components.ColumnTypeShows, v.Name)
+		col.SetLoading(true)
+		m.ColumnStack.Push(col, cursor)
+		m.Loading = true
+		m.updateLayout()
+		return &drillResult{
+			AwaitKind: AwaitShows,
+			AwaitID:   v.ID,
+			Cmd:       LoadShowsCmd(m.LibrarySvc, v.ID),
 		}
 
-		m.ColumnStack.Push(newCol, cursor)
-		m.Loading = true
-		m.updateLayout()
-		return m, cmd
-
 	case *domain.Show:
-		// Drill into show -> seasons
-		newCol := components.NewListColumn(components.ColumnTypeSeasons, v.Title)
-		newCol.SetLoading(true)
-
-		m.ColumnStack.Push(newCol, cursor)
+		col := components.NewListColumn(components.ColumnTypeSeasons, v.Title)
+		col.SetLoading(true)
+		m.ColumnStack.Push(col, cursor)
 		m.Loading = true
 		m.updateLayout()
-		return m, LoadSeasonsCmd(m.LibrarySvc, v.ID)
+		return &drillResult{
+			AwaitKind: AwaitSeasons,
+			AwaitID:   v.ID,
+			Cmd:       LoadSeasonsCmd(m.LibrarySvc, v.ID),
+		}
 
 	case *domain.Season:
-		// Drill into season -> episodes
 		title := v.ShowTitle
 		if v.SeasonNum == 0 {
 			title += " - Specials"
 		} else {
 			title += fmt.Sprintf(" - S%02d", v.SeasonNum)
 		}
-		newCol := components.NewListColumn(components.ColumnTypeEpisodes, title)
-		newCol.SetLoading(true)
-
-		m.ColumnStack.Push(newCol, cursor)
+		col := components.NewListColumn(components.ColumnTypeEpisodes, title)
+		col.SetLoading(true)
+		m.ColumnStack.Push(col, cursor)
 		m.Loading = true
 		m.updateLayout()
-		return m, LoadEpisodesCmd(m.LibrarySvc, v.ID)
+		return &drillResult{
+			AwaitKind: AwaitEpisodes,
+			AwaitID:   v.ID,
+			Cmd:       LoadEpisodesCmd(m.LibrarySvc, v.ID),
+		}
 	}
+	return nil
+}
 
-	return m, nil
+// drillIntoSelection pushes a new column for the selected item
+func (m Model) drillIntoSelection() (tea.Model, tea.Cmd) {
+	result := m.drillSelected()
+	if result == nil {
+		return m, nil
+	}
+	return m, result.Cmd
 }
 
 // handleBack handles navigation back (h/backspace)
@@ -1100,10 +1177,12 @@ func (m Model) View() string {
 func (m Model) renderHelp() string {
 	help := `
 NAVIGATION                      PLAYBACK
-  h  Go back                      Enter  Play/resume
-  l  Drill in / Play              p      Play from beginning
-  j/k  Navigate up/down           w      Mark watched
-  g/G  First/last item            u      Mark unwatched
+  j/k        Up/down               Enter  Play/resume
+  h/l        Back/drill in         p      Play from start
+  g/Home     First item            w      Mark watched
+  G/End      Last item             u      Mark unwatched
+  PgUp/PgDn  Scroll page
+  Ctrl+u/d   Scroll half page
 
 SEARCH & VIEW                   OTHER
   /  Filter current column        q    Quit
@@ -1133,7 +1212,7 @@ func (m *Model) indexMoviesForFilter(movies []*domain.MediaItem, libID string) {
 			NavContext: service.NavigationContext{
 				LibraryID:   libID,
 				LibraryName: libName,
-				ItemIndex:   i,
+				MovieID:     movie.ID,
 			},
 		}
 	}
@@ -1154,7 +1233,8 @@ func (m *Model) indexShowsForFilter(shows []*domain.Show, libID string) {
 			NavContext: service.NavigationContext{
 				LibraryID:   libID,
 				LibraryName: libName,
-				ItemIndex:   i,
+				ShowID:      show.ID,
+				ShowTitle:   show.Title,
 			},
 		}
 	}
@@ -1184,7 +1264,7 @@ func (m *Model) indexEpisodesForFilter(episodes []domain.MediaItem, seasonID str
 				ShowTitle:   ep.ShowTitle,
 				SeasonID:    ep.ParentID,
 				SeasonNum:   ep.SeasonNum,
-				ItemIndex:   i,
+				EpisodeID:   ep.ID,
 			},
 		}
 	}
@@ -1211,6 +1291,68 @@ func (m Model) totalLoadedCount() int {
 	return total
 }
 
+// clearNavPlan clears the current navigation plan
+func (m *Model) clearNavPlan() {
+	m.navPlan = nil
+}
+
+// advanceNavPlanAfterLoad advances the navigation plan after an async load completes
+func (m *Model) advanceNavPlanAfterLoad(kind NavAwaitKind, id string) tea.Cmd {
+	p := m.navPlan
+	if p == nil || p.IsComplete() {
+		m.navPlan = nil
+		return nil
+	}
+	// Only advance if this is the awaited load
+	if p.AwaitKind != kind || p.AwaitID != id {
+		return nil
+	}
+
+	top := m.ColumnStack.Top()
+	if top == nil {
+		m.clearNavPlan()
+		return nil
+	}
+
+	target := p.Current()
+	if target == nil {
+		m.clearNavPlan()
+		return nil
+	}
+
+	// Apply ID selection if requested
+	if target.ID != "" {
+		lc, ok := top.(*components.ListColumn)
+		if !ok || !lc.SetSelectedByID(target.ID) {
+			m.clearNavPlan()
+			m.StatusMsg = "Item not found (library may have changed)"
+			m.StatusIsErr = true
+			return ClearStatusCmd(5 * time.Second)
+		}
+	}
+
+	p.Advance()
+
+	if p.IsComplete() {
+		m.clearNavPlan()
+		m.updateInspector()
+		return nil
+	}
+
+	// More steps: drill to next level
+	result := m.drillSelected()
+	if result == nil {
+		m.clearNavPlan()
+		m.StatusMsg = "Navigation failed"
+		m.StatusIsErr = true
+		return ClearStatusCmd(5 * time.Second)
+	}
+	// Update navPlan with await info for next load
+	m.navPlan.AwaitKind = result.AwaitKind
+	m.navPlan.AwaitID = result.AwaitID
+	return result.Cmd
+}
+
 // navigateToFilteredItem navigates to a filtered item in its context
 func (m *Model) navigateToFilteredItem(item service.FilterItem) tea.Cmd {
 	// Reset stack to library level first
@@ -1230,60 +1372,92 @@ func (m *Model) navigateToFilteredItem(item service.FilterItem) tea.Cmd {
 
 	switch item.Type {
 	case domain.MediaTypeMovie:
-		// Navigate to library and highlight movie
 		lib := m.findLibrary(item.NavContext.LibraryID)
 		if lib == nil {
 			return nil
 		}
+
+		m.navPlan = &NavPlan{
+			Targets: []NavTarget{
+				{ID: item.NavContext.MovieID},
+			},
+			CurrentStep: 0,
+			AwaitKind:   AwaitMovies,
+			AwaitID:     lib.ID,
+		}
+
 		moviesCol := components.NewListColumn(components.ColumnTypeMovies, lib.Name)
 		moviesCol.SetLoading(true)
 		m.ColumnStack.Push(moviesCol, 0)
-		m.pendingCursor = item.NavContext.ItemIndex
 		m.Loading = true
+		m.updateLayout()
 		return LoadMoviesCmd(m.LibrarySvc, item.NavContext.LibraryID)
 
 	case domain.MediaTypeShow:
-		// Navigate to library and highlight show
 		lib := m.findLibrary(item.NavContext.LibraryID)
 		if lib == nil {
 			return nil
 		}
+
+		show, ok := item.Item.(*domain.Show)
+		if !ok {
+			return nil
+		}
+
+		m.navPlan = &NavPlan{
+			Targets: []NavTarget{
+				{ID: show.ID}, // Select show
+				{},            // Land on seasons (no selection)
+			},
+			CurrentStep: 0,
+			AwaitKind:   AwaitShows,
+			AwaitID:     lib.ID,
+		}
+
 		showsCol := components.NewListColumn(components.ColumnTypeShows, lib.Name)
+
+		// If cached, populate and immediately advance
+		cachedShows := m.LibrarySvc.GetCachedShows(item.NavContext.LibraryID)
+		if cachedShows != nil {
+			showsCol.SetItems(cachedShows)
+			m.ColumnStack.Push(showsCol, 0)
+			m.updateLayout()
+			return m.advanceNavPlanAfterLoad(AwaitShows, lib.ID)
+		}
+
+		// Not cached - async load
 		showsCol.SetLoading(true)
 		m.ColumnStack.Push(showsCol, 0)
-		m.pendingCursor = item.NavContext.ItemIndex
 		m.Loading = true
+		m.updateLayout()
 		return LoadShowsCmd(m.LibrarySvc, item.NavContext.LibraryID)
 
 	case domain.MediaTypeEpisode:
-		// Navigate: Library -> Show -> Season -> Episode
 		lib := m.findLibrary(item.NavContext.LibraryID)
 		if lib == nil {
 			return nil
 		}
 
-		// Push shows column
-		showsCol := components.NewListColumn(components.ColumnTypeShows, lib.Name)
-		m.ColumnStack.Push(showsCol, 0)
-
-		// Push seasons column
-		seasonsCol := components.NewListColumn(components.ColumnTypeSeasons, item.NavContext.ShowTitle)
-		m.ColumnStack.Push(seasonsCol, 0)
-
-		// Push episodes column
-		title := item.NavContext.ShowTitle
-		if item.NavContext.SeasonNum == 0 {
-			title += " - Specials"
-		} else {
-			title += fmt.Sprintf(" - S%02d", item.NavContext.SeasonNum)
+		// Build NavPlan: Shows -> Seasons -> Episodes
+		m.navPlan = &NavPlan{
+			Targets: []NavTarget{
+				{ID: item.NavContext.ShowID},    // Step 0: Select show
+				{ID: item.NavContext.SeasonID},  // Step 1: Select season
+				{ID: item.NavContext.EpisodeID}, // Step 2: Select episode
+			},
+			CurrentStep: 0,
+			AwaitKind:   AwaitShows,
+			AwaitID:     lib.ID,
 		}
-		episodesCol := components.NewListColumn(components.ColumnTypeEpisodes, title)
-		episodesCol.SetLoading(true)
-		m.ColumnStack.Push(episodesCol, 0)
 
-		m.pendingCursor = item.NavContext.ItemIndex
+		// Push shows column (will populate when ShowsLoadedMsg arrives)
+		showsCol := components.NewListColumn(components.ColumnTypeShows, lib.Name)
+		showsCol.SetLoading(true)
+		m.ColumnStack.Push(showsCol, 0)
 		m.Loading = true
-		return LoadEpisodesCmd(m.LibrarySvc, item.NavContext.SeasonID)
+		m.updateLayout()
+
+		return LoadShowsCmd(m.LibrarySvc, item.NavContext.LibraryID)
 	}
 
 	return nil

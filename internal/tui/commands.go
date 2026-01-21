@@ -191,7 +191,7 @@ func LoadAllForGlobalSearchCmd(libSvc *service.LibraryService, searchSvc *servic
 						NavContext: service.NavigationContext{
 							LibraryID:   lib.ID,
 							LibraryName: lib.Name,
-							ItemIndex:   i,
+							MovieID:     movie.ID,
 						},
 					}
 				}
@@ -214,7 +214,8 @@ func LoadAllForGlobalSearchCmd(libSvc *service.LibraryService, searchSvc *servic
 						NavContext: service.NavigationContext{
 							LibraryID:   lib.ID,
 							LibraryName: lib.Name,
-							ItemIndex:   i,
+							ShowID:      show.ID,
+							ShowTitle:   show.Title,
 						},
 					}
 				}
@@ -348,7 +349,7 @@ func indexChunkForSearch(searchSvc *service.SearchService, items interface{}, li
 				NavContext: service.NavigationContext{
 					LibraryID:   lib.ID,
 					LibraryName: lib.Name,
-					ItemIndex:   offset + i,
+					MovieID:     movie.ID,
 				},
 			}
 		}
@@ -364,7 +365,8 @@ func indexChunkForSearch(searchSvc *service.SearchService, items interface{}, li
 				NavContext: service.NavigationContext{
 					LibraryID:   lib.ID,
 					LibraryName: lib.Name,
-					ItemIndex:   offset + i,
+					ShowID:      show.ID,
+					ShowTitle:   show.Title,
 				},
 			}
 		}
