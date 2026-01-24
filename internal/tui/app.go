@@ -109,6 +109,7 @@ type Model struct {
 	ColumnStack *ColumnStack         // Stack of navigable list columns
 	Inspector   components.Inspector // View projection (always shows details for middle column selection)
 	Omnibar     components.Omnibar     // Search modal
+	SortModal   components.SortModal   // Sort field selector
 
 	// Data
 	Libraries []domain.Library
@@ -508,6 +509,23 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 	}
 
+	// Handle sort modal if visible
+	if m.SortModal.IsVisible() {
+		handled, selection := m.SortModal.HandleKey(msg.String())
+		if handled {
+			if selection != nil {
+				// Apply sort to current column
+				if top := m.ColumnStack.Top(); top != nil {
+					if lc, ok := top.(*components.ListColumn); ok {
+						lc.ApplySort(selection.Field, selection.Direction)
+						m.updateInspector()
+					}
+				}
+			}
+			return m, nil
+		}
+	}
+
 	// Handle filter typing mode
 	if top := m.ColumnStack.Top(); top != nil {
 		if lc, ok := top.(*components.ListColumn); ok && lc.IsFilterTyping() {
@@ -548,7 +566,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "s":
+	case "f":
 		// Global search via Omnibar
 		m.Omnibar.ShowFilterMode()
 		m.Omnibar.SetSize(m.Width, m.Height)
@@ -557,6 +575,25 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.Omnibar.Init(),
 			LoadAllForGlobalSearchCmd(m.LibrarySvc, m.SearchSvc, m.Libraries),
 		)
+
+	case "s":
+		// Sort modal (only for movies/shows columns)
+		if top := m.ColumnStack.Top(); top != nil {
+			if lc, ok := top.(*components.ListColumn); ok {
+				var opts []components.SortField
+				switch lc.ColumnType() {
+				case components.ColumnTypeMovies:
+					opts = components.MovieSortOptions()
+				case components.ColumnTypeShows:
+					opts = components.ShowSortOptions()
+				}
+				if opts != nil {
+					field, dir := lc.SortState()
+					m.SortModal.Show(opts, field, dir)
+				}
+			}
+		}
+		return m, nil
 
 	case "h", "left", "backspace":
 		// Go back (pop column stack)
@@ -1208,6 +1245,13 @@ func (m Model) View() string {
 			m.Omnibar.View())
 	}
 
+	// Overlay sort modal if visible
+	if m.SortModal.IsVisible() {
+		view = lipgloss.Place(m.Width, m.Height,
+			lipgloss.Center, lipgloss.Center,
+			m.SortModal.View())
+	}
+
 	return view
 }
 
@@ -1287,9 +1331,10 @@ NAVIGATION                      PLAYBACK
   Ctrl+u/d   Scroll half page
 
 SEARCH & VIEW                   OTHER
-  /  Filter current column        q    Quit
-  s  Global search                ?    This help
-  i  Toggle inspector             Esc  Close / Cancel
+  /  Filter                        q    Quit
+  f  Global search                ?    This help
+  s  Sort                          Esc  Close / Cancel
+  i  Toggle inspector
   r  Refresh library
   R  Refresh all
 

@@ -2,6 +2,7 @@ package components
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -57,11 +58,16 @@ type ListColumn struct {
 	// Library sync states (for library column)
 	libraryStates map[string]LibrarySyncState
 
+	// Sort state
+	sortField  SortField
+	sortDir    SortDirection
+	sortedIdx  []int // sorted position → raw index (nil = default order)
+
 	// Filter state
 	filterActive bool
 	filterInput  textinput.Model
 	filterQuery  string
-	filteredIdx  []int // indices into original slice
+	filteredIdx  []int // indices into sorted slice (or raw if no sort)
 }
 
 // NewListColumn creates a new list column with the given type and title
@@ -361,6 +367,7 @@ func (c *ListColumn) SetItems(items interface{}) {
 	c.cursor = 0
 	c.offset = 0
 	c.clearFilter()
+	c.sortedIdx = nil
 
 	switch v := items.(type) {
 	case []domain.Library:
@@ -381,6 +388,11 @@ func (c *ListColumn) SetItems(items interface{}) {
 	case []*domain.Season:
 		c.seasons = v
 		c.columnType = ColumnTypeSeasons
+	}
+
+	// Re-apply current sort if active
+	if c.sortField != SortDefault {
+		c.buildSortedIdx()
 	}
 }
 
@@ -594,47 +606,41 @@ func (c *ListColumn) applyFilter() {
 }
 
 func (c *ListColumn) getTitles() []string {
-	switch c.columnType {
-	case ColumnTypeLibraries:
-		titles := make([]string, len(c.libraries))
-		for i, lib := range c.libraries {
-			titles[i] = lib.Name
+	count := c.sortedCount()
+	titles := make([]string, count)
+	for i := 0; i < count; i++ {
+		rawIdx := i
+		if c.sortedIdx != nil && i < len(c.sortedIdx) {
+			rawIdx = c.sortedIdx[i]
 		}
-		return titles
-	case ColumnTypeMovies:
-		titles := make([]string, len(c.movies))
-		for i, m := range c.movies {
-			titles[i] = m.Title
+		switch c.columnType {
+		case ColumnTypeLibraries:
+			titles[i] = c.libraries[rawIdx].Name
+		case ColumnTypeMovies:
+			titles[i] = c.movies[rawIdx].Title
+		case ColumnTypeShows:
+			titles[i] = c.shows[rawIdx].Title
+		case ColumnTypeSeasons:
+			titles[i] = c.seasons[rawIdx].DisplayTitle()
+		case ColumnTypeEpisodes:
+			titles[i] = c.episodes[rawIdx].Title
 		}
-		return titles
-	case ColumnTypeShows:
-		titles := make([]string, len(c.shows))
-		for i, s := range c.shows {
-			titles[i] = s.Title
-		}
-		return titles
-	case ColumnTypeSeasons:
-		titles := make([]string, len(c.seasons))
-		for i, s := range c.seasons {
-			titles[i] = s.DisplayTitle()
-		}
-		return titles
-	case ColumnTypeEpisodes:
-		titles := make([]string, len(c.episodes))
-		for i, e := range c.episodes {
-			titles[i] = e.Title
-		}
-		return titles
-	default:
-		return nil
 	}
+	return titles
+}
+
+func (c *ListColumn) sortedCount() int {
+	if c.sortedIdx != nil {
+		return len(c.sortedIdx)
+	}
+	return c.rawItemCount()
 }
 
 func (c *ListColumn) filteredCount() int {
 	if c.filteredIdx != nil {
 		return len(c.filteredIdx)
 	}
-	return c.rawItemCount()
+	return c.sortedCount()
 }
 
 func (c *ListColumn) rawItemCount() int {
@@ -655,10 +661,14 @@ func (c *ListColumn) rawItemCount() int {
 }
 
 func (c *ListColumn) mapIndex(i int) int {
-	if c.filteredIdx != nil && i < len(c.filteredIdx) {
-		return c.filteredIdx[i]
+	idx := i
+	if c.filteredIdx != nil && idx < len(c.filteredIdx) {
+		idx = c.filteredIdx[idx]
 	}
-	return i
+	if c.sortedIdx != nil && idx < len(c.sortedIdx) {
+		return c.sortedIdx[idx]
+	}
+	return idx
 }
 
 // Rendering
@@ -926,4 +936,162 @@ func (c *ListColumn) renderFilterBar(width int) string {
 	}
 
 	return input + countStr
+}
+
+// Sort methods
+
+// ApplySort sets the sort field and direction, rebuilds sortedIdx, and resets view
+func (c *ListColumn) ApplySort(field SortField, dir SortDirection) {
+	c.sortField = field
+	c.sortDir = dir
+	c.clearFilter()
+	c.cursor = 0
+	c.offset = 0
+
+	if field == SortDefault {
+		c.sortedIdx = nil
+		return
+	}
+
+	c.buildSortedIdx()
+}
+
+// SortState returns the current sort field and direction
+func (c *ListColumn) SortState() (SortField, SortDirection) {
+	return c.sortField, c.sortDir
+}
+
+// buildSortedIdx builds the sortedIdx mapping based on current sortField/sortDir
+func (c *ListColumn) buildSortedIdx() {
+	n := c.rawItemCount()
+	if n == 0 {
+		c.sortedIdx = nil
+		return
+	}
+
+	c.sortedIdx = make([]int, n)
+	for i := range c.sortedIdx {
+		c.sortedIdx[i] = i
+	}
+
+	sort.SliceStable(c.sortedIdx, func(a, b int) bool {
+		ia, ib := c.sortedIdx[a], c.sortedIdx[b]
+		cmp := c.compareBySortField(ia, ib)
+		if c.sortDir == SortDesc {
+			return cmp > 0
+		}
+		return cmp < 0
+	})
+}
+
+// compareBySortField compares two items by the current sort field.
+// Returns negative if i < j, 0 if equal, positive if i > j.
+func (c *ListColumn) compareBySortField(i, j int) int {
+	switch c.sortField {
+	case SortTitle:
+		return c.compareTitles(i, j)
+	case SortDateAdded:
+		return c.compareAddedAt(i, j)
+	case SortLastUpdated:
+		return c.compareUpdatedAt(i, j)
+	case SortReleased:
+		return c.compareYear(i, j)
+	default:
+		return 0
+	}
+}
+
+func (c *ListColumn) compareTitles(i, j int) int {
+	ti := c.getSortTitle(i)
+	tj := c.getSortTitle(j)
+	if ti < tj {
+		return -1
+	}
+	if ti > tj {
+		return 1
+	}
+	return 0
+}
+
+func (c *ListColumn) getSortTitle(idx int) string {
+	switch c.columnType {
+	case ColumnTypeMovies:
+		if c.movies[idx].SortTitle != "" {
+			return strings.ToLower(c.movies[idx].SortTitle)
+		}
+		return strings.ToLower(c.movies[idx].Title)
+	case ColumnTypeShows:
+		if c.shows[idx].SortTitle != "" {
+			return strings.ToLower(c.shows[idx].SortTitle)
+		}
+		return strings.ToLower(c.shows[idx].Title)
+	default:
+		return ""
+	}
+}
+
+func (c *ListColumn) compareAddedAt(i, j int) int {
+	ai, aj := c.getAddedAt(i), c.getAddedAt(j)
+	if ai < aj {
+		return -1
+	}
+	if ai > aj {
+		return 1
+	}
+	return 0
+}
+
+func (c *ListColumn) getAddedAt(idx int) int64 {
+	switch c.columnType {
+	case ColumnTypeMovies:
+		return c.movies[idx].AddedAt
+	case ColumnTypeShows:
+		return c.shows[idx].AddedAt
+	default:
+		return 0
+	}
+}
+
+func (c *ListColumn) compareUpdatedAt(i, j int) int {
+	ai, aj := c.getUpdatedAt(i), c.getUpdatedAt(j)
+	if ai < aj {
+		return -1
+	}
+	if ai > aj {
+		return 1
+	}
+	return 0
+}
+
+func (c *ListColumn) getUpdatedAt(idx int) int64 {
+	switch c.columnType {
+	case ColumnTypeMovies:
+		return c.movies[idx].UpdatedAt
+	case ColumnTypeShows:
+		return c.shows[idx].UpdatedAt
+	default:
+		return 0
+	}
+}
+
+func (c *ListColumn) compareYear(i, j int) int {
+	yi, yj := c.getYear(i), c.getYear(j)
+	if yi < yj {
+		return -1
+	}
+	if yi > yj {
+		return 1
+	}
+	return 0
+}
+
+func (c *ListColumn) getYear(idx int) int {
+	switch c.columnType {
+	case ColumnTypeMovies:
+		return c.movies[idx].Year
+	case ColumnTypeShows:
+		return c.shows[idx].Year
+	default:
+		return 0
+	}
 }

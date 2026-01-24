@@ -39,6 +39,8 @@ type MediaItem struct {
 	LibraryID  string        // Parent library ID
 	Summary    string        // Plot synopsis
 	Year       int           // Release year
+	AddedAt    int64         // Unix timestamp when added to library
+	UpdatedAt  int64         // Unix timestamp when last updated
 	Duration   time.Duration // Total runtime
 	ViewOffset time.Duration // Watch progress
 	ThumbURL   string        // Thumbnail image URL
@@ -100,6 +102,8 @@ type Show struct {
 	LibraryID      string // Parent library ID
 	Summary        string // Series synopsis
 	Year           int    // First air year
+	AddedAt        int64  // Unix timestamp when added to library
+	UpdatedAt      int64  // Unix timestamp when last updated
 	ThumbURL       string // Thumbnail image URL
 	SeasonCount    int    // Total number of seasons
 	EpisodeCount   int    // Total number of episodes
