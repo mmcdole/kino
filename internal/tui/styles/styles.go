@@ -87,11 +87,6 @@ var (
 
 	InspectorStyle = lipgloss.NewStyle().
 			Padding(1, 2)
-
-	StatusBarStyle = lipgloss.NewStyle().
-			Foreground(LightGray).
-			Background(SlateDark).
-			Padding(0, 1)
 )
 
 // List item styles
@@ -132,10 +127,6 @@ var (
 
 	HelpDescStyle = lipgloss.NewStyle().
 			Foreground(DimGray)
-
-	HelpSepStyle = lipgloss.NewStyle().
-			Foreground(DimGray).
-			SetString(" • ")
 )
 
 // Progress bar styles

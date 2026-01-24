@@ -189,3 +189,6 @@ type LibrarySyncProgressMsg struct {
 type ClearLibraryStatusMsg struct {
 	LibraryID string
 }
+
+// HideHelpHintMsg signals that the startup help hint should be hidden
+type HideHelpHintMsg struct{}

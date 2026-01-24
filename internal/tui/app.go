@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -89,8 +90,8 @@ const (
 
 	MinColumnWidth = 15
 
-	// Vertical layout: status bar + help bar
-	ChromeHeight = 2
+	// Vertical layout: single footer line
+	ChromeHeight = 1
 )
 
 // Model is the main Bubble Tea model for the application
@@ -126,6 +127,10 @@ type Model struct {
 	// Sync state
 	LibraryStates map[string]components.LibrarySyncState // Tracks progress per library
 	SyncingCount  int                                    // Libraries still syncing
+	MultiLibSync  bool                                   // True when syncing multiple libraries (R / startup)
+
+	// Help hint visibility (shown at startup, hidden after 3s)
+	ShowHelpHint bool
 
 	// Navigation plan for deep linking
 	navPlan *NavPlan
@@ -147,6 +152,7 @@ func NewModel(
 		Omnibar:       components.NewOmnibar(),
 		LibraryStates: make(map[string]components.LibrarySyncState),
 		ShowInspector: false, // Inspector hidden by default - show 3 nav columns
+		ShowHelpHint:  true,
 	}
 }
 
@@ -155,6 +161,7 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		LoadLibrariesCmd(m.LibrarySvc),
 		TickCmd(100*time.Millisecond),
+		HideHelpHintCmd(3*time.Second),
 	)
 }
 
@@ -189,6 +196,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
 		}
 		m.SyncingCount = len(msg.Libraries)
+		m.MultiLibSync = true
 
 		// Create the library column as the root
 		libCol := components.NewLibraryColumn(msg.Libraries)
@@ -374,11 +382,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Check if all done
 		if m.SyncingCount == 0 {
 			m.Loading = false
-			m.StatusMsg = fmt.Sprintf("Synced %d items", m.totalLoadedCount())
-			cmds = append(cmds, ClearStatusCmd(3*time.Second))
 		}
 
 		return m, tea.Batch(cmds...)
+
+	case HideHelpHintMsg:
+		m.ShowHelpHint = false
+		return m, nil
 
 	case ClearLibraryStatusMsg:
 		if state, ok := m.LibraryStates[msg.LibraryID]; ok {
@@ -568,6 +578,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
 					m.SyncingCount++
 					m.Loading = true
+					m.MultiLibSync = false
 					m.updateLibraryStates()
 					return m, SyncLibraryCmd(m.LibrarySvc, m.SearchSvc, *lib, true)
 				}
@@ -584,6 +595,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.SyncingCount = len(m.Libraries)
 		m.Loading = true
+		m.MultiLibSync = true
 		m.updateLibraryStates()
 
 		// Reset to library view
@@ -1179,22 +1191,14 @@ func (m Model) View() string {
 		}
 	}
 
-	// Status bar
-	statusText := m.StatusMsg
-	if m.Loading {
-		statusText = RenderSpinner(m.SpinnerFrame) + " Loading..."
-	}
-	statusBar := RenderStatusBar(statusText, "", m.Width)
-
-	// Help bar
-	helpBar := RenderHelp(MillerColumnsKeyHelp(), m.Width)
+	// Footer
+	footer := m.renderFooter()
 
 	// Combine all
 	view := lipgloss.JoinVertical(
 		lipgloss.Left,
 		content,
-		statusBar,
-		helpBar,
+		footer,
 	)
 
 	// Overlay omnibar if visible
@@ -1205,6 +1209,70 @@ func (m Model) View() string {
 	}
 
 	return view
+}
+
+// renderFooter renders a single-line minimal footer
+func (m Model) renderFooter() string {
+	// Left side: spinner + status when loading or status message active
+	var left string
+	if m.Loading {
+		statusText := "Loading..."
+
+		if m.MultiLibSync {
+			// Multi-library: stable library completion fraction
+			syncingCount := 0
+			for _, state := range m.LibraryStates {
+				if state.Status == components.StatusSyncing {
+					syncingCount++
+				}
+			}
+			done := len(m.LibraryStates) - syncingCount
+			statusText = fmt.Sprintf("Syncing %d/%d libraries...", done, len(m.LibraryStates))
+		} else {
+			// Single library: show name + item progress
+			for id, state := range m.LibraryStates {
+				if state.Status == components.StatusSyncing {
+					libName := ""
+					for _, lib := range m.Libraries {
+						if lib.ID == id {
+							libName = lib.Name
+							break
+						}
+					}
+					if state.Total > 0 {
+						statusText = fmt.Sprintf("Syncing %s · %d/%d", libName, state.Loaded, state.Total)
+					} else if libName != "" {
+						statusText = fmt.Sprintf("Syncing %s...", libName)
+					}
+					break
+				}
+			}
+		}
+
+		left = RenderSpinner(m.SpinnerFrame) + " " + styles.DimStyle.Render(statusText)
+	} else if m.StatusMsg != "" {
+		if m.StatusIsErr {
+			left = styles.ErrorStyle.Render(m.StatusMsg)
+		} else {
+			left = styles.DimStyle.Render(m.StatusMsg)
+		}
+	}
+
+	// Right side: "? help" hint at startup
+	var right string
+	if m.ShowHelpHint {
+		right = styles.AccentStyle.Render("?") + styles.DimStyle.Render(" help")
+	}
+
+	// Layout: left-right with gap padding
+	leftWidth := lipgloss.Width(left)
+	rightWidth := lipgloss.Width(right)
+	gap := m.Width - leftWidth - rightWidth
+	if gap < 0 {
+		gap = 0
+	}
+
+	return left + strings.Repeat(" ", gap) + right
 }
 
 // renderHelp renders the help screen
@@ -1316,14 +1384,6 @@ func (m Model) findLibraryName(libID string) string {
 	return ""
 }
 
-// totalLoadedCount calculates the sum of loaded items across all libraries
-func (m Model) totalLoadedCount() int {
-	total := 0
-	for _, state := range m.LibraryStates {
-		total += state.Loaded
-	}
-	return total
-}
 
 // clearNavPlan clears the current navigation plan
 func (m *Model) clearNavPlan() {

@@ -76,26 +76,6 @@ func RenderBreadcrumb(nav NavContext, width int) string {
 	return styles.AccentStyle.Render(crumb)
 }
 
-// RenderStatusBar renders the bottom status bar
-func RenderStatusBar(status string, playerStatus string, width int) string {
-	// Split available width between status and player info
-	statusWidth := width - len(playerStatus) - 5
-	if statusWidth < 0 {
-		statusWidth = 0
-	}
-
-	left := styles.Truncate(status, statusWidth)
-	right := playerStatus
-
-	gap := width - len(left) - len(right) - 2
-	if gap < 0 {
-		gap = 0
-	}
-
-	return styles.StatusBarStyle.Width(width).Render(
-		left + strings.Repeat(" ", gap) + right,
-	)
-}
 
 // formatDuration formats a duration as HH:MM:SS or MM:SS
 func formatDuration(d interface{}) string {
@@ -125,91 +105,6 @@ func formatDuration(d interface{}) string {
 	return fmt.Sprintf("%02d:%02d", minutes, seconds)
 }
 
-// RenderHelp renders the help bar
-func RenderHelp(keys []KeyHelp, width int) string {
-	var parts []string
-	for _, k := range keys {
-		parts = append(parts, styles.HelpKeyStyle.Render(k.Key)+styles.HelpDescStyle.Render(" "+k.Desc))
-	}
-
-	help := strings.Join(parts, styles.HelpSepStyle.String())
-	// Use lipgloss.Width for visible width (excludes ANSI codes)
-	visibleWidth := lipgloss.Width(help)
-	if visibleWidth > width {
-		// Truncate to fit - rebuild without ANSI for accurate truncation
-		var plain []string
-		for _, k := range keys {
-			plain = append(plain, k.Key+" "+k.Desc)
-		}
-		plainHelp := strings.Join(plain, " • ")
-		if len(plainHelp) > width-3 {
-			plainHelp = plainHelp[:width-3] + "..."
-		}
-		// Re-render truncated version (simplified - just dim the whole thing)
-		return styles.DimStyle.Render(plainHelp)
-	}
-	// Pad to full width for consistent layout
-	if visibleWidth < width {
-		help += strings.Repeat(" ", width-visibleWidth)
-	}
-	return help
-}
-
-// KeyHelp represents a key binding help item
-type KeyHelp struct {
-	Key  string
-	Desc string
-}
-
-// KeyHelpForPane returns context-sensitive key bindings based on focused pane
-func KeyHelpForPane(pane Pane) []KeyHelp {
-	common := []KeyHelp{
-		{Key: "h/l", Desc: "pane"},
-		{Key: "j/k", Desc: "nav"},
-	}
-
-	switch pane {
-	case PaneSidebar:
-		return append(common,
-			KeyHelp{Key: "Enter", Desc: "select"},
-			KeyHelp{Key: "s", Desc: "search"},
-			KeyHelp{Key: "?", Desc: "help"},
-		)
-	case PaneBrowser:
-		return append(common,
-			KeyHelp{Key: "Enter", Desc: "play"},
-			KeyHelp{Key: "w", Desc: "watched"},
-			KeyHelp{Key: "u", Desc: "unwatched"},
-			KeyHelp{Key: "/", Desc: "filter"},
-			KeyHelp{Key: "?", Desc: "help"},
-		)
-	case PaneInspector:
-		return append(common,
-			KeyHelp{Key: "g/G", Desc: "top/bottom"},
-			KeyHelp{Key: "?", Desc: "help"},
-		)
-	default:
-		return common
-	}
-}
-
-// DefaultKeyHelp returns the default key bindings (for backward compatibility)
-func DefaultKeyHelp() []KeyHelp {
-	return KeyHelpForPane(PaneBrowser)
-}
-
-// MillerColumnsKeyHelp returns the key bindings for Miller Columns navigation
-func MillerColumnsKeyHelp() []KeyHelp {
-	return []KeyHelp{
-		{Key: "h", Desc: "back"},
-		{Key: "l", Desc: "open"},
-		{Key: "j/k", Desc: "nav"},
-		{Key: "Enter", Desc: "play"},
-		{Key: "i", Desc: "info"},
-		{Key: "/", Desc: "filter"},
-		{Key: "?", Desc: "help"},
-	}
-}
 
 // RenderMovieItem renders a movie item for the list
 func RenderMovieItem(item domain.MediaItem, selected bool, width int) string {
