@@ -70,10 +70,10 @@ func DefaultConfig() *Config {
 func defaultLogPath() string {
 	switch runtime.GOOS {
 	case "windows":
-		return filepath.Join(os.Getenv("APPDATA"), "goplex", "goplex.log")
+		return filepath.Join(os.Getenv("APPDATA"), "kino", "kino.log")
 	default:
 		home, _ := os.UserHomeDir()
-		return filepath.Join(home, ".local", "share", "goplex", "goplex.log")
+		return filepath.Join(home, ".local", "share", "kino", "kino.log")
 	}
 }
 
@@ -81,10 +81,10 @@ func defaultLogPath() string {
 func defaultConfigPath() string {
 	switch runtime.GOOS {
 	case "windows":
-		return filepath.Join(os.Getenv("APPDATA"), "goplex")
+		return filepath.Join(os.Getenv("APPDATA"), "kino")
 	default:
 		home, _ := os.UserHomeDir()
-		return filepath.Join(home, ".config", "goplex")
+		return filepath.Join(home, ".config", "kino")
 	}
 }
 
@@ -98,7 +98,7 @@ func LoadConfig() (*Config, error) {
 	viper.AddConfigPath(".")
 
 	// Environment variable overrides
-	viper.SetEnvPrefix("GOPLEX")
+	viper.SetEnvPrefix("KINO")
 	viper.AutomaticEnv()
 
 	// Read config file if it exists

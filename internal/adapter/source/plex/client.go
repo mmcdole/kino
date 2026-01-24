@@ -12,13 +12,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/drake/goplex/internal/domain"
+	"github.com/mmcdole/kino/internal/domain"
 )
 
 const (
 	defaultTimeout = 30 * time.Second
-	userAgent      = "Goplex/1.0"
-	clientID       = "goplex-tui-client"
+	userAgent      = "Kino/1.0"
+	clientID       = "kino-tui-client"
 )
 
 // Client implements domain.LibraryRepository, domain.SearchRepository,
@@ -65,7 +65,7 @@ func (c *Client) doRequest(ctx context.Context, method, path string, query url.V
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Token", c.token)
 	req.Header.Set("X-Plex-Client-Identifier", clientID)
-	req.Header.Set("X-Plex-Product", "Goplex")
+	req.Header.Set("X-Plex-Product", "Kino")
 	req.Header.Set("X-Plex-Version", "1.0")
 	req.Header.Set("User-Agent", userAgent)
 

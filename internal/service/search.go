@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/drake/goplex/internal/domain"
+	"github.com/mmcdole/kino/internal/domain"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 )
 

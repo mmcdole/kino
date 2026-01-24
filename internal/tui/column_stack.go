@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"github.com/drake/goplex/internal/tui/components"
+	"github.com/mmcdole/kino/internal/tui/components"
 )
 
 // ColumnStack manages the stack of navigable columns in Miller Columns layout.

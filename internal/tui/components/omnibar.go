@@ -7,9 +7,9 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/drake/goplex/internal/domain"
-	"github.com/drake/goplex/internal/service"
-	"github.com/drake/goplex/internal/tui/styles"
+	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/service"
+	"github.com/mmcdole/kino/internal/tui/styles"
 )
 
 // Omnibar is the fuzzy search modal component

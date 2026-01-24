@@ -1,5 +1,5 @@
-# Goplex Configuration Example
-# Copy this file to ~/.config/goplex/config.yaml
+# Kino Configuration Example
+# Copy this file to ~/.config/kino/config.yaml
 
 # Plex Server Configuration
 server:
@@ -14,7 +14,7 @@ player:
   command: "mpv"
   # Arguments passed to the player
   args:
-    - "--input-ipc-server=/tmp/goplex.sock"
+    - "--input-ipc-server=/tmp/kino.sock"
     - "--no-terminal"
 
 # Scrobbling Configuration
@@ -36,6 +36,6 @@ ui:
 # Logging Configuration
 logging:
   # Log file location (use ~ for home directory)
-  file: "~/.local/share/goplex/goplex.log"
+  file: "~/.local/share/kino/kino.log"
   # Log level: "DEBUG", "INFO", "WARN", "ERROR"
   level: "INFO"

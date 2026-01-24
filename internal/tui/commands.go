@@ -6,8 +6,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/drake/goplex/internal/domain"
-	"github.com/drake/goplex/internal/service"
+	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/service"
 )
 
 // Command factories for async operations

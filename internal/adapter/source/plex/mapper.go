@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/drake/goplex/internal/domain"
+	"github.com/mmcdole/kino/internal/domain"
 )
 
 // MapLibraries converts Plex directories to domain libraries

@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/drake/goplex/internal/tui/styles"
+	"github.com/mmcdole/kino/internal/tui/styles"
 )
 
 // SortField represents a field to sort by

@@ -1,4 +1,4 @@
-module github.com/drake/goplex
+module github.com/mmcdole/kino
 
 go 1.25.5
 

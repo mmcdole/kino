@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/drake/goplex/internal/domain"
+	"github.com/mmcdole/kino/internal/domain"
 )
 
 const (
@@ -43,7 +43,7 @@ func (a *AuthClient) GetPIN(ctx context.Context) (pin string, id int, err error)
 
 	data := url.Values{}
 	data.Set("strong", "false")
-	data.Set("X-Plex-Product", "Goplex")
+	data.Set("X-Plex-Product", "Kino")
 	data.Set("X-Plex-Client-Identifier", clientID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, nil)
@@ -53,7 +53,7 @@ func (a *AuthClient) GetPIN(ctx context.Context) (pin string, id int, err error)
 
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Client-Identifier", clientID)
-	req.Header.Set("X-Plex-Product", "Goplex")
+	req.Header.Set("X-Plex-Product", "Kino")
 	req.Header.Set("X-Plex-Version", "1.0")
 	req.Header.Set("User-Agent", userAgent)
 
@@ -99,7 +99,7 @@ func (a *AuthClient) CheckPIN(ctx context.Context, pinID int) (token string, cla
 
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Client-Identifier", clientID)
-	req.Header.Set("X-Plex-Product", "Goplex")
+	req.Header.Set("X-Plex-Product", "Kino")
 	req.Header.Set("X-Plex-Version", "1.0")
 	req.Header.Set("User-Agent", userAgent)
 
@@ -149,7 +149,7 @@ func (a *AuthClient) ValidateToken(ctx context.Context, token string) error {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Token", token)
 	req.Header.Set("X-Plex-Client-Identifier", clientID)
-	req.Header.Set("X-Plex-Product", "Goplex")
+	req.Header.Set("X-Plex-Product", "Kino")
 	req.Header.Set("X-Plex-Version", "1.0")
 	req.Header.Set("User-Agent", userAgent)
 
@@ -182,7 +182,7 @@ func (a *AuthClient) GetServers(ctx context.Context, token string) ([]ServerReso
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Token", token)
 	req.Header.Set("X-Plex-Client-Identifier", clientID)
-	req.Header.Set("X-Plex-Product", "Goplex")
+	req.Header.Set("X-Plex-Product", "Kino")
 	req.Header.Set("X-Plex-Version", "1.0")
 	req.Header.Set("User-Agent", userAgent)
 

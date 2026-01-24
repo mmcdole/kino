@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/drake/goplex/internal/adapter"
-	"github.com/drake/goplex/internal/domain"
+	"github.com/mmcdole/kino/internal/adapter"
+	"github.com/mmcdole/kino/internal/domain"
 )
 
 // PlaybackService orchestrates playback operations

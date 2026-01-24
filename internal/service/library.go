@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/drake/goplex/internal/domain"
+	"github.com/mmcdole/kino/internal/domain"
 )
 
 const (
@@ -63,7 +63,7 @@ func NewLibraryService(repo domain.LibraryRepository, logger *slog.Logger) *Libr
 	// Set up disk cache directory
 	cacheDir := ""
 	if home, err := os.UserHomeDir(); err == nil {
-		cacheDir = filepath.Join(home, ".local", "share", "goplex", "cache")
+		cacheDir = filepath.Join(home, ".local", "share", "kino", "cache")
 		if err := os.MkdirAll(cacheDir, 0755); err != nil {
 			logger.Warn("failed to create cache directory", "error", err)
 			cacheDir = ""
