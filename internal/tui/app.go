@@ -712,10 +712,27 @@ func (m *Model) drillSelected() *drillResult {
 	case domain.Library:
 		if v.Type == "movie" {
 			col := components.NewListColumn(components.ColumnTypeMovies, v.Name)
-			col.SetLoading(true)
 			m.ColumnStack.Push(col, cursor)
-			m.Loading = true
 			m.updateLayout()
+
+			// Use cached data if available for instant display
+			if cached := m.LibrarySvc.GetCachedMovies(v.ID); cached != nil {
+				col.SetItems(cached)
+				m.updateInspector()
+				// If NavPlan active, advance it immediately
+				if m.navPlan != nil {
+					return &drillResult{
+						AwaitKind: AwaitMovies,
+						AwaitID:   v.ID,
+						Cmd:       m.advanceNavPlanAfterLoad(AwaitMovies, v.ID),
+					}
+				}
+				return &drillResult{AwaitKind: AwaitNone}
+			}
+
+			// Not cached - show loading and fetch async
+			col.SetLoading(true)
+			m.Loading = true
 			return &drillResult{
 				AwaitKind: AwaitMovies,
 				AwaitID:   v.ID,
@@ -724,10 +741,27 @@ func (m *Model) drillSelected() *drillResult {
 		}
 		// v.Type == "show"
 		col := components.NewListColumn(components.ColumnTypeShows, v.Name)
-		col.SetLoading(true)
 		m.ColumnStack.Push(col, cursor)
-		m.Loading = true
 		m.updateLayout()
+
+		// Use cached data if available for instant display
+		if cached := m.LibrarySvc.GetCachedShows(v.ID); cached != nil {
+			col.SetItems(cached)
+			m.updateInspector()
+			// If NavPlan active, advance it immediately
+			if m.navPlan != nil {
+				return &drillResult{
+					AwaitKind: AwaitShows,
+					AwaitID:   v.ID,
+					Cmd:       m.advanceNavPlanAfterLoad(AwaitShows, v.ID),
+				}
+			}
+			return &drillResult{AwaitKind: AwaitNone}
+		}
+
+		// Not cached - show loading and fetch async
+		col.SetLoading(true)
+		m.Loading = true
 		return &drillResult{
 			AwaitKind: AwaitShows,
 			AwaitID:   v.ID,
