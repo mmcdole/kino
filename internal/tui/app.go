@@ -132,11 +132,8 @@ type Model struct {
 
 	// Sync state
 	LibraryStates map[string]components.LibrarySyncState // Tracks progress per library
-	SyncingCount  int                                    // Libraries still syncing
-	MultiLibSync  bool                                   // True when syncing multiple libraries (R / startup)
-
-	// Help hint visibility (shown at startup, hidden after 3s)
-	ShowHelpHint bool
+	SyncingCount int  // Libraries still syncing
+	MultiLibSync bool // True when syncing multiple libraries (R / startup)
 
 	// Navigation plan for deep linking
 	navPlan *NavPlan
@@ -165,7 +162,6 @@ func NewModel(
 		InputModal:    components.NewInputModal(),
 		LibraryStates: make(map[string]components.LibrarySyncState),
 		ShowInspector: false, // Inspector hidden by default - show 3 nav columns
-		ShowHelpHint:  true,
 	}
 }
 
@@ -174,7 +170,6 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		LoadLibrariesCmd(m.LibrarySvc),
 		TickCmd(100*time.Millisecond),
-		HideHelpHintCmd(10*time.Second),
 	)
 }
 
@@ -409,9 +404,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, tea.Batch(cmds...)
 
-	case HideHelpHintMsg:
-		m.ShowHelpHint = false
-		return m, nil
 
 	case ClearLibraryStatusMsg:
 		if state, ok := m.LibraryStates[msg.LibraryID]; ok {
@@ -1591,21 +1583,44 @@ func (m Model) renderFooter() string {
 		}
 	}
 
-	// Right side: "? help" hint at startup
-	var right string
-	if m.ShowHelpHint {
-		right = styles.AccentStyle.Render("?") + styles.DimStyle.Render(" help")
+	// Center section: context-specific hints based on column type
+	var center string
+	if top := m.ColumnStack.Top(); top != nil {
+		if lc, ok := top.(*components.ListColumn); ok {
+			switch lc.ColumnType() {
+			case components.ColumnTypePlaylists:
+				center = styles.AccentStyle.Render("n") + styles.DimStyle.Render(" New  ") +
+					styles.AccentStyle.Render("x") + styles.DimStyle.Render(" Delete")
+			case components.ColumnTypePlaylistItems:
+				center = styles.AccentStyle.Render("x") + styles.DimStyle.Render(" Remove")
+			}
+		}
 	}
 
-	// Layout: left-right with gap padding
+	// Right side: "? help" hint
+	right := styles.AccentStyle.Render("?") + styles.DimStyle.Render(" help")
+
+	// Layout: left + centered hints + right
 	leftWidth := lipgloss.Width(left)
+	centerWidth := lipgloss.Width(center)
 	rightWidth := lipgloss.Width(right)
-	gap := m.Width - leftWidth - rightWidth
-	if gap < 0 {
-		gap = 0
+
+	totalContent := leftWidth + centerWidth + rightWidth
+	if totalContent >= m.Width {
+		// Not enough space - just left + right
+		gap := m.Width - leftWidth - rightWidth
+		if gap < 0 {
+			gap = 0
+		}
+		return left + strings.Repeat(" ", gap) + right
 	}
 
-	return left + strings.Repeat(" ", gap) + right
+	// Center the hints in available space
+	available := m.Width - leftWidth - rightWidth
+	leftPad := (available - centerWidth) / 2
+	rightPad := available - centerWidth - leftPad
+
+	return left + strings.Repeat(" ", leftPad) + center + strings.Repeat(" ", rightPad) + right
 }
 
 // renderHelp renders the help screen
@@ -1619,16 +1634,13 @@ NAVIGATION                      PLAYBACK
   PgUp/PgDn  Scroll page
   Ctrl+u/d   Scroll half page
 
-SEARCH & VIEW                   PLAYLISTS
-  /          Filter                Space  Manage playlists
-  f          Global search         n      New playlist
-  s          Sort                  x      Remove/delete
-  i          Toggle inspector
-
-OTHER
-  r          Refresh library       q      Quit
-  R          Refresh all           ?      This help
-  Esc        Close / Cancel        L      Logout
+SEARCH & VIEW                   OTHER
+  /          Filter                r      Refresh library
+  f          Global search         R      Refresh all
+  s          Sort                  q      Quit
+  i          Toggle inspector      ?      This help
+  Space      Manage playlists      Esc    Close / Cancel
+                                   L      Logout
 
 Press any key to return...
 `

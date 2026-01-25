@@ -156,13 +156,6 @@ func ClearStatusCmd(delay time.Duration) tea.Cmd {
 	})
 }
 
-// HideHelpHintCmd returns a command that hides the help hint after a delay
-func HideHelpHintCmd(delay time.Duration) tea.Cmd {
-	return tea.Tick(delay, func(t time.Time) tea.Msg {
-		return HideHelpHintMsg{}
-	})
-}
-
 // ClearLibraryStatusCmd returns a command that clears library status after delay
 func ClearLibraryStatusCmd(libID string, delay time.Duration) tea.Cmd {
 	return tea.Tick(delay, func(t time.Time) tea.Msg {
