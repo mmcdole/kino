@@ -347,3 +347,38 @@ func buildImageURL(serverURL, itemID, imageType, imageTag string) string {
 	}
 	return fmt.Sprintf("%s/Items/%s/Images/%s?tag=%s", serverURL, itemID, imageType, imageTag)
 }
+
+// MapPlaylists converts Jellyfin items to domain playlists
+func MapPlaylists(items []Item, serverURL string) []*domain.Playlist {
+	playlists := make([]*domain.Playlist, 0, len(items))
+	for _, item := range items {
+		if item.Type != "Playlist" {
+			continue
+		}
+		playlist := mapPlaylist(item, serverURL)
+		playlists = append(playlists, &playlist)
+	}
+	return playlists
+}
+
+// mapPlaylist converts a single Jellyfin playlist item to a domain playlist
+func mapPlaylist(item Item, serverURL string) domain.Playlist {
+	p := domain.Playlist{
+		ID:           item.ID,
+		Title:        item.Name,
+		PlaylistType: "video", // Jellyfin playlists don't have a type field; default to video
+		Smart:        false,   // Jellyfin smart playlists would need different detection
+		ItemCount:    item.ChildCount,
+		Duration:     ticksToDuration(item.RunTimeTicks),
+		ThumbURL:     buildImageURL(serverURL, item.ID, "Primary", item.ImageTags.Primary),
+	}
+
+	// Parse dates
+	if item.DateCreated != "" {
+		if t, err := time.Parse(time.RFC3339, item.DateCreated); err == nil {
+			p.UpdatedAt = t.Unix()
+		}
+	}
+
+	return p
+}

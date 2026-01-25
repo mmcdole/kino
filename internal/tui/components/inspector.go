@@ -243,6 +243,10 @@ func (i Inspector) renderInspector(width int) string {
 		return i.renderLibraryInspector(*v, width)
 	case domain.Library:
 		return i.renderLibraryInspector(v, width)
+	case *domain.Playlist:
+		return i.renderPlaylistInspector(*v, width)
+	case domain.Playlist:
+		return i.renderPlaylistInspector(v, width)
 	default:
 		return styles.DimStyle.Render("No item selected")
 	}
@@ -363,6 +367,18 @@ func (i Inspector) renderSeasonInspector(season domain.Season, width int) string
 func (i Inspector) renderLibraryInspector(lib domain.Library, width int) string {
 	var b strings.Builder
 
+	// Handle synthetic "Playlists" entry
+	if lib.Type == "playlist" {
+		b.WriteString(styles.TitleStyle.Render(styles.Truncate(lib.Name, width)))
+		b.WriteString("\n\n")
+		b.WriteString(styles.DimStyle.Render("Browse and manage your playlists"))
+		b.WriteString("\n\n")
+		b.WriteString(styles.SubtitleStyle.Render("Press Enter to browse"))
+		b.WriteString("\n")
+		b.WriteString(styles.DimStyle.Render("P: Jump here from anywhere"))
+		return b.String()
+	}
+
 	// Library name as title
 	b.WriteString(styles.TitleStyle.Render(styles.Truncate(lib.Name, width)))
 	b.WriteString("\n\n")
@@ -383,6 +399,55 @@ func (i Inspector) renderLibraryInspector(lib domain.Library, width int) string 
 
 	b.WriteString("\n")
 	b.WriteString(styles.SubtitleStyle.Render("Press Enter to browse"))
+
+	return b.String()
+}
+
+func (i Inspector) renderPlaylistInspector(playlist domain.Playlist, width int) string {
+	var b strings.Builder
+
+	// Playlist name as title
+	b.WriteString(styles.TitleStyle.Render(styles.Truncate(playlist.Title, width)))
+	b.WriteString("\n\n")
+
+	// Playlist type
+	typeLabel := "Video"
+	if playlist.PlaylistType == "audio" {
+		typeLabel = "Audio"
+	} else if playlist.PlaylistType == "photo" {
+		typeLabel = "Photo"
+	}
+	b.WriteString(styles.DimStyle.Render(fmt.Sprintf("Type: %s Playlist", typeLabel)))
+	b.WriteString("\n")
+
+	// Smart playlist indicator
+	if playlist.Smart {
+		b.WriteString(styles.DimStyle.Render("Smart: Yes"))
+		b.WriteString("\n")
+	}
+
+	// Item count
+	b.WriteString(styles.DimStyle.Render(fmt.Sprintf("Items: %d", playlist.ItemCount)))
+	b.WriteString("\n")
+
+	// Duration
+	if playlist.Duration > 0 {
+		hours := int(playlist.Duration.Hours())
+		minutes := int(playlist.Duration.Minutes()) % 60
+		if hours > 0 {
+			b.WriteString(styles.DimStyle.Render(fmt.Sprintf("Duration: %dh %dm", hours, minutes)))
+		} else {
+			b.WriteString(styles.DimStyle.Render(fmt.Sprintf("Duration: %dm", minutes)))
+		}
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n")
+	b.WriteString(styles.SubtitleStyle.Render("Press Enter to browse"))
+	b.WriteString("\n")
+	b.WriteString(styles.DimStyle.Render("n: New Playlist"))
+	b.WriteString("\n")
+	b.WriteString(styles.DimStyle.Render("x: Delete Playlist"))
 
 	return b.String()
 }

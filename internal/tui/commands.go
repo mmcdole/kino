@@ -398,3 +398,111 @@ func LogoutCmd() tea.Cmd {
 		return LogoutCompleteMsg{Error: nil}
 	}
 }
+
+// LoadPlaylistsCmd loads all playlists
+func LoadPlaylistsCmd(svc *service.PlaylistService) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		playlists, err := svc.GetPlaylists(ctx)
+		if err != nil {
+			return ErrMsg{Err: err, Context: "loading playlists"}
+		}
+		return PlaylistsLoadedMsg{Playlists: playlists}
+	}
+}
+
+// LoadPlaylistItemsCmd loads items from a playlist
+func LoadPlaylistItemsCmd(svc *service.PlaylistService, playlistID string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		items, err := svc.GetPlaylistItems(ctx, playlistID)
+		if err != nil {
+			return ErrMsg{Err: err, Context: "loading playlist items"}
+		}
+		return PlaylistItemsLoadedMsg{Items: items, PlaylistID: playlistID}
+	}
+}
+
+// CreatePlaylistCmd creates a new playlist
+func CreatePlaylistCmd(svc *service.PlaylistService, title string, itemIDs []string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		playlist, err := svc.CreatePlaylist(ctx, title, itemIDs)
+		if err != nil {
+			return PlaylistCreatedMsg{Error: err}
+		}
+		return PlaylistCreatedMsg{Playlist: playlist}
+	}
+}
+
+// AddToPlaylistCmd adds items to a playlist
+func AddToPlaylistCmd(svc *service.PlaylistService, playlistID string, itemIDs []string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		err := svc.AddToPlaylist(ctx, playlistID, itemIDs)
+		if err != nil {
+			return PlaylistUpdatedMsg{PlaylistID: playlistID, Success: false, Error: err}
+		}
+		return PlaylistUpdatedMsg{PlaylistID: playlistID, Success: true}
+	}
+}
+
+// RemoveFromPlaylistCmd removes an item from a playlist
+func RemoveFromPlaylistCmd(svc *service.PlaylistService, playlistID, itemID string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		err := svc.RemoveFromPlaylist(ctx, playlistID, itemID)
+		if err != nil {
+			return PlaylistUpdatedMsg{PlaylistID: playlistID, Success: false, Error: err}
+		}
+		return PlaylistUpdatedMsg{PlaylistID: playlistID, Success: true}
+	}
+}
+
+// DeletePlaylistCmd deletes a playlist
+func DeletePlaylistCmd(svc *service.PlaylistService, playlistID string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		err := svc.DeletePlaylist(ctx, playlistID)
+		if err != nil {
+			return PlaylistDeletedMsg{PlaylistID: playlistID, Success: false, Error: err}
+		}
+		return PlaylistDeletedMsg{PlaylistID: playlistID, Success: true}
+	}
+}
+
+// LoadPlaylistModalDataCmd loads data for the playlist management modal
+func LoadPlaylistModalDataCmd(svc *service.PlaylistService, item *domain.MediaItem) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		playlists, err := svc.GetPlaylists(ctx)
+		if err != nil {
+			return ErrMsg{Err: err, Context: "loading playlists for modal"}
+		}
+
+		membership, err := svc.GetPlaylistMembership(ctx, item.ID)
+		if err != nil {
+			return ErrMsg{Err: err, Context: "checking playlist membership"}
+		}
+
+		return PlaylistModalDataMsg{
+			Playlists:  playlists,
+			Membership: membership,
+			Item:       item,
+		}
+	}
+}

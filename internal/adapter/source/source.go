@@ -11,11 +11,12 @@ import (
 )
 
 // MediaSource combines all repository interfaces that a media server backend must implement.
-// This is the unified interface for browsing, metadata, and search operations.
+// This is the unified interface for browsing, metadata, search, and playlist operations.
 type MediaSource interface {
 	domain.LibraryRepository   // Browsing: GetLibraries, GetMovies, GetShows, GetSeasons, GetEpisodes
 	domain.MetadataRepository  // Playback: ResolvePlayableURL, MarkPlayed/Unplayed, GetNextEpisode
 	domain.SearchRepository    // Search: Search(query) across all libraries
+	domain.PlaylistRepository  // Playlists: GetPlaylists, CreatePlaylist, AddToPlaylist, etc.
 }
 
 // SourceConfig contains the configuration needed to create a MediaSource

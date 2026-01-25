@@ -160,6 +160,23 @@ type UserResponse struct {
 	Title    string `json:"title"`
 }
 
+// PlaylistMetadata represents a Plex playlist
+type PlaylistMetadata struct {
+	RatingKey    string `json:"ratingKey"`
+	Key          string `json:"key"`
+	GUID         string `json:"guid,omitempty"`
+	Type         string `json:"type"`
+	Title        string `json:"title"`
+	Summary      string `json:"summary,omitempty"`
+	Smart        int    `json:"smart"` // 1 = smart playlist, 0 = regular
+	PlaylistType string `json:"playlistType"`
+	Composite    string `json:"composite,omitempty"`
+	Duration     int    `json:"duration,omitempty"`
+	LeafCount    int    `json:"leafCount,omitempty"`
+	AddedAt      int64  `json:"addedAt,omitempty"`
+	UpdatedAt    int64  `json:"updatedAt,omitempty"`
+}
+
 // ServerResource represents a server from plex.tv resources
 type ServerResource struct {
 	Name        string       `json:"name"`

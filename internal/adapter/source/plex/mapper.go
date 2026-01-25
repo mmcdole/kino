@@ -267,3 +267,59 @@ func buildMediaURL(serverURL, path string) string {
 	}
 	return fmt.Sprintf("%s%s", serverURL, path)
 }
+
+// MapPlaylists converts Plex metadata to domain playlists
+func MapPlaylists(metadata []Metadata, serverURL string) []*domain.Playlist {
+	playlists := make([]*domain.Playlist, 0, len(metadata))
+	for _, m := range metadata {
+		if m.Type != "playlist" {
+			continue
+		}
+		playlist := mapPlaylist(m, serverURL)
+		playlists = append(playlists, &playlist)
+	}
+	return playlists
+}
+
+// mapPlaylist converts a single Plex playlist metadata to domain playlist
+func mapPlaylist(m Metadata, serverURL string) domain.Playlist {
+	// Determine if it's a smart playlist
+	// Plex returns "smart" field in some responses, but we also check for certain patterns
+	smart := false
+	if m.Key != "" && m.RatingKey != "" {
+		// Smart playlists have different characteristics
+		// For now, we'll rely on the API response structure
+	}
+
+	return domain.Playlist{
+		ID:           m.RatingKey,
+		Title:        m.Title,
+		PlaylistType: getPlaylistType(m.Type),
+		Smart:        smart,
+		ItemCount:    m.LeafCount,
+		Duration:     time.Duration(m.Duration) * time.Millisecond,
+		ThumbURL:     buildThumbURL(serverURL, m.Thumb),
+		UpdatedAt:    m.UpdatedAt,
+	}
+}
+
+// MapPlaylistFromPlaylistMetadata converts PlaylistMetadata to domain.Playlist
+func MapPlaylistFromPlaylistMetadata(pm PlaylistMetadata, serverURL string) domain.Playlist {
+	return domain.Playlist{
+		ID:           pm.RatingKey,
+		Title:        pm.Title,
+		PlaylistType: pm.PlaylistType,
+		Smart:        pm.Smart == 1,
+		ItemCount:    pm.LeafCount,
+		Duration:     time.Duration(pm.Duration) * time.Millisecond,
+		ThumbURL:     buildThumbURL(serverURL, pm.Composite),
+		UpdatedAt:    pm.UpdatedAt,
+	}
+}
+
+// getPlaylistType extracts the playlist type from metadata
+func getPlaylistType(metadataType string) string {
+	// Plex uses "playlist" as the type, but we want the content type
+	// This would need to be determined from the playlistType field when available
+	return "video"
+}

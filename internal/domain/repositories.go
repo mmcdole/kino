@@ -67,6 +67,27 @@ type MetadataRepository interface {
 	MarkUnplayed(ctx context.Context, itemID string) error
 }
 
+// PlaylistRepository provides access to playlist management operations
+type PlaylistRepository interface {
+	// GetPlaylists returns all user playlists
+	GetPlaylists(ctx context.Context) ([]*Playlist, error)
+
+	// GetPlaylistItems returns all items in a playlist
+	GetPlaylistItems(ctx context.Context, playlistID string) ([]*MediaItem, error)
+
+	// CreatePlaylist creates a new playlist with the given title and optional initial items
+	CreatePlaylist(ctx context.Context, title string, itemIDs []string) (*Playlist, error)
+
+	// AddToPlaylist adds items to an existing playlist
+	AddToPlaylist(ctx context.Context, playlistID string, itemIDs []string) error
+
+	// RemoveFromPlaylist removes an item from a playlist
+	RemoveFromPlaylist(ctx context.Context, playlistID string, itemID string) error
+
+	// DeletePlaylist deletes a playlist
+	DeletePlaylist(ctx context.Context, playlistID string) error
+}
+
 // AuthProvider handles authentication with the media server (legacy Plex-specific interface)
 type AuthProvider interface {
 	// GetPIN generates a new authentication PIN

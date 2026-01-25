@@ -200,3 +200,41 @@ type LogoutRequestedMsg struct{}
 type LogoutCompleteMsg struct {
 	Error error
 }
+
+// PlaylistsLoadedMsg signals that playlists have been loaded
+type PlaylistsLoadedMsg struct {
+	Playlists []*domain.Playlist
+}
+
+// PlaylistItemsLoadedMsg signals that playlist items have been loaded
+type PlaylistItemsLoadedMsg struct {
+	Items      []*domain.MediaItem
+	PlaylistID string
+}
+
+// PlaylistUpdatedMsg signals that a playlist was updated (item added/removed)
+type PlaylistUpdatedMsg struct {
+	PlaylistID string
+	Success    bool
+	Error      error
+}
+
+// PlaylistCreatedMsg signals that a new playlist was created
+type PlaylistCreatedMsg struct {
+	Playlist *domain.Playlist
+	Error    error
+}
+
+// PlaylistDeletedMsg signals that a playlist was deleted
+type PlaylistDeletedMsg struct {
+	PlaylistID string
+	Success    bool
+	Error      error
+}
+
+// PlaylistModalDataMsg contains data for the playlist modal
+type PlaylistModalDataMsg struct {
+	Playlists  []*domain.Playlist
+	Membership map[string]bool
+	Item       *domain.MediaItem
+}
