@@ -6,10 +6,9 @@
 
 ## Features
 
--  Browse movies and TV shows from Plex or Jellyfin
 -  Fuzzy search across your entire library
 -  Keyboard-first interface with Vim-style navigation
--  Miller column layout for intuitive browsing
+-  Playlist management
 -  Watch status tracking and smart resume
 -  Inspector panel for detailed metadata
 -  Fast, cached browsing with progressive loading
@@ -32,7 +31,7 @@ Launch Kino and follow the interactive setup:
 kino
 ```
 
-You'll be prompted to enter your server URL and authenticate.
+You'll be prompted to enter your server URL. Kino automatically detects whether it's a Plex or Jellyfin server and guides you through the appropriate authentication.
 
 ## Usage
 
@@ -43,7 +42,8 @@ You'll be prompted to enter your server URL and authenticate.
 | `↑` `↓` `j` `k` | Navigate up/down |
 | `←` `→` `h` `l` | Navigate left/right (columns) |
 | `Enter` | Play/Select item |
-| `f` | Global search (when libraries synced) |
+| `Space` | Manage playlists |
+| `f` | Global search |
 | `/` | Local filter (current column) |
 | `s` | Sort options |
 | `i` | Toggle inspector panel |
