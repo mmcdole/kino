@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mmcdole/kino/internal/adapter"
 	"github.com/mmcdole/kino/internal/domain"
 	"github.com/mmcdole/kino/internal/service"
 )
@@ -378,5 +379,22 @@ func indexChunkForSearch(searchSvc *service.SearchService, items interface{}, li
 			}
 		}
 		searchSvc.IndexForFilter(filterItems)
+	}
+}
+
+// LogoutCmd clears server config and cache, then signals completion
+func LogoutCmd() tea.Cmd {
+	return func() tea.Msg {
+		// Clear server configuration
+		if err := adapter.ClearServerConfig(); err != nil {
+			return LogoutCompleteMsg{Error: err}
+		}
+
+		// Clear cache
+		if err := adapter.ClearCache(); err != nil {
+			return LogoutCompleteMsg{Error: err}
+		}
+
+		return LogoutCompleteMsg{Error: nil}
 	}
 }

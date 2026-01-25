@@ -9,18 +9,35 @@ import (
 	"github.com/spf13/viper"
 )
 
+// SourceType identifies the media server backend
+type SourceType string
+
+const (
+	SourceTypePlex     SourceType = "plex"
+	SourceTypeJellyfin SourceType = "jellyfin"
+)
+
 // Config holds all application configuration
 type Config struct {
-	Server  ServerConfig  `mapstructure:"server"`
-	Player  PlayerConfig  `mapstructure:"player"`
-	UI      UIConfig      `mapstructure:"ui"`
-	Logging LoggingConfig `mapstructure:"logging"`
+	Server      ServerConfig      `mapstructure:"server"`
+	Player      PlayerConfig      `mapstructure:"player"`
+	Preferences PreferencesConfig `mapstructure:"preferences"`
+	UI          UIConfig          `mapstructure:"ui"`
+	Logging     LoggingConfig     `mapstructure:"logging"`
 }
 
-// ServerConfig holds Plex server configuration
+// ServerConfig holds media server configuration
 type ServerConfig struct {
-	URL   string `mapstructure:"url"`
-	Token string `mapstructure:"token"`
+	Type     SourceType `mapstructure:"type"`     // "plex" or "jellyfin"
+	URL      string     `mapstructure:"url"`      // Server URL
+	Token    string     `mapstructure:"token"`    // Plex token OR Jellyfin API key
+	UserID   string     `mapstructure:"user_id"`  // Jellyfin only
+	Username string     `mapstructure:"username"` // Jellyfin only (display)
+}
+
+// PreferencesConfig holds user preferences
+type PreferencesConfig struct {
+	ShowWatchStatus bool `mapstructure:"show_watch_status"` // Show watched/unwatched/in-progress indicators
 }
 
 // PlayerConfig holds media player configuration
@@ -47,12 +64,16 @@ type LoggingConfig struct {
 func DefaultConfig() *Config {
 	return &Config{
 		Server: ServerConfig{
+			Type:  "",
 			URL:   "",
 			Token: "",
 		},
 		Player: PlayerConfig{
 			Command: "mpv",
 			Args:    []string{},
+		},
+		Preferences: PreferencesConfig{
+			ShowWatchStatus: true,
 		},
 		UI: UIConfig{
 			Theme:       "default",
@@ -125,10 +146,29 @@ func SaveConfig(cfg *Config) error {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	viper.Set("server", cfg.Server)
-	viper.Set("player", cfg.Player)
-	viper.Set("ui", cfg.UI)
-	viper.Set("logging", cfg.Logging)
+	// Set server fields individually to ensure correct key names (snake_case)
+	viper.Set("server.type", cfg.Server.Type)
+	viper.Set("server.url", cfg.Server.URL)
+	viper.Set("server.token", cfg.Server.Token)
+	viper.Set("server.user_id", cfg.Server.UserID)
+	viper.Set("server.username", cfg.Server.Username)
+
+	// Set player fields
+	viper.Set("player.command", cfg.Player.Command)
+	viper.Set("player.args", cfg.Player.Args)
+	viper.Set("player.start_flag", cfg.Player.StartFlag)
+
+	// Set preferences
+	viper.Set("preferences.show_watch_status", cfg.Preferences.ShowWatchStatus)
+
+	// Set UI fields
+	viper.Set("ui.theme", cfg.UI.Theme)
+	viper.Set("ui.grid_columns", cfg.UI.GridColumns)
+	viper.Set("ui.default_view", cfg.UI.DefaultView)
+
+	// Set logging fields
+	viper.Set("logging.file", cfg.Logging.File)
+	viper.Set("logging.level", cfg.Logging.Level)
 
 	configFile := filepath.Join(configPath, "config.yaml")
 	if err := viper.WriteConfigAs(configFile); err != nil {
@@ -158,4 +198,52 @@ func SaveToken(token string) error {
 // IsConfigured returns true if the server URL and token are set
 func (c *Config) IsConfigured() bool {
 	return c.Server.URL != "" && c.Server.Token != ""
+}
+
+// defaultCachePath returns the default cache directory path for the current OS
+func defaultCachePath() string {
+	switch runtime.GOOS {
+	case "windows":
+		return filepath.Join(os.Getenv("LOCALAPPDATA"), "kino", "cache")
+	default:
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home, ".local", "share", "kino", "cache")
+	}
+}
+
+// ClearServerConfig removes all server-related configuration (type, URL, credentials)
+// while preserving other settings (player, UI, logging, preferences)
+func ClearServerConfig() error {
+	// Clear server fields in viper
+	viper.Set("server.type", "")
+	viper.Set("server.url", "")
+	viper.Set("server.token", "")
+	viper.Set("server.user_id", "")
+	viper.Set("server.username", "")
+
+	configPath := defaultConfigPath()
+	if err := os.MkdirAll(configPath, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	configFile := filepath.Join(configPath, "config.yaml")
+	if err := viper.WriteConfigAs(configFile); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
+}
+
+// ClearCache removes all cached data
+func ClearCache() error {
+	cachePath := defaultCachePath()
+	if err := os.RemoveAll(cachePath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to clear cache: %w", err)
+	}
+	return nil
+}
+
+// GetCachePath returns the cache directory path
+func GetCachePath() string {
+	return defaultCachePath()
 }

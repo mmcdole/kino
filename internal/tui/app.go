@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -22,6 +23,7 @@ const (
 	StateSettings
 	StateAuthRequired
 	StateHelp
+	StateConfirmLogout
 )
 
 // NavAwaitKind specifies what async load the plan is waiting for
@@ -347,6 +349,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Error != nil {
 			state.Status = components.StatusError
 			state.Error = msg.Error
+			m.SyncingCount--
+			slog.Error("library sync failed", "libraryID", msg.LibraryID, "error", msg.Error)
 		} else {
 			state.Loaded = msg.Loaded
 			state.Total = msg.Total
@@ -400,6 +404,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+
+	case LogoutCompleteMsg:
+		if msg.Error != nil {
+			m.StatusMsg = fmt.Sprintf("Logout failed: %v", msg.Error)
+			m.StatusIsErr = true
+			m.State = StateBrowsing
+			return m, ClearStatusCmd(5 * time.Second)
+		}
+		// Logout successful - quit the application
+		fmt.Println("\nLogged out. Run 'kino' to set up again.")
+		return m, tea.Quit
 	}
 
 	// Update the focused column (top of stack)
@@ -470,6 +485,17 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.State {
 	case StateHelp:
 		if msg.String() == "esc" || msg.String() == "?" || msg.String() == "q" {
+			m.State = StateBrowsing
+		}
+		return m, nil
+
+	case StateConfirmLogout:
+		switch msg.String() {
+		case "y", "Y":
+			// User confirmed logout
+			return m, LogoutCmd()
+		case "n", "N", "esc":
+			// User cancelled
 			m.State = StateBrowsing
 		}
 		return m, nil
@@ -680,6 +706,11 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Toggle inspector visibility
 		m.ShowInspector = !m.ShowInspector
 		m.updateLayout()
+		return m, nil
+
+	case "L":
+		// Logout (Shift+L) - show confirmation modal
+		m.State = StateConfirmLogout
 		return m, nil
 	}
 
@@ -1079,6 +1110,10 @@ func (m Model) View() string {
 		return m.renderHelp()
 	}
 
+	if m.State == StateConfirmLogout {
+		return m.renderLogoutConfirmation()
+	}
+
 	availableWidth := m.Width
 	contentHeight := m.Height - ChromeHeight
 	stackLen := m.ColumnStack.Len()
@@ -1331,12 +1366,12 @@ NAVIGATION                      PLAYBACK
   Ctrl+u/d   Scroll half page
 
 SEARCH & VIEW                   OTHER
-  /  Filter                        q    Quit
-  f  Global search                ?    This help
-  s  Sort                          Esc  Close / Cancel
-  i  Toggle inspector
-  r  Refresh library
-  R  Refresh all
+  /          Filter                q      Quit
+  f          Global search         ?      This help
+  s          Sort                  Esc    Close / Cancel
+  i          Toggle inspector      L      Logout
+  r          Refresh library
+  R          Refresh all
 
 Press any key to return...
 `
@@ -1344,6 +1379,22 @@ Press any key to return...
 	return lipgloss.Place(m.Width, m.Height,
 		lipgloss.Center, lipgloss.Center,
 		styles.ModalStyle.Render(help))
+}
+
+// renderLogoutConfirmation renders the logout confirmation modal
+func (m Model) renderLogoutConfirmation() string {
+	modal := `
+              Log Out?
+
+  This will clear your credentials,
+  server URL, and all cached data.
+
+        [Y] Yes      [N] No
+`
+
+	return lipgloss.Place(m.Width, m.Height,
+		lipgloss.Center, lipgloss.Center,
+		styles.ModalStyle.Render(modal))
 }
 
 // indexMoviesForFilter indexes movies for the global filter

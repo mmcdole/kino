@@ -1,12 +1,19 @@
 # Kino Configuration Example
 # Copy this file to ~/.config/kino/config.yaml
 
-# Plex Server Configuration
+# Server Configuration
+# Supports both Plex and Jellyfin backends
 server:
-  # URL of your Plex Media Server
+  # Server type: "plex" or "jellyfin" (auto-detected during setup)
+  type: "plex"
+  # URL of your media server
   url: "http://192.168.1.100:32400"
-  # Authentication token (auto-populated after PIN auth)
-  token: "YOUR_PLEX_TOKEN"
+  # Authentication token (auto-populated after authentication)
+  token: "YOUR_TOKEN"
+  # Jellyfin only: User ID (auto-populated during auth)
+  # user_id: ""
+  # Jellyfin only: Username for display (auto-populated during auth)
+  # username: ""
 
 # Media Player Configuration
 player:
@@ -14,15 +21,14 @@ player:
   command: "mpv"
   # Arguments passed to the player
   args:
-    - "--input-ipc-server=/tmp/kino.sock"
     - "--no-terminal"
+  # Flag for specifying start time (e.g., "--start=" for mpv)
+  # start_flag: "--start="
 
-# Scrobbling Configuration
-scrobble:
-  # How often to report progress to Plex (e.g., "10s", "30s")
-  interval: 10s
-  # Mark as played when this percentage is reached (0.0-1.0)
-  threshold: 0.9
+# User Preferences
+preferences:
+  # Show watch status indicators (watched/unwatched/in-progress)
+  show_watch_status: true
 
 # User Interface Configuration
 ui:

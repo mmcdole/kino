@@ -1,6 +1,7 @@
 package plex
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/mmcdole/kino/internal/domain"
@@ -251,4 +254,66 @@ func (a *AuthClient) WaitForPIN(ctx context.Context, pinID int, timeout time.Dur
 	}
 
 	return "", domain.ErrPINExpired
+}
+
+// AuthFlow implements domain.AuthFlow for Plex PIN-based authentication
+type AuthFlow struct {
+	client *AuthClient
+}
+
+// NewAuthFlow creates a new Plex authentication flow
+func NewAuthFlow(logger *slog.Logger) *AuthFlow {
+	return &AuthFlow{
+		client: NewAuthClient(logger),
+	}
+}
+
+// Run executes the Plex PIN-based authentication flow.
+// It prompts the user to visit plex.tv/link and enter the displayed PIN.
+func (f *AuthFlow) Run(ctx context.Context, serverURL string) (*domain.AuthResult, error) {
+	// Note: serverURL is not used for Plex auth since authentication
+	// happens via plex.tv, not the local server
+
+	fmt.Println()
+	fmt.Println("Generating authentication PIN...")
+
+	pin, pinID, err := f.client.GetPIN(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate PIN: %w", err)
+	}
+
+	fmt.Println()
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Printf("  Go to: https://plex.tv/link\n")
+	fmt.Printf("  Enter PIN: %s\n", pin)
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println()
+	fmt.Println("Waiting for authentication...")
+
+	// Wait for PIN to be claimed (5 minutes timeout)
+	token, err := f.client.WaitForPIN(ctx, pinID, 5*time.Minute)
+	if err != nil {
+		return nil, fmt.Errorf("authentication failed: %w", err)
+	}
+
+	fmt.Println()
+	fmt.Println("Authentication successful!")
+
+	return &domain.AuthResult{
+		Token: token,
+		// Plex doesn't require UserID for API calls
+		UserID:   "",
+		Username: "", // Could fetch from /api/v2/user but not needed
+	}, nil
+}
+
+// PromptForServerURL prompts the user to enter a Plex server URL
+func PromptForServerURL() (string, error) {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter your Plex server URL (e.g., http://192.168.1.100:32400): ")
+	url, err := reader.ReadString('\n')
+	if err != nil {
+		return "", fmt.Errorf("failed to read input: %w", err)
+	}
+	return strings.TrimSpace(url), nil
 }

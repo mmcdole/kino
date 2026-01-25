@@ -192,3 +192,11 @@ type ClearLibraryStatusMsg struct {
 
 // HideHelpHintMsg signals that the startup help hint should be hidden
 type HideHelpHintMsg struct{}
+
+// LogoutRequestedMsg signals that the user wants to log out
+type LogoutRequestedMsg struct{}
+
+// LogoutCompleteMsg signals that logout has been completed
+type LogoutCompleteMsg struct {
+	Error error
+}

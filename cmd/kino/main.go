@@ -1,18 +1,24 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/adapter"
-	"github.com/mmcdole/kino/internal/adapter/source/plex"
+	"github.com/mmcdole/kino/internal/adapter/source"
 	"github.com/mmcdole/kino/internal/service"
 	"github.com/mmcdole/kino/internal/tui"
 )
+
+// CLI spinner frames (same as TUI)
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 func main() {
 	if err := run(); err != nil {
@@ -40,19 +46,22 @@ func run() error {
 
 	// Check if configured
 	if !cfg.IsConfigured() {
-		return runAuthFlow(cfg, logger)
+		return runSetupFlow(cfg, logger)
 	}
 
-	// Create adapters
-	plexClient := plex.NewClient(cfg.Server.URL, cfg.Server.Token, logger)
+	// Create media source client
+	client, err := source.NewClientFromConfig(cfg, logger)
+	if err != nil {
+		return fmt.Errorf("failed to create media client: %w", err)
+	}
 
 	// Create launcher (uses configured player or system default)
 	launcher := adapter.NewLauncher(cfg.Player.Command, cfg.Player.Args, cfg.Player.StartFlag, logger)
 
 	// Create services
-	librarySvc := service.NewLibraryService(plexClient, logger)
-	searchSvc := service.NewSearchService(plexClient, logger)
-	playbackSvc := service.NewPlaybackService(launcher, plexClient, logger)
+	librarySvc := service.NewLibraryService(client, logger, cfg.Server.URL)
+	searchSvc := service.NewSearchService(client, logger)
+	playbackSvc := service.NewPlaybackService(launcher, client, logger)
 
 	// Create TUI model
 	model := tui.NewModel(librarySvc, playbackSvc, searchSvc)
@@ -75,57 +84,144 @@ func run() error {
 	return nil
 }
 
-// runAuthFlow handles the initial authentication when not configured
-func runAuthFlow(cfg *adapter.Config, logger *slog.Logger) error {
+// runSetupFlow handles the initial setup when not configured
+func runSetupFlow(cfg *adapter.Config, logger *slog.Logger) error {
+	fmt.Println()
 	fmt.Println("Welcome to Kino!")
 	fmt.Println()
 
-	// Get server URL if not set
-	if cfg.Server.URL == "" {
-		fmt.Print("Enter your Plex server URL (e.g., http://192.168.1.100:32400): ")
-		var url string
-		fmt.Scanln(&url)
-		cfg.Server.URL = url
+	// Loop until we get a valid server URL
+	var serverURL string
+	var serverType adapter.SourceType
+
+	for {
+		// Prompt for server URL
+		reader := bufio.NewReader(os.Stdin)
+		fmt.Print("Enter your server URL (e.g., http://192.168.1.100:32400): ")
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("failed to read input: %w", err)
+		}
+		serverURL = strings.TrimSpace(input)
+
+		if serverURL == "" {
+			fmt.Println("Server URL cannot be empty. Please try again.")
+			continue
+		}
+
+		// Detect server type with spinner
+		fmt.Println()
+		detectedType, err := detectServerWithSpinner(serverURL)
+		if err != nil {
+			fmt.Printf("\n✗ Could not detect server type: %v\n", err)
+			fmt.Println("Please check the URL and try again.")
+			fmt.Println()
+			continue
+		}
+
+		serverType = detectedType
+		break
 	}
 
-	// Start PIN auth flow
-	authClient := plex.NewAuthClient(logger)
-	ctx := context.Background()
+	// Update config with server info
+	cfg.Server.URL = serverURL
+	cfg.Server.Type = serverType
 
-	fmt.Println()
-	fmt.Println("Generating authentication PIN...")
-
-	pin, pinID, err := authClient.GetPIN(ctx)
+	// Run the appropriate auth flow
+	authFlow, err := source.NewAuthFlow(serverType, logger)
 	if err != nil {
-		return fmt.Errorf("failed to generate PIN: %w", err)
+		return fmt.Errorf("failed to create auth flow: %w", err)
 	}
 
-	fmt.Println()
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Printf("  Go to: https://plex.tv/link\n")
-	fmt.Printf("  Enter PIN: %s\n", pin)
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Println()
-	fmt.Println("Waiting for authentication...")
-
-	// Wait for PIN to be claimed (5 minutes timeout)
-	token, err := authClient.WaitForPIN(ctx, pinID, 5*time.Minute)
+	ctx := context.Background()
+	result, err := authFlow.Run(ctx, serverURL)
 	if err != nil {
 		return fmt.Errorf("authentication failed: %w", err)
 	}
 
-	fmt.Println()
-	fmt.Println("✓ Authentication successful!")
+	// Save credentials
+	cfg.Server.Token = result.Token
+	cfg.Server.UserID = result.UserID
+	cfg.Server.Username = result.Username
 
-	// Save token
-	cfg.Server.Token = token
 	if err := adapter.SaveConfig(cfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
+	fmt.Println()
 	fmt.Println("✓ Configuration saved!")
 	fmt.Println()
 	fmt.Println("Run kino again to start the application.")
 
 	return nil
+}
+
+// detectServerWithSpinner detects the server type with a visual spinner
+func detectServerWithSpinner(serverURL string) (adapter.SourceType, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// Channel to receive result
+	type result struct {
+		serverType adapter.SourceType
+		err        error
+	}
+	resultCh := make(chan result, 1)
+
+	// Start detection in background
+	go func() {
+		serverType, err := source.DetectServerType(ctx, serverURL)
+		resultCh <- result{serverType, err}
+	}()
+
+	// Spinner animation
+	frame := 0
+	var mu sync.Mutex
+	done := false
+
+	// Print initial spinner
+	fmt.Printf("\r%s Detecting server type...", spinnerFrames[frame])
+
+	ticker := time.NewTicker(80 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case res := <-resultCh:
+			mu.Lock()
+			done = true
+			mu.Unlock()
+
+			// Clear spinner line
+			fmt.Print("\r                                    \r")
+
+			if res.err != nil {
+				return "", res.err
+			}
+
+			// Show success with server type
+			serverName := "Unknown"
+			switch res.serverType {
+			case adapter.SourceTypePlex:
+				serverName = "Plex Media Server"
+			case adapter.SourceTypeJellyfin:
+				serverName = "Jellyfin"
+			}
+			fmt.Printf("✓ Detected: %s\n", serverName)
+
+			return res.serverType, nil
+
+		case <-ticker.C:
+			mu.Lock()
+			if !done {
+				frame++
+				fmt.Printf("\r%s Detecting server type...", spinnerFrames[frame%len(spinnerFrames)])
+			}
+			mu.Unlock()
+
+		case <-ctx.Done():
+			fmt.Print("\r                                    \r")
+			return "", fmt.Errorf("detection timed out")
+		}
+	}
 }

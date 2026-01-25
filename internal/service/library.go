@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"os"
@@ -15,7 +17,7 @@ import (
 
 const (
 	defaultPageSize = 50
-	syncChunkSize   = 200 // Items per chunk during sync for responsive UI
+	syncChunkSize   = 50 // Smaller batches to work around Jellyfin server issues
 )
 
 // cachedResult stores cached data with timestamp
@@ -50,20 +52,32 @@ type LibraryService struct {
 
 	cache    map[string]cachedResult
 	cacheMu  sync.RWMutex
-	cacheDir string // Disk cache directory
+	cacheDir string // Disk cache directory (namespaced by server URL)
 	diskMu   sync.Mutex
 }
 
 // NewLibraryService creates a new library service
-func NewLibraryService(repo domain.LibraryRepository, logger *slog.Logger) *LibraryService {
+// serverURL is used to namespace the cache directory, preventing conflicts
+// when switching between different servers
+func NewLibraryService(repo domain.LibraryRepository, logger *slog.Logger, serverURL string) *LibraryService {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
-	// Set up disk cache directory
+	// Set up disk cache directory, namespaced by server URL hash
 	cacheDir := ""
 	if home, err := os.UserHomeDir(); err == nil {
-		cacheDir = filepath.Join(home, ".local", "share", "kino", "cache")
+		baseCacheDir := filepath.Join(home, ".local", "share", "kino", "cache")
+
+		// Hash the server URL to create a unique subdirectory
+		if serverURL != "" {
+			hash := hashServerURL(serverURL)
+			cacheDir = filepath.Join(baseCacheDir, hash)
+		} else {
+			// Fallback for backwards compatibility (no server URL provided)
+			cacheDir = baseCacheDir
+		}
+
 		if err := os.MkdirAll(cacheDir, 0755); err != nil {
 			logger.Warn("failed to create cache directory", "error", err)
 			cacheDir = ""
@@ -76,6 +90,15 @@ func NewLibraryService(repo domain.LibraryRepository, logger *slog.Logger) *Libr
 		cache:    make(map[string]cachedResult),
 		cacheDir: cacheDir,
 	}
+}
+
+// hashServerURL creates a short hash of the server URL for cache namespacing
+func hashServerURL(serverURL string) string {
+	// Normalize URL (trim trailing slashes, lowercase)
+	normalized := strings.TrimRight(strings.ToLower(serverURL), "/")
+	hash := sha256.Sum256([]byte(normalized))
+	// Use first 12 hex chars (6 bytes) - enough for uniqueness
+	return hex.EncodeToString(hash[:6])
 }
 
 // GetLibraries returns all available libraries
@@ -174,10 +197,13 @@ func (s *LibraryService) SmartSync(
 }
 
 // syncMovies fetches movies in chunks and sends progress to channel
+// Skips failed batches and continues to get as much content as possible
 func (s *LibraryService) syncMovies(ctx context.Context, lib domain.Library, serverTS int64, progressCh chan<- SyncProgress) {
 	cacheKey := "movies:" + lib.ID
 	offset := 0
 	var allMovies []*domain.MediaItem
+	var knownTotal int
+	skippedBatches := 0
 
 	for {
 		// Check for cancellation before fetching
@@ -190,13 +216,33 @@ func (s *LibraryService) syncMovies(ctx context.Context, lib domain.Library, ser
 
 		movies, total, err := s.repo.GetMovies(ctx, lib.ID, offset, syncChunkSize)
 		if err != nil {
-			s.logger.Error("failed to get movies chunk", "error", err, "offset", offset)
-			progressCh <- SyncProgress{LibraryID: lib.ID, LibraryType: lib.Type, Error: err}
-			return
+			s.logger.Error("failed to get movies chunk, skipping", "error", err, "offset", offset)
+			skippedBatches++
+			// Skip this batch and continue - don't fail the whole sync
+			offset += syncChunkSize
+			// If we know the total and we've passed it, we're done
+			if knownTotal > 0 && offset >= knownTotal {
+				break
+			}
+			// Safety limit: don't skip more than 10 batches in a row
+			if skippedBatches > 10 {
+				s.logger.Error("too many failed batches, aborting sync", "libID", lib.ID)
+				progressCh <- SyncProgress{LibraryID: lib.ID, LibraryType: lib.Type, Error: err}
+				return
+			}
+			continue
+		}
+
+		// Reset skip counter on success
+		skippedBatches = 0
+
+		// Remember total from first successful response
+		if knownTotal == 0 {
+			knownTotal = total
 		}
 
 		allMovies = append(allMovies, movies...)
-		done := len(allMovies) >= total || len(movies) == 0
+		done := offset+len(movies) >= knownTotal || len(movies) == 0
 
 		// Send progress, but check for cancellation
 		select {
@@ -204,7 +250,7 @@ func (s *LibraryService) syncMovies(ctx context.Context, lib domain.Library, ser
 			LibraryID:   lib.ID,
 			LibraryType: lib.Type,
 			Loaded:      len(allMovies),
-			Total:       total,
+			Total:       knownTotal,
 			Items:       movies, // Just this chunk
 			Done:        done,
 		}:

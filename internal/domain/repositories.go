@@ -67,7 +67,7 @@ type MetadataRepository interface {
 	MarkUnplayed(ctx context.Context, itemID string) error
 }
 
-// AuthProvider handles authentication with the media server
+// AuthProvider handles authentication with the media server (legacy Plex-specific interface)
 type AuthProvider interface {
 	// GetPIN generates a new authentication PIN
 	GetPIN(ctx context.Context) (pin string, id int, err error)
@@ -77,4 +77,22 @@ type AuthProvider interface {
 
 	// ValidateToken checks if a token is still valid
 	ValidateToken(ctx context.Context, token string) error
+}
+
+// AuthResult contains the result of a successful authentication
+type AuthResult struct {
+	Token    string // Access token for API calls
+	UserID   string // User identifier (required for Jellyfin)
+	Username string // Display username
+}
+
+// AuthFlow defines a generic authentication flow for any media server.
+// Different backends implement this differently:
+// - Plex: PIN-based OAuth flow (display PIN -> user visits plex.tv/link -> poll for token)
+// - Jellyfin: Username/password authentication
+type AuthFlow interface {
+	// Run executes the authentication flow and returns credentials.
+	// The serverURL parameter is the base URL of the media server.
+	// Implementations handle their own user interaction (prompting for credentials, etc.)
+	Run(ctx context.Context, serverURL string) (*AuthResult, error)
 }
