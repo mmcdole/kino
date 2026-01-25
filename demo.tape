@@ -1,9 +1,9 @@
 # VHS Demo for Kino
 Output demo.gif
 
-Set FontSize 16
+Set FontSize 18
+Set FontFamily "Hack"
 Set Width 1200
-Set Height 700
 Set Theme "TokyoNight"
 
 Type "kino"
@@ -22,6 +22,14 @@ Sleep 400ms
 Type "j"
 Sleep 400ms
 
+# Show playlist modal
+Space
+Sleep 1s
+Space
+Sleep 500ms
+Escape
+Sleep 500ms
+
 # Toggle inspector
 Type "i"
 Sleep 1.5s
@@ -34,10 +42,19 @@ Sleep 1s
 
 # Filter
 Type "/"
-Sleep 500ms
-Type "13"
+Sleep 250ms
+Type "1"
+Sleep 250ms
+Type "3"
+Sleep 250ms
 Enter
-Sleep 1s
+Sleep 500ms
+
+# Navigate filtered results
+Type "j"
+Sleep 400ms
+Type "j"
+Sleep 500ms
 
 # Go back to library column
 Type "h"
