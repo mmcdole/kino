@@ -485,3 +485,220 @@ func (c *Client) MarkUnplayed(ctx context.Context, itemID string) error {
 	_, err := c.doRequest(ctx, http.MethodGet, "/:/unscrobble", query)
 	return err
 }
+
+// GetPlaylists returns all user playlists
+func (c *Client) GetPlaylists(ctx context.Context) ([]*domain.Playlist, error) {
+	body, err := c.doRequest(ctx, http.MethodGet, "/playlists", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	container, err := c.parseResponse(body)
+	if err != nil {
+		return nil, err
+	}
+
+	return MapPlaylists(container.Metadata, c.baseURL), nil
+}
+
+// GetPlaylistItems returns all items in a playlist
+func (c *Client) GetPlaylistItems(ctx context.Context, playlistID string) ([]*domain.MediaItem, error) {
+	path := fmt.Sprintf("/playlists/%s/items", playlistID)
+	body, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	container, err := c.parseResponse(body)
+	if err != nil {
+		return nil, err
+	}
+
+	return MapOnDeck(container.Metadata, c.baseURL), nil
+}
+
+// CreatePlaylist creates a new playlist with the given title and optional initial items
+func (c *Client) CreatePlaylist(ctx context.Context, title string, itemIDs []string) (*domain.Playlist, error) {
+	query := url.Values{}
+	query.Set("type", "video")
+	query.Set("title", title)
+	query.Set("smart", "0")
+
+	// If items are provided, build the URI parameter
+	if len(itemIDs) > 0 {
+		// Plex expects a URI in the format: server://machineID/com.plexapp.plugins.library/library/metadata/itemID
+		// For simplicity, we'll create an empty playlist and add items separately
+	}
+
+	reqURL := fmt.Sprintf("%s/playlists?%s", c.baseURL, query.Encode())
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Plex-Token", c.token)
+	req.Header.Set("X-Plex-Client-Identifier", clientID)
+	req.Header.Set("X-Plex-Product", "Kino")
+	req.Header.Set("X-Plex-Version", "1.0")
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		c.logger.Error("plex create playlist failed", "error", err)
+		return nil, domain.ErrServerOffline
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		c.logger.Error("plex create playlist error", "status", resp.StatusCode, "body", string(respBody))
+		return nil, fmt.Errorf("failed to create playlist: status %d", resp.StatusCode)
+	}
+
+	container, err := c.parseResponse(respBody)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(container.Metadata) == 0 {
+		return nil, fmt.Errorf("no playlist returned from server")
+	}
+
+	playlists := MapPlaylists(container.Metadata, c.baseURL)
+	if len(playlists) == 0 {
+		return nil, fmt.Errorf("failed to parse created playlist")
+	}
+
+	// If items were provided, add them to the playlist
+	if len(itemIDs) > 0 {
+		if err := c.AddToPlaylist(ctx, playlists[0].ID, itemIDs); err != nil {
+			// Playlist was created but items couldn't be added
+			c.logger.Warn("playlist created but failed to add items", "error", err)
+		}
+	}
+
+	return playlists[0], nil
+}
+
+// AddToPlaylist adds items to an existing playlist
+func (c *Client) AddToPlaylist(ctx context.Context, playlistID string, itemIDs []string) error {
+	if len(itemIDs) == 0 {
+		return nil
+	}
+
+	// Build the URI for each item
+	// Plex expects: library://libraryUUID/item//itemID
+	// We use a simplified format that works: library:///item/itemID
+	uris := make([]string, len(itemIDs))
+	for i, id := range itemIDs {
+		uris[i] = fmt.Sprintf("library:///item/%%2Flibrary%%2Fmetadata%%2F%s", id)
+	}
+
+	query := url.Values{}
+	query.Set("uri", uris[0]) // Plex accepts one URI at a time in most cases
+
+	path := fmt.Sprintf("/playlists/%s/items", playlistID)
+	reqURL := fmt.Sprintf("%s%s?%s", c.baseURL, path, query.Encode())
+
+	// Add items one at a time for reliability
+	for _, itemID := range itemIDs {
+		itemQuery := url.Values{}
+		itemQuery.Set("uri", fmt.Sprintf("library:///item/%%2Flibrary%%2Fmetadata%%2F%s", itemID))
+
+		itemURL := fmt.Sprintf("%s%s?%s", c.baseURL, path, itemQuery.Encode())
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut, itemURL, nil)
+		if err != nil {
+			return fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("X-Plex-Token", c.token)
+		req.Header.Set("X-Plex-Client-Identifier", clientID)
+		req.Header.Set("X-Plex-Product", "Kino")
+		req.Header.Set("X-Plex-Version", "1.0")
+		req.Header.Set("User-Agent", userAgent)
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			c.logger.Error("plex add to playlist failed", "error", err)
+			return domain.ErrServerOffline
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+			return fmt.Errorf("failed to add item to playlist: status %d", resp.StatusCode)
+		}
+	}
+
+	_ = reqURL // unused in loop version
+	return nil
+}
+
+// RemoveFromPlaylist removes an item from a playlist
+func (c *Client) RemoveFromPlaylist(ctx context.Context, playlistID string, itemID string) error {
+	path := fmt.Sprintf("/playlists/%s/items/%s", playlistID, itemID)
+	reqURL := fmt.Sprintf("%s%s", c.baseURL, path)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, reqURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Plex-Token", c.token)
+	req.Header.Set("X-Plex-Client-Identifier", clientID)
+	req.Header.Set("X-Plex-Product", "Kino")
+	req.Header.Set("X-Plex-Version", "1.0")
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		c.logger.Error("plex remove from playlist failed", "error", err)
+		return domain.ErrServerOffline
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("failed to remove item from playlist: status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+// DeletePlaylist deletes a playlist
+func (c *Client) DeletePlaylist(ctx context.Context, playlistID string) error {
+	path := fmt.Sprintf("/playlists/%s", playlistID)
+	reqURL := fmt.Sprintf("%s%s", c.baseURL, path)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, reqURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Plex-Token", c.token)
+	req.Header.Set("X-Plex-Client-Identifier", clientID)
+	req.Header.Set("X-Plex-Product", "Kino")
+	req.Header.Set("X-Plex-Version", "1.0")
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		c.logger.Error("plex delete playlist failed", "error", err)
+		return domain.ErrServerOffline
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("failed to delete playlist: status %d", resp.StatusCode)
+	}
+
+	return nil
+}

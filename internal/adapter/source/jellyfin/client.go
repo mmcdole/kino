@@ -626,3 +626,196 @@ func (c *Client) ReportProgress(ctx context.Context, itemID string, status domai
 
 	return nil
 }
+
+// GetPlaylists returns all user playlists
+func (c *Client) GetPlaylists(ctx context.Context) ([]*domain.Playlist, error) {
+	query := url.Values{}
+	query.Set("IncludeItemTypes", "Playlist")
+	query.Set("Recursive", "true")
+	query.Set("Fields", "ChildCount,DateCreated")
+
+	path := fmt.Sprintf("/Users/%s/Items", c.userID)
+	body, err := c.doRequest(ctx, http.MethodGet, path, query)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp ItemsResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return MapPlaylists(resp.Items, c.baseURL), nil
+}
+
+// GetPlaylistItems returns all items in a playlist
+func (c *Client) GetPlaylistItems(ctx context.Context, playlistID string) ([]*domain.MediaItem, error) {
+	query := url.Values{}
+	query.Set("UserId", c.userID)
+	query.Set("Fields", "Overview,MediaSources,DateCreated")
+
+	path := fmt.Sprintf("/Playlists/%s/Items", playlistID)
+	body, err := c.doRequest(ctx, http.MethodGet, path, query)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp ItemsResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// Map items (could be movies or episodes)
+	items := make([]*domain.MediaItem, 0, len(resp.Items))
+	for _, item := range resp.Items {
+		switch item.Type {
+		case "Movie":
+			movie := mapMovie(item, c.baseURL)
+			items = append(items, &movie)
+		case "Episode":
+			episode := mapEpisode(item, c.baseURL)
+			items = append(items, &episode)
+		}
+	}
+
+	return items, nil
+}
+
+// CreatePlaylist creates a new playlist with the given title and optional initial items
+func (c *Client) CreatePlaylist(ctx context.Context, title string, itemIDs []string) (*domain.Playlist, error) {
+	reqBody := map[string]interface{}{
+		"Name":   title,
+		"UserId": c.userID,
+	}
+	if len(itemIDs) > 0 {
+		reqBody["Ids"] = itemIDs
+	}
+
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/Playlists",
+		strings.NewReader(string(bodyBytes)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Emby-Authorization", buildAuthHeader(c.token, c.userID))
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, domain.ErrServerOffline
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("failed to create playlist: status %d - %s", resp.StatusCode, string(respBody))
+	}
+
+	// Parse the response to get the created playlist
+	var createResp struct {
+		ID string `json:"Id"`
+	}
+	if err := json.Unmarshal(respBody, &createResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// Return a minimal playlist object - caller can refresh for full details
+	return &domain.Playlist{
+		ID:           createResp.ID,
+		Title:        title,
+		PlaylistType: "video",
+		ItemCount:    len(itemIDs),
+	}, nil
+}
+
+// AddToPlaylist adds items to an existing playlist
+func (c *Client) AddToPlaylist(ctx context.Context, playlistID string, itemIDs []string) error {
+	if len(itemIDs) == 0 {
+		return nil
+	}
+
+	query := url.Values{}
+	query.Set("Ids", strings.Join(itemIDs, ","))
+	query.Set("UserId", c.userID)
+
+	path := fmt.Sprintf("/Playlists/%s/Items?%s", playlistID, query.Encode())
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("X-Emby-Authorization", buildAuthHeader(c.token, c.userID))
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return domain.ErrServerOffline
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("failed to add items to playlist: status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+// RemoveFromPlaylist removes an item from a playlist
+func (c *Client) RemoveFromPlaylist(ctx context.Context, playlistID string, itemID string) error {
+	query := url.Values{}
+	query.Set("EntryIds", itemID)
+
+	path := fmt.Sprintf("/Playlists/%s/Items?%s", playlistID, query.Encode())
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.baseURL+path, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("X-Emby-Authorization", buildAuthHeader(c.token, c.userID))
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return domain.ErrServerOffline
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("failed to remove item from playlist: status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+// DeletePlaylist deletes a playlist
+func (c *Client) DeletePlaylist(ctx context.Context, playlistID string) error {
+	path := fmt.Sprintf("/Items/%s", playlistID)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.baseURL+path, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("X-Emby-Authorization", buildAuthHeader(c.token, c.userID))
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return domain.ErrServerOffline
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("failed to delete playlist: status %d", resp.StatusCode)
+	}
+
+	return nil
+}

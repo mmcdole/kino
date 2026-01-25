@@ -217,6 +217,18 @@ func (p PlayerStatus) RemainingTime() time.Duration {
 	return p.TotalTime - p.CurrentTime
 }
 
+// Playlist represents a user-created playlist
+type Playlist struct {
+	ID           string        // Playlist identifier
+	Title        string        // Display title
+	PlaylistType string        // "video", "audio", "photo"
+	Smart        bool          // Smart/dynamic playlist
+	ItemCount    int           // Number of items in playlist
+	Duration     time.Duration // Total duration of all items
+	ThumbURL     string        // Thumbnail image URL
+	UpdatedAt    int64         // Unix timestamp when last updated
+}
+
 // WatchStatus represents the viewing state of media
 type WatchStatus int
 

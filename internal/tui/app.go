@@ -106,12 +106,15 @@ type Model struct {
 	LibrarySvc  *service.LibraryService
 	PlaybackSvc *service.PlaybackService
 	SearchSvc   *service.SearchService
+	PlaylistSvc *service.PlaylistService
 
 	// UI Components - Miller Columns
-	ColumnStack *ColumnStack         // Stack of navigable list columns
-	Inspector   components.Inspector // View projection (always shows details for middle column selection)
-	Omnibar     components.Omnibar     // Search modal
-	SortModal   components.SortModal   // Sort field selector
+	ColumnStack   *ColumnStack              // Stack of navigable list columns
+	Inspector     components.Inspector      // View projection (always shows details for middle column selection)
+	Omnibar       components.Omnibar        // Search modal
+	SortModal     components.SortModal      // Sort field selector
+	PlaylistModal components.PlaylistModal // Playlist management modal
+	InputModal    components.InputModal     // Simple text input modal
 
 	// Data
 	Libraries []domain.Library
@@ -137,6 +140,9 @@ type Model struct {
 
 	// Navigation plan for deep linking
 	navPlan *NavPlan
+
+	// Playlist navigation context (when viewing playlist items)
+	currentPlaylistID string
 }
 
 // NewModel creates a new application model
@@ -144,15 +150,19 @@ func NewModel(
 	librarySvc *service.LibraryService,
 	playbackSvc *service.PlaybackService,
 	searchSvc *service.SearchService,
+	playlistSvc *service.PlaylistService,
 ) Model {
 	return Model{
 		State:         StateBrowsing,
 		LibrarySvc:    librarySvc,
 		PlaybackSvc:   playbackSvc,
 		SearchSvc:     searchSvc,
+		PlaylistSvc:   playlistSvc,
 		ColumnStack:   NewColumnStack(),
 		Inspector:     components.NewInspector(),
 		Omnibar:       components.NewOmnibar(),
+		PlaylistModal: components.NewPlaylistModal(),
+		InputModal:    components.NewInputModal(),
 		LibraryStates: make(map[string]components.LibrarySyncState),
 		ShowInspector: false, // Inspector hidden by default - show 3 nav columns
 		ShowHelpHint:  true,
@@ -201,8 +211,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.SyncingCount = len(msg.Libraries)
 		m.MultiLibSync = true
 
+		// Append synthetic "Playlists" entry at bottom
+		playlistsEntry := domain.Library{
+			ID:   "__playlists__",
+			Name: "Playlists",
+			Type: "playlist",
+		}
+		allEntries := append(msg.Libraries, playlistsEntry)
+
 		// Create the library column as the root
-		libCol := components.NewLibraryColumn(msg.Libraries)
+		libCol := components.NewLibraryColumn(allEntries)
 		libCol.SetLibraryStates(m.LibraryStates)
 		m.Inspector.SetLibraryStates(m.LibraryStates)
 		m.ColumnStack.Reset(libCol)
@@ -415,6 +433,72 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Logout successful - quit the application
 		fmt.Println("\nLogged out. Run 'kino' to set up again.")
 		return m, tea.Quit
+
+	case PlaylistsLoadedMsg:
+		m.Loading = false
+		if top := m.ColumnStack.Top(); top != nil {
+			top.SetItems(msg.Playlists)
+		}
+		m.updateInspector()
+		return m, nil
+
+	case PlaylistItemsLoadedMsg:
+		m.Loading = false
+		m.currentPlaylistID = msg.PlaylistID
+		if top := m.ColumnStack.Top(); top != nil {
+			top.SetItems(msg.Items)
+		}
+		m.updateInspector()
+		return m, nil
+
+	case PlaylistModalDataMsg:
+		m.PlaylistModal.Show(msg.Playlists, msg.Membership, msg.Item)
+		m.PlaylistModal.SetSize(m.Width, m.Height)
+		return m, nil
+
+	case PlaylistUpdatedMsg:
+		if msg.Error != nil {
+			m.StatusMsg = fmt.Sprintf("Playlist update failed: %v", msg.Error)
+			m.StatusIsErr = true
+		} else {
+			m.StatusMsg = "Playlist updated"
+			// Refresh playlist items if viewing a playlist
+			if m.currentPlaylistID != "" {
+				return m, LoadPlaylistItemsCmd(m.PlaylistSvc, m.currentPlaylistID)
+			}
+		}
+		cmds = append(cmds, ClearStatusCmd(3*time.Second))
+		return m, tea.Batch(cmds...)
+
+	case PlaylistCreatedMsg:
+		if msg.Error != nil {
+			m.StatusMsg = fmt.Sprintf("Failed to create playlist: %v", msg.Error)
+			m.StatusIsErr = true
+		} else {
+			m.StatusMsg = fmt.Sprintf("Created playlist: %s", msg.Playlist.Title)
+			// Refresh playlists if viewing playlists
+			if top := m.ColumnStack.Top(); top != nil {
+				if lc, ok := top.(*components.ListColumn); ok && lc.ColumnType() == components.ColumnTypePlaylists {
+					return m, LoadPlaylistsCmd(m.PlaylistSvc)
+				}
+			}
+		}
+		cmds = append(cmds, ClearStatusCmd(3*time.Second))
+		return m, tea.Batch(cmds...)
+
+	case PlaylistDeletedMsg:
+		if msg.Error != nil {
+			m.StatusMsg = fmt.Sprintf("Failed to delete playlist: %v", msg.Error)
+			m.StatusIsErr = true
+			cmds = append(cmds, ClearStatusCmd(3*time.Second))
+		} else {
+			m.StatusMsg = "Playlist deleted"
+			// Clear current playlist ID and refresh the playlists
+			m.currentPlaylistID = ""
+			cmds = append(cmds, LoadPlaylistsCmd(m.PlaylistSvc))
+			cmds = append(cmds, ClearStatusCmd(3*time.Second))
+		}
+		return m, tea.Batch(cmds...)
 	}
 
 	// Update the focused column (top of stack)
@@ -552,6 +636,74 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Handle playlist modal if visible
+	if m.PlaylistModal.IsVisible() {
+		handled, shouldClose, shouldCreate := m.PlaylistModal.HandleKeyMsg(msg)
+		if handled {
+			if shouldCreate {
+				// Create new playlist with current item, plus apply any checkbox changes
+				title := m.PlaylistModal.NewPlaylistTitle()
+				item := m.PlaylistModal.Item()
+				changes := m.PlaylistModal.GetChanges()
+				m.PlaylistModal.Hide()
+
+				if title != "" && item != nil {
+					var batchCmds []tea.Cmd
+					batchCmds = append(batchCmds, CreatePlaylistCmd(m.PlaylistSvc, title, []string{item.ID}))
+					// Also apply any checkbox changes
+					for _, change := range changes {
+						if change.Add {
+							batchCmds = append(batchCmds, AddToPlaylistCmd(m.PlaylistSvc, change.PlaylistID, []string{item.ID}))
+						} else {
+							batchCmds = append(batchCmds, RemoveFromPlaylistCmd(m.PlaylistSvc, change.PlaylistID, item.ID))
+						}
+					}
+					return m, tea.Batch(batchCmds...)
+				}
+			}
+			if shouldClose {
+				// Apply pending changes
+				changes := m.PlaylistModal.GetChanges()
+				item := m.PlaylistModal.Item()
+				m.PlaylistModal.Hide()
+
+				if len(changes) > 0 && item != nil {
+					// Apply changes (add/remove from playlists)
+					var batchCmds []tea.Cmd
+					for _, change := range changes {
+						if change.Add {
+							batchCmds = append(batchCmds, AddToPlaylistCmd(m.PlaylistSvc, change.PlaylistID, []string{item.ID}))
+						} else {
+							batchCmds = append(batchCmds, RemoveFromPlaylistCmd(m.PlaylistSvc, change.PlaylistID, item.ID))
+						}
+					}
+					if len(batchCmds) > 0 {
+						return m, tea.Batch(batchCmds...)
+					}
+				}
+			}
+			return m, nil
+		}
+	}
+
+	// Handle input modal if visible
+	if m.InputModal.IsVisible() {
+		var cmd tea.Cmd
+		var submitted bool
+		m.InputModal, cmd, submitted = m.InputModal.Update(msg)
+		if submitted {
+			title := m.InputModal.Value()
+			m.InputModal.Hide()
+			if title != "" {
+				return m, CreatePlaylistCmd(m.PlaylistSvc, title, []string{})
+			}
+		}
+		if cmd != nil {
+			return m, cmd
+		}
+		return m, nil
+	}
+
 	// Handle filter typing mode
 	if top := m.ColumnStack.Top(); top != nil {
 		if lc, ok := top.(*components.ListColumn); ok && lc.IsFilterTyping() {
@@ -575,6 +727,13 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "esc":
+		// Clear active filter if any
+		if top := m.ColumnStack.Top(); top != nil {
+			if lc, ok := top.(*components.ListColumn); ok && lc.IsFiltering() {
+				lc.ClearFilter()
+				return m, nil
+			}
+		}
 		// Cancel active nav plan if any
 		if m.navPlan != nil {
 			m.clearNavPlan()
@@ -661,8 +820,16 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.MultiLibSync = true
 		m.updateLibraryStates()
 
+		// Append synthetic "Playlists" entry at bottom
+		playlistsEntry := domain.Library{
+			ID:   "__playlists__",
+			Name: "Playlists",
+			Type: "playlist",
+		}
+		allEntries := append(m.Libraries, playlistsEntry)
+
 		// Reset to library view
-		libCol := components.NewLibraryColumn(m.Libraries)
+		libCol := components.NewLibraryColumn(allEntries)
 		libCol.SetLibraryStates(m.LibraryStates)
 		m.Inspector.SetLibraryStates(m.LibraryStates)
 		m.ColumnStack.Reset(libCol)
@@ -712,6 +879,46 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Logout (Shift+L) - show confirmation modal
 		m.State = StateConfirmLogout
 		return m, nil
+
+	case " ":
+		// Space: Open playlist modal for selected playable item
+		if top := m.ColumnStack.Top(); top != nil {
+			if lc, ok := top.(*components.ListColumn); ok {
+				item := lc.SelectedMediaItem()
+				if item != nil && m.PlaylistSvc != nil {
+					return m, LoadPlaylistModalDataCmd(m.PlaylistSvc, item)
+				}
+			}
+		}
+		return m, nil
+
+	case "x":
+		if top := m.ColumnStack.Top(); top != nil {
+			if lc, ok := top.(*components.ListColumn); ok {
+				switch lc.ColumnType() {
+				case components.ColumnTypePlaylistItems:
+					// Remove item from playlist
+					if item := lc.SelectedMediaItem(); item != nil && m.currentPlaylistID != "" {
+						return m, RemoveFromPlaylistCmd(m.PlaylistSvc, m.currentPlaylistID, item.ID)
+					}
+				case components.ColumnTypePlaylists:
+					// Delete playlist
+					if playlist := lc.SelectedPlaylist(); playlist != nil {
+						return m, DeletePlaylistCmd(m.PlaylistSvc, playlist.ID)
+					}
+				}
+			}
+		}
+		return m, nil
+
+	case "n":
+		// Create new playlist (when viewing playlists)
+		if top := m.ColumnStack.Top(); top != nil {
+			if lc, ok := top.(*components.ListColumn); ok && lc.ColumnType() == components.ColumnTypePlaylists {
+				m.InputModal.Show("New Playlist")
+				return m, nil
+			}
+		}
 	}
 
 	// Let the focused column handle remaining keys (j/k/g/G navigation)
@@ -790,6 +997,19 @@ func (m *Model) drillSelected() *drillResult {
 
 	switch v := item.(type) {
 	case domain.Library:
+		// Handle synthetic "Playlists" entry
+		if v.ID == "__playlists__" {
+			col := components.NewListColumn(components.ColumnTypePlaylists, "Playlists")
+			col.SetLoading(true)
+			m.ColumnStack.Push(col, cursor)
+			m.Loading = true
+			m.updateLayout()
+			return &drillResult{
+				AwaitKind: AwaitNone,
+				Cmd:       LoadPlaylistsCmd(m.PlaylistSvc),
+			}
+		}
+
 		if v.Type == "movie" {
 			col := components.NewListColumn(components.ColumnTypeMovies, v.Name)
 			m.ColumnStack.Push(col, cursor)
@@ -877,6 +1097,19 @@ func (m *Model) drillSelected() *drillResult {
 			AwaitID:   v.ID,
 			Cmd:       LoadEpisodesCmd(m.LibrarySvc, v.ID),
 		}
+
+	case *domain.Playlist:
+		col := components.NewListColumn(components.ColumnTypePlaylistItems, v.Title)
+		col.SetLoading(true)
+		m.ColumnStack.Push(col, cursor)
+		m.Loading = true
+		m.currentPlaylistID = v.ID
+		m.updateLayout()
+		return &drillResult{
+			AwaitKind: AwaitNone, // Playlists don't use the NavPlan system
+			AwaitID:   v.ID,
+			Cmd:       LoadPlaylistItemsCmd(m.PlaylistSvc, v.ID),
+		}
 	}
 	return nil
 }
@@ -894,6 +1127,13 @@ func (m Model) drillIntoSelection() (tea.Model, tea.Cmd) {
 func (m Model) handleBack() (tea.Model, tea.Cmd) {
 	if !m.ColumnStack.CanGoBack() {
 		return m, nil
+	}
+
+	// Check if we're leaving playlist items view
+	if top := m.ColumnStack.Top(); top != nil {
+		if lc, ok := top.(*components.ListColumn); ok && lc.ColumnType() == components.ColumnTypePlaylistItems {
+			m.currentPlaylistID = ""
+		}
 	}
 
 	_, savedCursor := m.ColumnStack.Pop()
@@ -1287,6 +1527,20 @@ func (m Model) View() string {
 			m.SortModal.View())
 	}
 
+	// Overlay playlist modal if visible
+	if m.PlaylistModal.IsVisible() {
+		view = lipgloss.Place(m.Width, m.Height,
+			lipgloss.Center, lipgloss.Center,
+			m.PlaylistModal.View())
+	}
+
+	// Overlay input modal if visible
+	if m.InputModal.IsVisible() {
+		view = lipgloss.Place(m.Width, m.Height,
+			lipgloss.Center, lipgloss.Center,
+			m.InputModal.View())
+	}
+
 	return view
 }
 
@@ -1365,13 +1619,16 @@ NAVIGATION                      PLAYBACK
   PgUp/PgDn  Scroll page
   Ctrl+u/d   Scroll half page
 
-SEARCH & VIEW                   OTHER
-  /          Filter                q      Quit
-  f          Global search         ?      This help
-  s          Sort                  Esc    Close / Cancel
-  i          Toggle inspector      L      Logout
-  r          Refresh library
-  R          Refresh all
+SEARCH & VIEW                   PLAYLISTS
+  /          Filter                Space  Manage playlists
+  f          Global search         n      New playlist
+  s          Sort                  x      Remove/delete
+  i          Toggle inspector
+
+OTHER
+  r          Refresh library       q      Quit
+  R          Refresh all           ?      This help
+  Esc        Close / Cancel        L      Logout
 
 Press any key to return...
 `
@@ -1545,8 +1802,16 @@ func (m *Model) advanceNavPlanAfterLoad(kind NavAwaitKind, id string) tea.Cmd {
 
 // navigateToFilteredItem navigates to a filtered item in its context
 func (m *Model) navigateToFilteredItem(item service.FilterItem) tea.Cmd {
+	// Append synthetic "Playlists" entry at bottom
+	playlistsEntry := domain.Library{
+		ID:   "__playlists__",
+		Name: "Playlists",
+		Type: "playlist",
+	}
+	allEntries := append(m.Libraries, playlistsEntry)
+
 	// Reset stack to library level first
-	libCol := components.NewLibraryColumn(m.Libraries)
+	libCol := components.NewLibraryColumn(allEntries)
 	libCol.SetLibraryStates(m.LibraryStates)
 	m.Inspector.SetLibraryStates(m.LibraryStates)
 

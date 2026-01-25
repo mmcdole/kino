@@ -29,12 +29,8 @@ const (
 // ListColumn is a scrollable list column that can display various content types.
 // It implements the Column interface.
 type ListColumn struct {
-	// Content - only one of these is populated at a time (using pointers for memory efficiency)
-	libraries []domain.Library
-	movies    []*domain.MediaItem
-	shows     []*domain.Show
-	seasons   []*domain.Season
-	episodes  []*domain.MediaItem
+	// Content - unified storage using ListItem interface
+	items []ListItem
 
 	columnType ColumnType
 
@@ -59,9 +55,9 @@ type ListColumn struct {
 	libraryStates map[string]LibrarySyncState
 
 	// Sort state
-	sortField  SortField
-	sortDir    SortDirection
-	sortedIdx  []int // sorted position → raw index (nil = default order)
+	sortField SortField
+	sortDir   SortDirection
+	sortedIdx []int // sorted position → raw index (nil = default order)
 
 	// Filter state
 	filterActive bool
@@ -89,35 +85,49 @@ func NewListColumn(colType ColumnType, title string) *ListColumn {
 // NewLibraryColumn creates a column for displaying libraries
 func NewLibraryColumn(libraries []domain.Library) *ListColumn {
 	col := NewListColumn(ColumnTypeLibraries, "Libraries")
-	col.libraries = libraries
+	col.items = WrapLibraries(libraries)
 	return col
 }
 
 // NewMoviesColumn creates a column for displaying movies
 func NewMoviesColumn(title string, movies []*domain.MediaItem) *ListColumn {
 	col := NewListColumn(ColumnTypeMovies, title)
-	col.movies = movies
+	col.items = WrapMovies(movies)
 	return col
 }
 
 // NewShowsColumn creates a column for displaying TV shows
 func NewShowsColumn(title string, shows []*domain.Show) *ListColumn {
 	col := NewListColumn(ColumnTypeShows, title)
-	col.shows = shows
+	col.items = WrapShows(shows)
 	return col
 }
 
 // NewSeasonsColumn creates a column for displaying seasons
 func NewSeasonsColumn(title string, seasons []*domain.Season) *ListColumn {
 	col := NewListColumn(ColumnTypeSeasons, title)
-	col.seasons = seasons
+	col.items = WrapSeasons(seasons)
 	return col
 }
 
 // NewEpisodesColumn creates a column for displaying episodes
 func NewEpisodesColumn(title string, episodes []*domain.MediaItem) *ListColumn {
 	col := NewListColumn(ColumnTypeEpisodes, title)
-	col.episodes = episodes
+	col.items = WrapEpisodes(episodes)
+	return col
+}
+
+// NewPlaylistsColumn creates a column for displaying playlists
+func NewPlaylistsColumn(title string, playlists []*domain.Playlist) *ListColumn {
+	col := NewListColumn(ColumnTypePlaylists, title)
+	col.items = WrapPlaylists(playlists)
+	return col
+}
+
+// NewPlaylistItemsColumn creates a column for displaying playlist items
+func NewPlaylistItemsColumn(title string, items []*domain.MediaItem) *ListColumn {
+	col := NewListColumn(ColumnTypePlaylistItems, title)
+	col.items = WrapPlaylistItems(items)
 	return col
 }
 
@@ -290,20 +300,10 @@ func (c *ListColumn) SelectedItem() interface{} {
 	}
 
 	idx := c.mapIndex(c.cursor)
-	switch c.columnType {
-	case ColumnTypeLibraries:
-		return c.libraries[idx]
-	case ColumnTypeMovies:
-		return c.movies[idx] // Returns *domain.MediaItem
-	case ColumnTypeShows:
-		return c.shows[idx] // Returns *domain.Show
-	case ColumnTypeSeasons:
-		return c.seasons[idx] // Returns *domain.Season
-	case ColumnTypeEpisodes:
-		return c.episodes[idx] // Returns *domain.MediaItem
-	default:
+	if idx >= len(c.items) {
 		return nil
 	}
+	return c.items[idx].Unwrap()
 }
 
 func (c *ListColumn) SelectedIndex() int {
@@ -331,23 +331,16 @@ func (c *ListColumn) ItemCount() int {
 }
 
 func (c *ListColumn) CanDrillInto() bool {
-	item := c.SelectedItem()
-	if item == nil {
+	count := c.ItemCount()
+	if count == 0 || c.cursor >= count {
 		return false
 	}
 
-	switch c.columnType {
-	case ColumnTypeLibraries:
-		return true // Can drill into libraries
-	case ColumnTypeShows:
-		return true // Can drill into shows
-	case ColumnTypeSeasons:
-		return true // Can drill into seasons
-	case ColumnTypeMovies, ColumnTypeEpisodes:
-		return false // These are leaf items, play instead
-	default:
+	idx := c.mapIndex(c.cursor)
+	if idx >= len(c.items) {
 		return false
 	}
+	return c.items[idx].CanDrillInto()
 }
 
 func (c *ListColumn) IsEmpty() bool {
@@ -362,32 +355,40 @@ func (c *ListColumn) IsLoading() bool {
 	return c.loading
 }
 
-func (c *ListColumn) SetItems(items interface{}) {
+func (c *ListColumn) SetItems(rawItems interface{}) {
 	c.loading = false
 	c.cursor = 0
 	c.offset = 0
 	c.clearFilter()
 	c.sortedIdx = nil
 
-	switch v := items.(type) {
+	switch v := rawItems.(type) {
 	case []domain.Library:
-		c.libraries = v
+		c.items = WrapLibraries(v)
 		c.columnType = ColumnTypeLibraries
 	case []*domain.MediaItem:
-		// Could be movies or episodes - check type if available
-		if len(v) > 0 && v[0].Type == domain.MediaTypeEpisode {
-			c.episodes = v
+		// Could be movies, episodes, or playlist items - preserve column type if already set
+		if c.columnType == ColumnTypePlaylistItems {
+			c.items = WrapPlaylistItems(v)
+		} else if len(v) > 0 && v[0].Type == domain.MediaTypeEpisode {
+			c.items = WrapEpisodes(v)
 			c.columnType = ColumnTypeEpisodes
 		} else {
-			c.movies = v
+			c.items = WrapMovies(v)
 			c.columnType = ColumnTypeMovies
 		}
 	case []*domain.Show:
-		c.shows = v
+		c.items = WrapShows(v)
 		c.columnType = ColumnTypeShows
 	case []*domain.Season:
-		c.seasons = v
+		c.items = WrapSeasons(v)
 		c.columnType = ColumnTypeSeasons
+	case []*domain.Playlist:
+		c.items = WrapPlaylists(v)
+		c.columnType = ColumnTypePlaylists
+	case []ListItem:
+		c.items = v
+		// columnType should already be set
 	}
 
 	// Re-apply current sort if active
@@ -435,7 +436,7 @@ func (c *ListColumn) SelectedShow() *domain.Show {
 	if item == nil {
 		return nil
 	}
-	return item.(*domain.Show) // Already a pointer
+	return item.(*domain.Show)
 }
 
 // SelectedSeason returns the selected season (if in seasons column)
@@ -447,21 +448,33 @@ func (c *ListColumn) SelectedSeason() *domain.Season {
 	if item == nil {
 		return nil
 	}
-	return item.(*domain.Season) // Already a pointer
+	return item.(*domain.Season)
 }
 
-// SelectedMediaItem returns the selected media item (if in movies/episodes column)
+// SelectedMediaItem returns the selected media item (if in movies/episodes/playlist items column)
 func (c *ListColumn) SelectedMediaItem() *domain.MediaItem {
 	switch c.columnType {
-	case ColumnTypeMovies, ColumnTypeEpisodes:
+	case ColumnTypeMovies, ColumnTypeEpisodes, ColumnTypePlaylistItems:
 		item := c.SelectedItem()
 		if item == nil {
 			return nil
 		}
-		return item.(*domain.MediaItem) // Already a pointer
+		return item.(*domain.MediaItem)
 	default:
 		return nil
 	}
+}
+
+// SelectedPlaylist returns the selected playlist (if in playlists column)
+func (c *ListColumn) SelectedPlaylist() *domain.Playlist {
+	if c.columnType != ColumnTypePlaylists {
+		return nil
+	}
+	item := c.SelectedItem()
+	if item == nil {
+		return nil
+	}
+	return item.(*domain.Playlist)
 }
 
 // FindIndexByID finds the index of an item by its ID. Returns -1 if not found.
@@ -469,36 +482,9 @@ func (c *ListColumn) FindIndexByID(id string) int {
 	if id == "" {
 		return -1
 	}
-	switch c.columnType {
-	case ColumnTypeLibraries:
-		for i, lib := range c.libraries {
-			if lib.ID == id {
-				return i
-			}
-		}
-	case ColumnTypeMovies:
-		for i, m := range c.movies {
-			if m.ID == id {
-				return i
-			}
-		}
-	case ColumnTypeShows:
-		for i, s := range c.shows {
-			if s.ID == id {
-				return i
-			}
-		}
-	case ColumnTypeSeasons:
-		for i, s := range c.seasons {
-			if s.ID == id {
-				return i
-			}
-		}
-	case ColumnTypeEpisodes:
-		for i, e := range c.episodes {
-			if e.ID == id {
-				return i
-			}
+	for i, item := range c.items {
+		if item.ItemID() == id {
+			return i
 		}
 	}
 	return -1
@@ -586,8 +572,8 @@ func (c *ListColumn) applyFilter() {
 		return
 	}
 
-	// Get titles and do case-insensitive matching
-	titles := c.getTitles()
+	// Get filter values from items
+	titles := c.getFilterValues()
 	lowerTitles := make([]string, len(titles))
 	for i, t := range titles {
 		lowerTitles[i] = strings.ToLower(t)
@@ -605,7 +591,7 @@ func (c *ListColumn) applyFilter() {
 	c.offset = 0
 }
 
-func (c *ListColumn) getTitles() []string {
+func (c *ListColumn) getFilterValues() []string {
 	count := c.sortedCount()
 	titles := make([]string, count)
 	for i := 0; i < count; i++ {
@@ -613,17 +599,8 @@ func (c *ListColumn) getTitles() []string {
 		if c.sortedIdx != nil && i < len(c.sortedIdx) {
 			rawIdx = c.sortedIdx[i]
 		}
-		switch c.columnType {
-		case ColumnTypeLibraries:
-			titles[i] = c.libraries[rawIdx].Name
-		case ColumnTypeMovies:
-			titles[i] = c.movies[rawIdx].Title
-		case ColumnTypeShows:
-			titles[i] = c.shows[rawIdx].Title
-		case ColumnTypeSeasons:
-			titles[i] = c.seasons[rawIdx].DisplayTitle()
-		case ColumnTypeEpisodes:
-			titles[i] = c.episodes[rawIdx].Title
+		if rawIdx < len(c.items) {
+			titles[i] = c.items[rawIdx].FilterValue()
 		}
 	}
 	return titles
@@ -633,7 +610,7 @@ func (c *ListColumn) sortedCount() int {
 	if c.sortedIdx != nil {
 		return len(c.sortedIdx)
 	}
-	return c.rawItemCount()
+	return len(c.items)
 }
 
 func (c *ListColumn) filteredCount() int {
@@ -641,23 +618,6 @@ func (c *ListColumn) filteredCount() int {
 		return len(c.filteredIdx)
 	}
 	return c.sortedCount()
-}
-
-func (c *ListColumn) rawItemCount() int {
-	switch c.columnType {
-	case ColumnTypeLibraries:
-		return len(c.libraries)
-	case ColumnTypeMovies:
-		return len(c.movies)
-	case ColumnTypeShows:
-		return len(c.shows)
-	case ColumnTypeSeasons:
-		return len(c.seasons)
-	case ColumnTypeEpisodes:
-		return len(c.episodes)
-	default:
-		return 0
-	}
 }
 
 func (c *ListColumn) mapIndex(i int) int {
@@ -696,7 +656,12 @@ func (c *ListColumn) renderContent() string {
 		if c.filterActive && c.filterQuery != "" {
 			emptyMsg = styles.DimStyle.Render("No matches")
 		}
-		return titleLine + "\n" + " " + "\n" + emptyMsg + "\n" + " "
+		content := titleLine + "\n" + " " + "\n" + emptyMsg + "\n" + " "
+		// Add filter bar if active so user can see what they're typing
+		if c.filterActive {
+			content += "\n" + c.renderFilterBar(itemWidth)
+		}
+		return content
 	}
 
 	var lines []string
@@ -709,21 +674,7 @@ func (c *ListColumn) renderContent() string {
 	for i := c.offset; i < end; i++ {
 		selected := i == c.cursor
 		idx := c.mapIndex(i)
-		var line string
-
-		switch c.columnType {
-		case ColumnTypeLibraries:
-			line = c.renderLibraryItem(c.libraries[idx], selected, itemWidth)
-		case ColumnTypeMovies:
-			line = c.renderMovieItem(*c.movies[idx], selected, itemWidth)
-		case ColumnTypeShows:
-			line = c.renderShowItem(*c.shows[idx], selected, itemWidth)
-		case ColumnTypeSeasons:
-			line = c.renderSeasonItem(*c.seasons[idx], selected, itemWidth)
-		case ColumnTypeEpisodes:
-			line = c.renderEpisodeItem(*c.episodes[idx], selected, itemWidth)
-		}
-
+		line := c.renderItem(idx, selected, itemWidth)
 		lines = append(lines, line)
 	}
 
@@ -750,7 +701,51 @@ func (c *ListColumn) renderContent() string {
 	return content
 }
 
+// renderItem renders a single item based on column type
+func (c *ListColumn) renderItem(idx int, selected bool, width int) string {
+	if idx >= len(c.items) {
+		return ""
+	}
+
+	item := c.items[idx]
+
+	// Dispatch to type-specific renderer based on column type
+	// This preserves the existing visual styling for each content type
+	switch c.columnType {
+	case ColumnTypeLibraries:
+		return c.renderLibraryItem(item.(LibraryListItem).Library, selected, width)
+	case ColumnTypeMovies:
+		return c.renderMovieItem(*item.(MovieListItem).Movie, selected, width)
+	case ColumnTypeShows:
+		return c.renderShowItem(*item.(ShowListItem).Show, selected, width)
+	case ColumnTypeSeasons:
+		return c.renderSeasonItem(*item.(SeasonListItem).Season, selected, width)
+	case ColumnTypeEpisodes:
+		return c.renderEpisodeItem(*item.(EpisodeListItem).Episode, selected, width)
+	case ColumnTypePlaylists:
+		return c.renderPlaylistItem(*item.(PlaylistListItem).Playlist, selected, width)
+	case ColumnTypePlaylistItems:
+		return c.renderPlaylistMediaItem(*item.(PlaylistMediaListItem).Item, selected, width)
+	default:
+		return ""
+	}
+}
+
 func (c *ListColumn) renderLibraryItem(lib domain.Library, selected bool, width int) string {
+	// Special handling for synthetic "Playlists" entry - match library styling
+	if lib.Type == "playlist" {
+		prefix := "  " // Same spacing as idle libraries
+		prefixFg := styles.DimGray
+		title := styles.Truncate(lib.Name, width-4)
+
+		parts := []styles.RowPart{
+			{Text: prefix, Foreground: &prefixFg},
+			{Text: title, Foreground: nil},
+		}
+
+		return styles.RenderListRow(parts, selected, width)
+	}
+
 	// Get sync state for this library
 	state := c.libraryStates[lib.ID]
 
@@ -927,7 +922,7 @@ func (c *ListColumn) renderEpisodeItem(item domain.MediaItem, selected bool, wid
 func (c *ListColumn) renderFilterBar(width int) string {
 	input := c.filterInput.View()
 	count := c.ItemCount()
-	total := c.rawItemCount()
+	total := len(c.items)
 
 	// Show match count
 	countStr := ""
@@ -936,6 +931,68 @@ func (c *ListColumn) renderFilterBar(width int) string {
 	}
 
 	return input + countStr
+}
+
+func (c *ListColumn) renderPlaylistItem(playlist domain.Playlist, selected bool, width int) string {
+	// Playlist icon and count
+	prefix := "▶ "
+	prefixFg := styles.PlexOrange
+
+	title := playlist.Title
+	countStr := fmt.Sprintf(" (%d)", playlist.ItemCount)
+
+	// Available space: width - prefix(2) - count - margins(2)
+	availableForTitle := width - 4 - len(countStr)
+	if availableForTitle < 5 {
+		availableForTitle = 5
+	}
+	title = styles.Truncate(title, availableForTitle)
+
+	dimGray := styles.DimGray
+	parts := []styles.RowPart{
+		{Text: prefix, Foreground: &prefixFg},
+		{Text: title, Foreground: nil},
+		{Text: countStr, Foreground: &dimGray},
+	}
+
+	return styles.RenderListRow(parts, selected, width)
+}
+
+func (c *ListColumn) renderPlaylistMediaItem(item domain.MediaItem, selected bool, width int) string {
+	var indicatorChar string
+	var indicatorFg lipgloss.Color
+	if item.IsPlayed {
+		indicatorChar = styles.PlayedChar
+		indicatorFg = styles.Green
+	} else if item.ViewOffset.Milliseconds() > 0 {
+		indicatorChar = styles.InProgressChar
+		indicatorFg = styles.PlexOrange
+	} else {
+		indicatorChar = styles.UnplayedChar
+		indicatorFg = styles.PlexOrange
+	}
+
+	title := item.Title
+	if item.Type == domain.MediaTypeEpisode && item.ShowTitle != "" {
+		// Show episode with show context: "Show - S01E05 Title"
+		title = fmt.Sprintf("%s - %s %s", item.ShowTitle, item.EpisodeCode(), item.Title)
+	} else if item.Year > 0 {
+		title = fmt.Sprintf("%s (%d)", item.Title, item.Year)
+	}
+
+	// Available space: width - indicator(1) - space(1) - margins(2)
+	availableForTitle := width - 4
+	if availableForTitle < 5 {
+		availableForTitle = 5
+	}
+	title = styles.Truncate(title, availableForTitle)
+
+	parts := []styles.RowPart{
+		{Text: indicatorChar, Foreground: &indicatorFg},
+		{Text: " " + title, Foreground: nil},
+	}
+
+	return styles.RenderListRow(parts, selected, width)
 }
 
 // Sort methods
@@ -963,7 +1020,7 @@ func (c *ListColumn) SortState() (SortField, SortDirection) {
 
 // buildSortedIdx builds the sortedIdx mapping based on current sortField/sortDir
 func (c *ListColumn) buildSortedIdx() {
-	n := c.rawItemCount()
+	n := len(c.items)
 	if n == 0 {
 		c.sortedIdx = nil
 		return
@@ -987,110 +1044,54 @@ func (c *ListColumn) buildSortedIdx() {
 // compareBySortField compares two items by the current sort field.
 // Returns negative if i < j, 0 if equal, positive if i > j.
 func (c *ListColumn) compareBySortField(i, j int) int {
+	if i >= len(c.items) || j >= len(c.items) {
+		return 0
+	}
+
+	itemI := c.items[i]
+	itemJ := c.items[j]
+
 	switch c.sortField {
 	case SortTitle:
-		return c.compareTitles(i, j)
+		ti := itemI.SortTitle()
+		tj := itemJ.SortTitle()
+		if ti < tj {
+			return -1
+		}
+		if ti > tj {
+			return 1
+		}
+		return 0
 	case SortDateAdded:
-		return c.compareAddedAt(i, j)
+		ai := itemI.SortableAddedAt()
+		aj := itemJ.SortableAddedAt()
+		if ai < aj {
+			return -1
+		}
+		if ai > aj {
+			return 1
+		}
+		return 0
 	case SortLastUpdated:
-		return c.compareUpdatedAt(i, j)
+		ai := itemI.SortableUpdatedAt()
+		aj := itemJ.SortableUpdatedAt()
+		if ai < aj {
+			return -1
+		}
+		if ai > aj {
+			return 1
+		}
+		return 0
 	case SortReleased:
-		return c.compareYear(i, j)
-	default:
-		return 0
-	}
-}
-
-func (c *ListColumn) compareTitles(i, j int) int {
-	ti := c.getSortTitle(i)
-	tj := c.getSortTitle(j)
-	if ti < tj {
-		return -1
-	}
-	if ti > tj {
-		return 1
-	}
-	return 0
-}
-
-func (c *ListColumn) getSortTitle(idx int) string {
-	switch c.columnType {
-	case ColumnTypeMovies:
-		if c.movies[idx].SortTitle != "" {
-			return strings.ToLower(c.movies[idx].SortTitle)
+		yi := itemI.SortableYear()
+		yj := itemJ.SortableYear()
+		if yi < yj {
+			return -1
 		}
-		return strings.ToLower(c.movies[idx].Title)
-	case ColumnTypeShows:
-		if c.shows[idx].SortTitle != "" {
-			return strings.ToLower(c.shows[idx].SortTitle)
+		if yi > yj {
+			return 1
 		}
-		return strings.ToLower(c.shows[idx].Title)
-	default:
-		return ""
-	}
-}
-
-func (c *ListColumn) compareAddedAt(i, j int) int {
-	ai, aj := c.getAddedAt(i), c.getAddedAt(j)
-	if ai < aj {
-		return -1
-	}
-	if ai > aj {
-		return 1
-	}
-	return 0
-}
-
-func (c *ListColumn) getAddedAt(idx int) int64 {
-	switch c.columnType {
-	case ColumnTypeMovies:
-		return c.movies[idx].AddedAt
-	case ColumnTypeShows:
-		return c.shows[idx].AddedAt
-	default:
 		return 0
-	}
-}
-
-func (c *ListColumn) compareUpdatedAt(i, j int) int {
-	ai, aj := c.getUpdatedAt(i), c.getUpdatedAt(j)
-	if ai < aj {
-		return -1
-	}
-	if ai > aj {
-		return 1
-	}
-	return 0
-}
-
-func (c *ListColumn) getUpdatedAt(idx int) int64 {
-	switch c.columnType {
-	case ColumnTypeMovies:
-		return c.movies[idx].UpdatedAt
-	case ColumnTypeShows:
-		return c.shows[idx].UpdatedAt
-	default:
-		return 0
-	}
-}
-
-func (c *ListColumn) compareYear(i, j int) int {
-	yi, yj := c.getYear(i), c.getYear(j)
-	if yi < yj {
-		return -1
-	}
-	if yi > yj {
-		return 1
-	}
-	return 0
-}
-
-func (c *ListColumn) getYear(idx int) int {
-	switch c.columnType {
-	case ColumnTypeMovies:
-		return c.movies[idx].Year
-	case ColumnTypeShows:
-		return c.shows[idx].Year
 	default:
 		return 0
 	}

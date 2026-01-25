@@ -103,7 +103,7 @@ func hashServerURL(serverURL string) string {
 
 // GetLibraries returns all available libraries
 func (s *LibraryService) GetLibraries(ctx context.Context) ([]domain.Library, error) {
-	cacheKey := "libraries"
+	cacheKey := PrefixLibraries
 
 	// Check cache
 	if cached, ok := s.getFromCache(cacheKey); ok {
@@ -199,7 +199,7 @@ func (s *LibraryService) SmartSync(
 // syncMovies fetches movies in chunks and sends progress to channel
 // Skips failed batches and continues to get as much content as possible
 func (s *LibraryService) syncMovies(ctx context.Context, lib domain.Library, serverTS int64, progressCh chan<- SyncProgress) {
-	cacheKey := "movies:" + lib.ID
+	cacheKey := PrefixMovies + lib.ID
 	offset := 0
 	var allMovies []*domain.MediaItem
 	var knownTotal int
@@ -273,7 +273,7 @@ func (s *LibraryService) syncMovies(ctx context.Context, lib domain.Library, ser
 
 // syncShows fetches shows in chunks and sends progress to channel
 func (s *LibraryService) syncShows(ctx context.Context, lib domain.Library, serverTS int64, progressCh chan<- SyncProgress) {
-	cacheKey := "shows:" + lib.ID
+	cacheKey := PrefixShows + lib.ID
 	offset := 0
 	var allShows []*domain.Show
 
@@ -326,14 +326,14 @@ func (s *LibraryService) syncShows(ctx context.Context, lib domain.Library, serv
 // getCacheKeyForLib returns the cache key for a library's content
 func (s *LibraryService) getCacheKeyForLib(lib domain.Library) string {
 	if lib.Type == "movie" {
-		return "movies:" + lib.ID
+		return PrefixMovies + lib.ID
 	}
-	return "shows:" + lib.ID
+	return PrefixShows + lib.ID
 }
 
 // GetMovies returns all movies from a library
 func (s *LibraryService) GetMovies(ctx context.Context, libID string) ([]*domain.MediaItem, error) {
-	cacheKey := "movies:" + libID
+	cacheKey := PrefixMovies + libID
 
 	// 1. Check memory cache
 	if cached, ok := s.getFromCache(cacheKey); ok {
@@ -366,7 +366,7 @@ func (s *LibraryService) GetMovies(ctx context.Context, libID string) ([]*domain
 
 // GetShows returns all TV shows from a library
 func (s *LibraryService) GetShows(ctx context.Context, libID string) ([]*domain.Show, error) {
-	cacheKey := "shows:" + libID
+	cacheKey := PrefixShows + libID
 
 	// 1. Check memory cache
 	if cached, ok := s.getFromCache(cacheKey); ok {
@@ -399,7 +399,7 @@ func (s *LibraryService) GetShows(ctx context.Context, libID string) ([]*domain.
 
 // GetCachedMovies returns movies only if cached in memory, nil otherwise (non-blocking)
 func (s *LibraryService) GetCachedMovies(libID string) []*domain.MediaItem {
-	cacheKey := "movies:" + libID
+	cacheKey := PrefixMovies + libID
 	if cached, ok := s.getFromCache(cacheKey); ok {
 		return cached.([]*domain.MediaItem)
 	}
@@ -408,7 +408,7 @@ func (s *LibraryService) GetCachedMovies(libID string) []*domain.MediaItem {
 
 // GetCachedShows returns shows only if cached in memory, nil otherwise (non-blocking)
 func (s *LibraryService) GetCachedShows(libID string) []*domain.Show {
-	cacheKey := "shows:" + libID
+	cacheKey := PrefixShows + libID
 	if cached, ok := s.getFromCache(cacheKey); ok {
 		return cached.([]*domain.Show)
 	}
@@ -417,7 +417,7 @@ func (s *LibraryService) GetCachedShows(libID string) []*domain.Show {
 
 // GetSeasons returns all seasons for a TV show
 func (s *LibraryService) GetSeasons(ctx context.Context, showID string) ([]*domain.Season, error) {
-	cacheKey := "seasons:" + showID
+	cacheKey := PrefixSeasons + showID
 
 	// Check cache
 	if cached, ok := s.getFromCache(cacheKey); ok {
@@ -441,7 +441,7 @@ func (s *LibraryService) GetSeasons(ctx context.Context, showID string) ([]*doma
 
 // GetEpisodes returns all episodes for a season
 func (s *LibraryService) GetEpisodes(ctx context.Context, seasonID string) ([]*domain.MediaItem, error) {
-	cacheKey := "episodes:" + seasonID
+	cacheKey := PrefixEpisodes + seasonID
 
 	// Check cache
 	if cached, ok := s.getFromCache(cacheKey); ok {
@@ -469,7 +469,7 @@ func (s *LibraryService) GetRecentlyAdded(ctx context.Context, libID string, lim
 		limit = defaultPageSize
 	}
 
-	cacheKey := "recent:" + libID
+	cacheKey := PrefixRecent + libID
 
 	// Check cache
 	if cached, ok := s.getFromCache(cacheKey); ok {
@@ -497,8 +497,7 @@ func (s *LibraryService) RefreshLibrary(libID string) {
 	defer s.cacheMu.Unlock()
 
 	// Clear all cache entries related to this library
-	prefixes := []string{"movies:", "shows:", "recent:"}
-	for _, prefix := range prefixes {
+	for _, prefix := range LibraryCachePrefixes() {
 		key := prefix + libID
 		delete(s.cache, key)
 		s.clearDiskCache(key) // Also clear disk cache
@@ -529,9 +528,9 @@ func (s *LibraryService) InvalidateItem(item domain.MediaItem) {
 	// Invalidate based on item type
 	switch item.Type {
 	case domain.MediaTypeMovie:
-		delete(s.cache, "movies:"+item.LibraryID)
+		delete(s.cache, PrefixMovies+item.LibraryID)
 	case domain.MediaTypeEpisode:
-		delete(s.cache, "episodes:"+item.ParentID)
+		delete(s.cache, PrefixEpisodes+item.ParentID)
 	}
 
 	s.logger.Debug("invalidated cache for item", "itemID", item.ID)

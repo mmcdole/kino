@@ -51,5 +51,7 @@ const (
 	ColumnTypeShows
 	ColumnTypeSeasons
 	ColumnTypeEpisodes
+	ColumnTypePlaylists
+	ColumnTypePlaylistItems
 	ColumnTypeEmpty
 )
