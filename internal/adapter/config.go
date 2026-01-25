@@ -69,7 +69,7 @@ func DefaultConfig() *Config {
 			Token: "",
 		},
 		Player: PlayerConfig{
-			Command: "mpv",
+			Command: "",
 			Args:    []string{},
 		},
 		Preferences: PreferencesConfig{

@@ -164,7 +164,7 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		LoadLibrariesCmd(m.LibrarySvc),
 		TickCmd(100*time.Millisecond),
-		HideHelpHintCmd(3*time.Second),
+		HideHelpHintCmd(10*time.Second),
 	)
 }
 

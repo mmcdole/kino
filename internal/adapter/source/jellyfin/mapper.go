@@ -92,6 +92,7 @@ func mapMovie(item Item, serverURL string) domain.MediaItem {
 	if item.DateCreated != "" {
 		if t, err := time.Parse(time.RFC3339, item.DateCreated); err == nil {
 			mi.AddedAt = t.Unix()
+			mi.UpdatedAt = t.Unix() // For movies, UpdatedAt = AddedAt
 		}
 	}
 
@@ -139,6 +140,17 @@ func mapShow(item Item, serverURL string) domain.Show {
 	if item.DateCreated != "" {
 		if t, err := time.Parse(time.RFC3339, item.DateCreated); err == nil {
 			show.AddedAt = t.Unix()
+		}
+	}
+
+	// UpdatedAt: prefer DateLastMediaAdded (when last episode was added), fallback to DateCreated
+	if item.DateLastMediaAdded != "" {
+		if t, err := time.Parse(time.RFC3339, item.DateLastMediaAdded); err == nil {
+			show.UpdatedAt = t.Unix()
+		}
+	} else if item.DateCreated != "" {
+		if t, err := time.Parse(time.RFC3339, item.DateCreated); err == nil {
+			show.UpdatedAt = t.Unix()
 		}
 	}
 
@@ -223,6 +235,7 @@ func mapEpisode(item Item, serverURL string) domain.MediaItem {
 	if item.DateCreated != "" {
 		if t, err := time.Parse(time.RFC3339, item.DateCreated); err == nil {
 			mi.AddedAt = t.Unix()
+			mi.UpdatedAt = t.Unix() // For episodes, UpdatedAt = AddedAt
 		}
 	}
 

@@ -17,7 +17,7 @@ import (
 
 const (
 	defaultTimeout   = 60 * time.Second
-	defaultBatchSize = 50 // Smaller batches to work around Jellyfin server issues
+	defaultBatchSize = 100
 	maxRetries       = 3
 	baseRetryDelay   = 500 * time.Millisecond
 )
@@ -216,7 +216,7 @@ func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) 
 	query.Set("ParentId", libID)
 	query.Set("IncludeItemTypes", "Series")
 	query.Set("Recursive", "true")
-	query.Set("Fields", "Overview,ChildCount,RecursiveItemCount,DateCreated")
+	query.Set("Fields", "Overview,ChildCount,RecursiveItemCount,DateCreated,DateLastMediaAdded")
 	query.Set("StartIndex", strconv.Itoa(offset))
 	if limit > 0 {
 		query.Set("Limit", strconv.Itoa(limit))

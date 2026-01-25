@@ -209,7 +209,7 @@ func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) 
 	return MapShows(container.Metadata, c.baseURL), totalSize, nil
 }
 
-const defaultBatchSize = 200
+const defaultBatchSize = 100
 
 // GetAllMovies fetches all movies, handling pagination internally
 func (c *Client) GetAllMovies(ctx context.Context, libID string) ([]*domain.MediaItem, error) {
