@@ -217,13 +217,21 @@ func (l *Launcher) Launch(url string, startOffset time.Duration) error {
 		return l.launchConfigured(url, startOffset)
 	}
 
-	// Tier 2: Try candidate chain (IINA → VLC → mpv on macOS, etc.)
-	if _, err := detectAndLaunch(url, startOffset, l.logger); err == nil {
-		return nil // Successfully launched with detected player
+	// Tier 2: Platform-specific defaults
+	if runtime.GOOS == "darwin" {
+		// macOS: Auto-detect because `open` doesn't work for HTTP streams
+		l.logger.Debug("macOS: auto-detecting video player")
+		if _, err := detectAndLaunch(url, startOffset, l.logger); err == nil {
+			return nil
+		}
+		l.logger.Warn("no video players found, trying system default")
 	}
 
-	// Tier 3: Fall back to system default (open/xdg-open/start)
-	l.logger.Info("no candidate players found, using system default")
+	// Tier 3: System default (Linux/Windows, or macOS fallback)
+	if startOffset > 0 {
+		l.logger.Warn("resume not supported with system default player - starting from beginning")
+	}
+	l.logger.Info("using system default player")
 	return l.launchDefault(url)
 }
 
