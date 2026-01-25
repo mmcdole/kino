@@ -25,19 +25,10 @@ player:
   # Flag for specifying start time (e.g., "--start=" for mpv)
   # start_flag: "--start="
 
-# User Preferences
-preferences:
-  # Show watch status indicators (watched/unwatched/in-progress)
-  show_watch_status: true
-
 # User Interface Configuration
 ui:
-  # Theme: "default", "dark", or "light"
-  theme: "default"
-  # Number of columns in grid view
-  grid_columns: 4
-  # Default view mode: "grid" or "list"
-  default_view: "grid"
+  # Show watch status indicators (watched/unwatched/in-progress)
+  show_watch_status: true
 
 # Logging Configuration
 logging:

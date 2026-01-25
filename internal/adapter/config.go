@@ -19,11 +19,10 @@ const (
 
 // Config holds all application configuration
 type Config struct {
-	Server      ServerConfig      `mapstructure:"server"`
-	Player      PlayerConfig      `mapstructure:"player"`
-	Preferences PreferencesConfig `mapstructure:"preferences"`
-	UI          UIConfig          `mapstructure:"ui"`
-	Logging     LoggingConfig     `mapstructure:"logging"`
+	Server  ServerConfig  `mapstructure:"server"`
+	Player  PlayerConfig  `mapstructure:"player"`
+	UI      UIConfig      `mapstructure:"ui"`
+	Logging LoggingConfig `mapstructure:"logging"`
 }
 
 // ServerConfig holds media server configuration
@@ -35,11 +34,6 @@ type ServerConfig struct {
 	Username string     `mapstructure:"username"` // Jellyfin only (display)
 }
 
-// PreferencesConfig holds user preferences
-type PreferencesConfig struct {
-	ShowWatchStatus bool `mapstructure:"show_watch_status"` // Show watched/unwatched/in-progress indicators
-}
-
 // PlayerConfig holds media player configuration
 type PlayerConfig struct {
 	Command   string   `mapstructure:"command"`
@@ -49,9 +43,7 @@ type PlayerConfig struct {
 
 // UIConfig holds UI configuration
 type UIConfig struct {
-	Theme       string `mapstructure:"theme"`
-	GridColumns int    `mapstructure:"grid_columns"`
-	DefaultView string `mapstructure:"default_view"`
+	ShowWatchStatus bool `mapstructure:"show_watch_status"` // Show watched/unwatched/in-progress indicators
 }
 
 // LoggingConfig holds logging configuration
@@ -72,13 +64,8 @@ func DefaultConfig() *Config {
 			Command: "",
 			Args:    []string{},
 		},
-		Preferences: PreferencesConfig{
-			ShowWatchStatus: true,
-		},
 		UI: UIConfig{
-			Theme:       "default",
-			GridColumns: 4,
-			DefaultView: "grid",
+			ShowWatchStatus: true,
 		},
 		Logging: LoggingConfig{
 			File:  defaultLogPath(),
@@ -158,13 +145,8 @@ func SaveConfig(cfg *Config) error {
 	viper.Set("player.args", cfg.Player.Args)
 	viper.Set("player.start_flag", cfg.Player.StartFlag)
 
-	// Set preferences
-	viper.Set("preferences.show_watch_status", cfg.Preferences.ShowWatchStatus)
-
 	// Set UI fields
-	viper.Set("ui.theme", cfg.UI.Theme)
-	viper.Set("ui.grid_columns", cfg.UI.GridColumns)
-	viper.Set("ui.default_view", cfg.UI.DefaultView)
+	viper.Set("ui.show_watch_status", cfg.UI.ShowWatchStatus)
 
 	// Set logging fields
 	viper.Set("logging.file", cfg.Logging.File)
@@ -212,7 +194,7 @@ func defaultCachePath() string {
 }
 
 // ClearServerConfig removes all server-related configuration (type, URL, credentials)
-// while preserving other settings (player, UI, logging, preferences)
+// while preserving other settings (player, UI, logging)
 func ClearServerConfig() error {
 	// Clear server fields in viper
 	viper.Set("server.type", "")
