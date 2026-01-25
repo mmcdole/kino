@@ -1,6 +1,6 @@
 # Kino
 
-[VIDEO PLACEHOLDER - USER WILL ADD]
+![Kino Demo](demo.gif)
 
 > A fast, keyboard-driven TUI for browsing and playing media from Plex and Jellyfin servers
 
