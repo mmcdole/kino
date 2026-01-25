@@ -55,7 +55,7 @@ func run() error {
 		return fmt.Errorf("failed to create media client: %w", err)
 	}
 
-	// Create launcher (uses configured player or system default)
+	// Create launcher (uses configured player or auto-detects)
 	launcher := adapter.NewLauncher(cfg.Player.Command, cfg.Player.Args, cfg.Player.StartFlag, logger)
 
 	// Create services

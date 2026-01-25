@@ -18,16 +18,10 @@
 
 ### Installation
 
-**From source:**
-```bash
-git clone https://github.com/USER/kino.git
-cd kino
-go build -o kino cmd/kino/main.go
-```
+**Download** from [Releases](https://github.com/mmcdole/kino/releases) or install with Go:
 
-**Or install directly:**
 ```bash
-go install github.com/USER/kino/cmd/kino@latest
+go install github.com/mmcdole/kino/cmd/kino@latest
 ```
 
 ### First Run
@@ -38,12 +32,7 @@ Launch Kino and follow the interactive setup:
 kino
 ```
 
-You'll be prompted to:
-1. Enter your Plex or Jellyfin server URL
-2. Authenticate (opens browser for Plex, prompts for credentials on Jellyfin)
-3. Select default libraries to browse
-
-That's it! Start browsing your media.
+You'll be prompted to enter your server URL and authenticate.
 
 ## Usage
 
@@ -54,13 +43,13 @@ That's it! Start browsing your media.
 | `↑` `↓` `j` `k` | Navigate up/down |
 | `←` `→` `h` `l` | Navigate left/right (columns) |
 | `Enter` | Play/Select item |
-| `/` | Global search (when libraries synced) |
-| `f` | Local filter (current column) |
+| `f` | Global search (when libraries synced) |
+| `/` | Local filter (current column) |
 | `s` | Sort options |
 | `i` | Toggle inspector panel |
 | `r` | Refresh current library |
 | `R` | Refresh all libraries |
-| `gg` | Jump to top |
+| `g` | Jump to top |
 | `G` | Jump to bottom |
 | `Ctrl+u` / `Ctrl+d` | Page up/down |
 | `?` | Show help |
@@ -73,83 +62,42 @@ Kino stores configuration in `~/.config/kino/config.yaml` (created on first run)
 ### Video Player Setup
 
 **Default Behavior:**
-- **macOS**: Auto-detects IINA, VLC, or mpv
-- **Linux/Windows**: Uses system default player
 
-**Enable Resume (Optional):**
+Kino auto-detects installed video players in priority order:
 
-To start playback from where you left off, configure a specific player:
+| macOS | Linux |
+|-------|-------|
+| IINA, mpv, VLC | mpv, VLC, Celluloid, Haruna, smplayer, mplayer |
+
+Resume playback works automatically with detected players.
+
+**Custom Player (Optional):**
 
 ```yaml
 player:
-  command: "mpv"  # or "vlc", "iina", "celluloid", "haruna"
+  command: "mpv"
   args:
     - "--no-terminal"
+  start_flag: "--start=%d"  # Only needed for unknown players
 ```
 
 <details>
-<summary><b>Supported Players & Custom Configuration</b></summary>
+<summary><b>Known Players & Resume Flags</b></summary>
 
 | Player | Platforms | Resume Flag |
 |--------|-----------|-------------|
-| mpv | All | `--start=` |
-| VLC | All | `--start-time=` |
-| IINA | macOS | `--mpv-start=` |
-| Celluloid | Linux | `--mpv-start=` |
-| Haruna | Linux (KDE) | `--mpv-start=` |
-| PotPlayer | Windows | `/seek=` |
+| mpv | macOS, Linux | `--start=%d` |
+| VLC | macOS, Linux | `--start-time=%d` |
+| IINA | macOS | `--mpv-start=%d` |
+| Celluloid | Linux | `--mpv-start=%d` |
+| Haruna | Linux | `--start=%d` |
+| smplayer | Linux | `-ss %d` |
+| mplayer | Linux | `-ss %d` |
 
-For custom players:
-```yaml
-player:
-  command: "/path/to/player"
-  start_flag: "--seek="
-```
+For unlisted players, set `start_flag` with `%d` as the seconds placeholder.
 </details>
 
-### Other Settings
-
-```yaml
-ui:
-  theme: "default"          # or "dark", "light"
-  grid_columns: 4           # Grid view column count
-  default_view: "grid"      # or "list"
-
-preferences:
-  show_watch_status: true   # Show ●/◐/✓ indicators
-
-logging:
-  level: "INFO"             # DEBUG, INFO, WARN, ERROR
-  file: "~/.local/share/kino/kino.log"
-```
-
 See `config.example.yaml` for all options.
-
-## Features Deep Dive
-
-### Miller Column Navigation
-Kino uses a multi-column interface showing your navigation context:
-`Libraries → Movies → Movie Details` or `TV Shows → Show → Season → Episode`
-
-### Watch Status
-- ● Orange = Unwatched
-- ◐ Orange + % = In Progress
-- ✓ Green = Watched
-
-### Inspector Panel
-Press `i` to toggle detailed metadata including summary, runtime, release date, and watch progress.
-
-### Search
-- **Global Search** (`/`): Search across all synced libraries
-- **Local Filter** (`f`): Filter current column in real-time
-- Both use fuzzy matching for forgiving searches
-
-## Server Compatibility
-
-- ✅ Plex Media Server
-- ✅ Jellyfin
-
-Server type is auto-detected during setup.
 
 ## Contributing
 
