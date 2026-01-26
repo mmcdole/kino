@@ -1787,6 +1787,32 @@ func (m *Model) navigateToFilteredItem(item service.FilterItem) tea.Cmd {
 			return nil
 		}
 
+		// Handle mixed libraries differently - they use different cache/API
+		if lib.Type == "mixed" {
+			m.navPlan = &NavPlan{
+				Targets:     []NavTarget{{ID: item.NavContext.MovieID}},
+				CurrentStep: 0,
+				AwaitKind:   AwaitMixed,
+				AwaitID:     lib.ID,
+			}
+
+			mixedCol := components.NewListColumn(components.ColumnTypeMixed, lib.Name)
+
+			// If cached, populate and immediately advance
+			if cached := m.LibrarySvc.GetCachedLibraryContent(lib.ID); cached != nil {
+				mixedCol.SetItems(cached)
+				m.ColumnStack.Push(mixedCol, 0)
+				m.updateLayout()
+				return m.advanceNavPlanAfterLoad(AwaitMixed, lib.ID)
+			}
+
+			mixedCol.SetLoading(true)
+			m.ColumnStack.Push(mixedCol, 0)
+			m.Loading = true
+			m.updateLayout()
+			return LoadLibraryContentCmd(m.LibrarySvc, lib.ID)
+		}
+
 		m.navPlan = &NavPlan{
 			Targets: []NavTarget{
 				{ID: item.NavContext.MovieID},
@@ -1812,6 +1838,35 @@ func (m *Model) navigateToFilteredItem(item service.FilterItem) tea.Cmd {
 		show, ok := item.Item.(*domain.Show)
 		if !ok {
 			return nil
+		}
+
+		// Handle mixed libraries differently - they use different cache/API
+		if lib.Type == "mixed" {
+			m.navPlan = &NavPlan{
+				Targets: []NavTarget{
+					{ID: show.ID}, // Select show in mixed column
+					{},            // Land on seasons (no selection)
+				},
+				CurrentStep: 0,
+				AwaitKind:   AwaitMixed,
+				AwaitID:     lib.ID,
+			}
+
+			mixedCol := components.NewListColumn(components.ColumnTypeMixed, lib.Name)
+
+			// If cached, populate and immediately advance
+			if cached := m.LibrarySvc.GetCachedLibraryContent(lib.ID); cached != nil {
+				mixedCol.SetItems(cached)
+				m.ColumnStack.Push(mixedCol, 0)
+				m.updateLayout()
+				return m.advanceNavPlanAfterLoad(AwaitMixed, lib.ID)
+			}
+
+			mixedCol.SetLoading(true)
+			m.ColumnStack.Push(mixedCol, 0)
+			m.Loading = true
+			m.updateLayout()
+			return LoadLibraryContentCmd(m.LibrarySvc, lib.ID)
 		}
 
 		m.navPlan = &NavPlan{
@@ -1846,6 +1901,37 @@ func (m *Model) navigateToFilteredItem(item service.FilterItem) tea.Cmd {
 		lib := m.findLibrary(item.NavContext.LibraryID)
 		if lib == nil {
 			return nil
+		}
+
+		// Handle mixed libraries differently - they use different cache/API
+		if lib.Type == "mixed" {
+			// Build NavPlan: Mixed -> Seasons -> Episodes
+			m.navPlan = &NavPlan{
+				Targets: []NavTarget{
+					{ID: item.NavContext.ShowID},    // Step 0: Select show in mixed column
+					{ID: item.NavContext.SeasonID},  // Step 1: Select season
+					{ID: item.NavContext.EpisodeID}, // Step 2: Select episode
+				},
+				CurrentStep: 0,
+				AwaitKind:   AwaitMixed,
+				AwaitID:     lib.ID,
+			}
+
+			mixedCol := components.NewListColumn(components.ColumnTypeMixed, lib.Name)
+
+			// If cached, populate and immediately advance
+			if cached := m.LibrarySvc.GetCachedLibraryContent(lib.ID); cached != nil {
+				mixedCol.SetItems(cached)
+				m.ColumnStack.Push(mixedCol, 0)
+				m.updateLayout()
+				return m.advanceNavPlanAfterLoad(AwaitMixed, lib.ID)
+			}
+
+			mixedCol.SetLoading(true)
+			m.ColumnStack.Push(mixedCol, 0)
+			m.Loading = true
+			m.updateLayout()
+			return LoadLibraryContentCmd(m.LibrarySvc, lib.ID)
 		}
 
 		// Build NavPlan: Shows -> Seasons -> Episodes
