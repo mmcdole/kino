@@ -40,7 +40,7 @@ type LibraryRepository interface {
 // SearchRepository provides search functionality across libraries
 type SearchRepository interface {
 	// Search performs a fuzzy search across all libraries
-	Search(ctx context.Context, query string) ([]MediaItem, error)
+	Search(ctx context.Context, query string) ([]*MediaItem, error)
 }
 
 // MetadataRepository provides detailed metadata and URL resolution

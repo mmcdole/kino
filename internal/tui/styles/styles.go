@@ -172,6 +172,9 @@ var (
 			Foreground(PlexOrange)
 )
 
+// SpinnerFrames contains the animation frames for the loading spinner
+var SpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
 // Filter styles
 var (
 	FilterStyle = lipgloss.NewStyle().

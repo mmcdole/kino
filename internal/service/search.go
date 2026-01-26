@@ -25,7 +25,7 @@ type NavigationContext struct {
 
 // FilterItem represents an item in the global filter index
 type FilterItem struct {
-	Item       interface{}       // domain.MediaItem or domain.Show
+	Item       domain.ListItem   // *domain.MediaItem or *domain.Show
 	Title      string            // Searchable title (display title)
 	Type       domain.MediaType
 	NavContext NavigationContext
@@ -75,7 +75,7 @@ func NewSearchService(repo domain.SearchRepository, logger *slog.Logger) *Search
 }
 
 // Search performs a fuzzy search across all libraries
-func (s *SearchService) Search(ctx context.Context, query string) ([]domain.MediaItem, error) {
+func (s *SearchService) Search(ctx context.Context, query string) ([]*domain.MediaItem, error) {
 	if query == "" {
 		return nil, nil
 	}
@@ -96,7 +96,7 @@ func (s *SearchService) Search(ctx context.Context, query string) ([]domain.Medi
 }
 
 // rankResults applies fuzzy ranking to search results
-func (s *SearchService) rankResults(items []domain.MediaItem, query string) []domain.MediaItem {
+func (s *SearchService) rankResults(items []*domain.MediaItem, query string) []*domain.MediaItem {
 	if len(items) == 0 {
 		return items
 	}
@@ -104,7 +104,7 @@ func (s *SearchService) rankResults(items []domain.MediaItem, query string) []do
 	query = strings.ToLower(query)
 
 	type rankedItem struct {
-		item  domain.MediaItem
+		item  *domain.MediaItem
 		score int
 	}
 
@@ -122,7 +122,7 @@ func (s *SearchService) rankResults(items []domain.MediaItem, query string) []do
 	})
 
 	// Extract sorted items
-	results := make([]domain.MediaItem, len(ranked))
+	results := make([]*domain.MediaItem, len(ranked))
 	for i, r := range ranked {
 		results[i] = r.item
 	}
@@ -132,7 +132,7 @@ func (s *SearchService) rankResults(items []domain.MediaItem, query string) []do
 
 // calculateMatchScore calculates a match score for ranking
 // Lower score = better match
-func calculateMatchScore(title, query string, item domain.MediaItem) int {
+func calculateMatchScore(title, query string, item *domain.MediaItem) int {
 	score := 0
 
 	// Exact match is best
@@ -174,19 +174,7 @@ func (s *SearchService) IndexForFilter(items []FilterItem) {
 	added := 0
 	for _, item := range items {
 		// Generate unique key based on item type and ID
-		var key string
-		switch v := item.Item.(type) {
-		case domain.MediaItem:
-			key = "media:" + v.ID
-		case *domain.MediaItem:
-			key = "media:" + v.ID
-		case domain.Show:
-			key = "show:" + v.ID
-		case *domain.Show:
-			key = "show:" + v.ID
-		default:
-			key = item.Title // fallback
-		}
+		key := item.Item.GetItemType() + ":" + item.Item.GetID()
 
 		// Skip if already indexed
 		if s.filterIndexed[key] {

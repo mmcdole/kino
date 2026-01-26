@@ -384,7 +384,7 @@ func (c *Client) GetEpisodes(ctx context.Context, seasonID string) ([]*domain.Me
 }
 
 // Search performs a search across all libraries
-func (c *Client) Search(ctx context.Context, query string) ([]domain.MediaItem, error) {
+func (c *Client) Search(ctx context.Context, query string) ([]*domain.MediaItem, error) {
 	params := url.Values{}
 	params.Set("searchTerm", query)
 	params.Set("IncludeItemTypes", "Movie,Episode,Series")

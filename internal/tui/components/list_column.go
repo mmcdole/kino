@@ -14,8 +14,6 @@ import (
 	"github.com/sahilm/fuzzy"
 )
 
-// Spinner frames for loading animation
-var listColumnSpinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 // Layout constants for list columns
 const (
@@ -610,7 +608,7 @@ func (c *ListColumn) renderContent() string {
 
 	// Loading state
 	if c.loading {
-		spinner := listColumnSpinnerFrames[c.spinnerFrame%len(listColumnSpinnerFrames)]
+		spinner := styles.SpinnerFrames[c.spinnerFrame%len(styles.SpinnerFrames)]
 		loadingLine := styles.DimStyle.Render(spinner + " Loading...")
 		return titleLine + "\n" + " " + "\n" + loadingLine + "\n" + " "
 	}
@@ -721,7 +719,7 @@ func (c *ListColumn) renderLibraryItem(lib domain.Library, selected bool, width 
 
 	switch state.Status {
 	case StatusSyncing:
-		spinner := listColumnSpinnerFrames[c.spinnerFrame%len(listColumnSpinnerFrames)]
+		spinner := styles.SpinnerFrames[c.spinnerFrame%len(styles.SpinnerFrames)]
 		prefix = spinner + " "
 		prefixFg = styles.PlexOrange
 	case StatusSynced:

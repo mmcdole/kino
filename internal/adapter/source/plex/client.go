@@ -342,7 +342,7 @@ func (c *Client) GetEpisodes(ctx context.Context, seasonID string) ([]*domain.Me
 }
 
 // Search performs a search across all libraries
-func (c *Client) Search(ctx context.Context, query string) ([]domain.MediaItem, error) {
+func (c *Client) Search(ctx context.Context, query string) ([]*domain.MediaItem, error) {
 	params := url.Values{}
 	params.Set("query", query)
 
@@ -356,13 +356,7 @@ func (c *Client) Search(ctx context.Context, query string) ([]domain.MediaItem, 
 		return nil, err
 	}
 
-	// Convert pointer slice to value slice for the Search interface
-	ptrs := MapOnDeck(container.Metadata, c.baseURL)
-	results := make([]domain.MediaItem, len(ptrs))
-	for i, p := range ptrs {
-		results[i] = *p
-	}
-	return results, nil
+	return MapOnDeck(container.Metadata, c.baseURL), nil
 }
 
 // ResolvePlayableURL returns a direct playback URL for an item

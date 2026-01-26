@@ -26,19 +26,6 @@ func MapLibraries(dirs []Directory) []domain.Library {
 	return libraries
 }
 
-// MapLibrary converts a single Plex directory to a domain library
-func MapLibrary(d Directory) *domain.Library {
-	if d.Type != "movie" && d.Type != "show" {
-		return nil
-	}
-	return &domain.Library{
-		ID:        d.Key,
-		Name:      d.Title,
-		Type:      d.Type,
-		UpdatedAt: d.ContentChangedAt,
-	}
-}
-
 // MapMovies converts Plex metadata to domain media items (movies)
 func MapMovies(metadata []Metadata, serverURL string) []*domain.MediaItem {
 	items := make([]*domain.MediaItem, 0, len(metadata))
