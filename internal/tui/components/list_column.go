@@ -29,8 +29,8 @@ const (
 // ListColumn is a scrollable list column that can display various content types.
 // It implements the Column interface.
 type ListColumn struct {
-	// Content - unified storage using ListItem interface
-	items []ListItem
+	// Content - unified storage using domain.ListItem interface
+	items []domain.ListItem
 
 	columnType ColumnType
 
@@ -261,7 +261,13 @@ func (c *ListColumn) SelectedItem() interface{} {
 	if idx >= len(c.items) {
 		return nil
 	}
-	return c.items[idx].Unwrap()
+	// Return the underlying concrete type for type assertions
+	switch v := c.items[idx].(type) {
+	case *domain.Library:
+		return *v // Return value, not pointer for libraries
+	default:
+		return c.items[idx]
+	}
 }
 
 func (c *ListColumn) SelectedIndex() int {
@@ -298,7 +304,7 @@ func (c *ListColumn) CanDrillInto() bool {
 	if idx >= len(c.items) {
 		return false
 	}
-	return c.items[idx].CanDrillInto()
+	return c.items[idx].CanDrillDown()
 }
 
 func (c *ListColumn) IsEmpty() bool {
@@ -345,11 +351,11 @@ func (c *ListColumn) SetItems(rawItems interface{}) {
 		c.items = WrapPlaylists(v)
 		c.columnType = ColumnTypePlaylists
 	case []domain.ListItem:
-		c.items = WrapMixedContent(v)
-		c.columnType = ColumnTypeMixed
-	case []ListItem:
 		c.items = v
-		// columnType should already be set
+		// columnType should already be set, default to mixed if not
+		if c.columnType == 0 {
+			c.columnType = ColumnTypeMixed
+		}
 	}
 
 	// Re-apply current sort if active
@@ -455,7 +461,7 @@ func (c *ListColumn) FindIndexByID(id string) int {
 		return -1
 	}
 	for i, item := range c.items {
-		if item.ItemID() == id {
+		if item.GetID() == id {
 			return i
 		}
 	}
@@ -572,7 +578,7 @@ func (c *ListColumn) getFilterValues() []string {
 			rawIdx = c.sortedIdx[i]
 		}
 		if rawIdx < len(c.items) {
-			titles[i] = c.items[rawIdx].FilterValue()
+			titles[i] = c.items[rawIdx].GetFilterValue()
 		}
 	}
 	return titles
@@ -685,21 +691,21 @@ func (c *ListColumn) renderItem(idx int, selected bool, width int) string {
 	// This preserves the existing visual styling for each content type
 	switch c.columnType {
 	case ColumnTypeLibraries:
-		return c.renderLibraryItem(item.(LibraryListItem).Library, selected, width)
+		return c.renderLibraryItem(*item.(*domain.Library), selected, width)
 	case ColumnTypeMovies:
-		return c.renderMovieItem(*item.(MovieListItem).Movie, selected, width)
+		return c.renderMovieItem(*item.(*domain.MediaItem), selected, width)
 	case ColumnTypeShows:
-		return c.renderShowItem(*item.(ShowListItem).Show, selected, width)
+		return c.renderShowItem(*item.(*domain.Show), selected, width)
 	case ColumnTypeSeasons:
-		return c.renderSeasonItem(*item.(SeasonListItem).Season, selected, width)
+		return c.renderSeasonItem(*item.(*domain.Season), selected, width)
 	case ColumnTypeEpisodes:
-		return c.renderEpisodeItem(*item.(EpisodeListItem).Episode, selected, width)
+		return c.renderEpisodeItem(*item.(*domain.MediaItem), selected, width)
 	case ColumnTypePlaylists:
-		return c.renderPlaylistItem(*item.(PlaylistListItem).Playlist, selected, width)
+		return c.renderPlaylistItem(*item.(*domain.Playlist), selected, width)
 	case ColumnTypePlaylistItems:
-		return c.renderPlaylistMediaItem(*item.(PlaylistMediaListItem).Item, selected, width)
+		return c.renderPlaylistMediaItem(*item.(*domain.MediaItem), selected, width)
 	case ColumnTypeMixed:
-		return c.renderMixedItem(item.(MixedListItem), selected, width)
+		return c.renderMixedItem(item, selected, width)
 	default:
 		return ""
 	}
@@ -969,11 +975,11 @@ func (c *ListColumn) renderPlaylistMediaItem(item domain.MediaItem, selected boo
 	return styles.RenderListRow(parts, selected, width)
 }
 
-func (c *ListColumn) renderMixedItem(item MixedListItem, selected bool, width int) string {
+func (c *ListColumn) renderMixedItem(item domain.ListItem, selected bool, width int) string {
 	// Get watch status indicator
 	var indicatorChar string
 	var indicatorFg lipgloss.Color
-	switch item.WatchStatus() {
+	switch item.GetWatchStatus() {
 	case domain.WatchStatusWatched:
 		indicatorChar = styles.PlayedChar
 		indicatorFg = styles.Green
@@ -986,7 +992,10 @@ func (c *ListColumn) renderMixedItem(item MixedListItem, selected bool, width in
 	}
 
 	// Build title with year
-	title := item.ItemTitle()
+	title := item.GetTitle()
+	if year := item.GetYear(); year > 0 {
+		title = fmt.Sprintf("%s (%d)", title, year)
+	}
 
 	// Available space: width - indicator(1) - space(1) - margins(2)
 	availableForTitle := width - 4
@@ -1061,8 +1070,8 @@ func (c *ListColumn) compareBySortField(i, j int) int {
 
 	switch c.sortField {
 	case SortTitle:
-		ti := itemI.SortTitle()
-		tj := itemJ.SortTitle()
+		ti := strings.ToLower(itemI.GetSortTitle())
+		tj := strings.ToLower(itemJ.GetSortTitle())
 		if ti < tj {
 			return -1
 		}
@@ -1071,8 +1080,8 @@ func (c *ListColumn) compareBySortField(i, j int) int {
 		}
 		return 0
 	case SortDateAdded:
-		ai := itemI.SortableAddedAt()
-		aj := itemJ.SortableAddedAt()
+		ai := itemI.GetAddedAt()
+		aj := itemJ.GetAddedAt()
 		if ai < aj {
 			return -1
 		}
@@ -1081,8 +1090,8 @@ func (c *ListColumn) compareBySortField(i, j int) int {
 		}
 		return 0
 	case SortLastUpdated:
-		ai := itemI.SortableUpdatedAt()
-		aj := itemJ.SortableUpdatedAt()
+		ai := itemI.GetUpdatedAt()
+		aj := itemJ.GetUpdatedAt()
 		if ai < aj {
 			return -1
 		}
@@ -1091,8 +1100,8 @@ func (c *ListColumn) compareBySortField(i, j int) int {
 		}
 		return 0
 	case SortReleased:
-		yi := itemI.SortableYear()
-		yj := itemJ.SortableYear()
+		yi := itemI.GetYear()
+		yj := itemJ.GetYear()
 		if yi < yj {
 			return -1
 		}

@@ -306,32 +306,6 @@ func (l *Library) GetWatchStatus() WatchStatus { return WatchStatusUnwatched }
 func (l *Library) GetDescription() string  { return l.Type }
 func (l *Library) CanDrillDown() bool      { return true }
 
-// PlayerStatus represents the current state of the media player
-type PlayerStatus struct {
-	CurrentTime time.Duration // Current playback position
-	TotalTime   time.Duration // Total media duration
-	IsPaused    bool          // Whether playback is paused
-	IsBuffering bool          // Whether player is buffering
-	IsStopped   bool          // Whether player has stopped
-	FilePath    string        // Currently playing file
-}
-
-// ProgressPercent returns the playback progress as a percentage (0-100)
-func (p PlayerStatus) ProgressPercent() float64 {
-	if p.TotalTime == 0 {
-		return 0
-	}
-	return float64(p.CurrentTime) / float64(p.TotalTime) * 100
-}
-
-// RemainingTime returns the remaining playback time
-func (p PlayerStatus) RemainingTime() time.Duration {
-	if p.CurrentTime >= p.TotalTime {
-		return 0
-	}
-	return p.TotalTime - p.CurrentTime
-}
-
 // Playlist represents a user-created playlist
 type Playlist struct {
 	ID           string        // Playlist identifier

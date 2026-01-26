@@ -55,11 +55,6 @@ type SearchService struct {
 	repo   domain.SearchRepository
 	logger *slog.Logger
 
-	// Local index for faster fuzzy matching
-	indexMu    sync.RWMutex
-	titleIndex map[string]domain.MediaItem // title -> item
-	indexed    bool
-
 	// Filter index for global filter feature (using FilterIndex for zero-allocation search)
 	filterMu      sync.RWMutex
 	filterIndex   *FilterIndex
@@ -74,7 +69,6 @@ func NewSearchService(repo domain.SearchRepository, logger *slog.Logger) *Search
 	return &SearchService{
 		repo:          repo,
 		logger:        logger,
-		titleIndex:    make(map[string]domain.MediaItem),
 		filterIndex:   &FilterIndex{},
 		filterIndexed: make(map[string]bool),
 	}
@@ -88,12 +82,10 @@ func (s *SearchService) Search(ctx context.Context, query string) ([]domain.Medi
 
 	s.logger.Debug("searching", "query", query)
 
-	// First try server-side search
+	// Perform server-side search
 	results, err := s.repo.Search(ctx, query)
 	if err != nil {
-		s.logger.Warn("server search failed, falling back to local", "error", err)
-		// Fall back to local fuzzy search if indexed
-		return s.localSearch(query), nil
+		return nil, err
 	}
 
 	// Apply local fuzzy ranking to server results
@@ -101,72 +93,6 @@ func (s *SearchService) Search(ctx context.Context, query string) ([]domain.Medi
 	s.logger.Debug("search complete", "query", query, "results", len(ranked))
 
 	return ranked, nil
-}
-
-// SearchLocal performs fuzzy search against the local index only
-func (s *SearchService) SearchLocal(query string) []domain.MediaItem {
-	return s.localSearch(query)
-}
-
-// IndexItems adds items to the local search index
-func (s *SearchService) IndexItems(items []domain.MediaItem) {
-	s.indexMu.Lock()
-	defer s.indexMu.Unlock()
-
-	for _, item := range items {
-		// Index by lowercase title for case-insensitive matching
-		key := strings.ToLower(item.Title)
-		s.titleIndex[key] = item
-	}
-
-	s.indexed = true
-	s.logger.Debug("indexed items", "count", len(items), "total", len(s.titleIndex))
-}
-
-// ClearIndex removes all items from the local index
-func (s *SearchService) ClearIndex() {
-	s.indexMu.Lock()
-	defer s.indexMu.Unlock()
-
-	s.titleIndex = make(map[string]domain.MediaItem)
-	s.indexed = false
-	s.logger.Debug("cleared search index")
-}
-
-// localSearch performs fuzzy search against the local index
-func (s *SearchService) localSearch(query string) []domain.MediaItem {
-	s.indexMu.RLock()
-	defer s.indexMu.RUnlock()
-
-	if !s.indexed || len(s.titleIndex) == 0 {
-		return nil
-	}
-
-	query = strings.ToLower(query)
-
-	// Collect all titles for fuzzy matching
-	titles := make([]string, 0, len(s.titleIndex))
-	for title := range s.titleIndex {
-		titles = append(titles, title)
-	}
-
-	// Perform fuzzy search
-	matches := fuzzy.RankFindFold(query, titles)
-
-	// Sort by score (lower is better)
-	sort.Slice(matches, func(i, j int) bool {
-		return matches[i].Distance < matches[j].Distance
-	})
-
-	// Convert back to items
-	results := make([]domain.MediaItem, 0, len(matches))
-	for _, match := range matches {
-		if item, ok := s.titleIndex[match.Target]; ok {
-			results = append(results, item)
-		}
-	}
-
-	return results
 }
 
 // rankResults applies fuzzy ranking to search results

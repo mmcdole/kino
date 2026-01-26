@@ -600,49 +600,6 @@ func (c *Client) MarkUnplayed(ctx context.Context, itemID string) error {
 	return nil
 }
 
-// ReportProgress updates the watch position (for scrobbling)
-func (c *Client) ReportProgress(ctx context.Context, itemID string, status domain.PlayerStatus) error {
-	query := url.Values{}
-	query.Set("PositionTicks", strconv.FormatInt(durationToTicks(status.CurrentTime), 10))
-	if status.IsPaused {
-		query.Set("IsPaused", "true")
-	}
-
-	path := fmt.Sprintf("/Sessions/Playing/Progress")
-	body := map[string]interface{}{
-		"ItemId":        itemID,
-		"PositionTicks": durationToTicks(status.CurrentTime),
-		"IsPaused":      status.IsPaused,
-	}
-
-	bodyBytes, err := json.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("failed to marshal progress: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path,
-		strings.NewReader(string(bodyBytes)))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Emby-Authorization", buildAuthHeader(c.token, c.userID))
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return domain.ErrServerOffline
-	}
-	defer resp.Body.Close()
-
-	// 204 No Content is also success
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("failed to report progress: status %d", resp.StatusCode)
-	}
-
-	return nil
-}
-
 // GetPlaylists returns all user playlists
 func (c *Client) GetPlaylists(ctx context.Context) ([]*domain.Playlist, error) {
 	query := url.Values{}
