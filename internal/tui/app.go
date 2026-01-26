@@ -904,11 +904,11 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "n":
-		// Create new playlist (when viewing playlists)
+		// Plex doesn't support empty playlists - show hint to use Space instead
 		if top := m.ColumnStack.Top(); top != nil {
 			if lc, ok := top.(*components.ListColumn); ok && lc.ColumnType() == components.ColumnTypePlaylists {
-				m.InputModal.Show("New Playlist")
-				return m, nil
+				m.StatusMsg = "Use Space on an item to create a playlist"
+				return m, ClearStatusCmd(3 * time.Second)
 			}
 		}
 	}
@@ -1589,8 +1589,7 @@ func (m Model) renderFooter() string {
 		if lc, ok := top.(*components.ListColumn); ok {
 			switch lc.ColumnType() {
 			case components.ColumnTypePlaylists:
-				center = styles.AccentStyle.Render("n") + styles.DimStyle.Render(" New  ") +
-					styles.AccentStyle.Render("x") + styles.DimStyle.Render(" Delete")
+				center = styles.AccentStyle.Render("x") + styles.DimStyle.Render(" Delete")
 			case components.ColumnTypePlaylistItems:
 				center = styles.AccentStyle.Render("x") + styles.DimStyle.Render(" Remove")
 			}
