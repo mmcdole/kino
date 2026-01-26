@@ -77,11 +77,6 @@ type SortModal struct {
 	activeDir   SortDirection
 }
 
-// NewSortModal creates a new sort modal
-func NewSortModal() SortModal {
-	return SortModal{}
-}
-
 // Show displays the modal with the given options and current sort state
 func (m *SortModal) Show(options []SortField, activeField SortField, activeDir SortDirection) {
 	m.visible = true

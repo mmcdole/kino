@@ -1823,36 +1823,6 @@ func (m *Model) indexMixedContentForFilter(content []domain.ListItem, libID stri
 	m.SearchSvc.IndexForFilter(items)
 }
 
-// indexEpisodesForFilter indexes episodes for the global filter
-func (m *Model) indexEpisodesForFilter(episodes []domain.MediaItem, seasonID string) {
-	if len(episodes) == 0 {
-		return
-	}
-
-	first := episodes[0]
-	libName := m.findLibraryName(first.LibraryID)
-
-	items := make([]service.FilterItem, len(episodes))
-	for i, ep := range episodes {
-		items[i] = service.FilterItem{
-			Item:  ep,
-			Title: ep.ShowTitle + " " + ep.EpisodeCode() + " " + ep.Title,
-			Type:  domain.MediaTypeEpisode,
-			NavContext: service.NavigationContext{
-				LibraryID:   ep.LibraryID,
-				LibraryName: libName,
-				ShowID:      ep.ShowID,
-				ShowTitle:   ep.ShowTitle,
-				SeasonID:    ep.ParentID,
-				SeasonNum:   ep.SeasonNum,
-				EpisodeID:   ep.ID,
-			},
-		}
-	}
-
-	m.SearchSvc.IndexForFilter(items)
-}
-
 // findLibraryName returns the library name for a given ID
 func (m Model) findLibraryName(libID string) string {
 	for _, lib := range m.Libraries {

@@ -89,48 +89,6 @@ func NewLibraryColumn(libraries []domain.Library) *ListColumn {
 	return col
 }
 
-// NewMoviesColumn creates a column for displaying movies
-func NewMoviesColumn(title string, movies []*domain.MediaItem) *ListColumn {
-	col := NewListColumn(ColumnTypeMovies, title)
-	col.items = WrapMovies(movies)
-	return col
-}
-
-// NewShowsColumn creates a column for displaying TV shows
-func NewShowsColumn(title string, shows []*domain.Show) *ListColumn {
-	col := NewListColumn(ColumnTypeShows, title)
-	col.items = WrapShows(shows)
-	return col
-}
-
-// NewSeasonsColumn creates a column for displaying seasons
-func NewSeasonsColumn(title string, seasons []*domain.Season) *ListColumn {
-	col := NewListColumn(ColumnTypeSeasons, title)
-	col.items = WrapSeasons(seasons)
-	return col
-}
-
-// NewEpisodesColumn creates a column for displaying episodes
-func NewEpisodesColumn(title string, episodes []*domain.MediaItem) *ListColumn {
-	col := NewListColumn(ColumnTypeEpisodes, title)
-	col.items = WrapEpisodes(episodes)
-	return col
-}
-
-// NewPlaylistsColumn creates a column for displaying playlists
-func NewPlaylistsColumn(title string, playlists []*domain.Playlist) *ListColumn {
-	col := NewListColumn(ColumnTypePlaylists, title)
-	col.items = WrapPlaylists(playlists)
-	return col
-}
-
-// NewPlaylistItemsColumn creates a column for displaying playlist items
-func NewPlaylistItemsColumn(title string, items []*domain.MediaItem) *ListColumn {
-	col := NewListColumn(ColumnTypePlaylistItems, title)
-	col.items = WrapPlaylistItems(items)
-	return col
-}
-
 // Implement Column interface
 
 func (c *ListColumn) Init() tea.Cmd {

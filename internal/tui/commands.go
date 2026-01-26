@@ -97,20 +97,6 @@ func LoadEpisodesCmd(svc *service.LibraryService, seasonID string) tea.Cmd {
 	}
 }
 
-// SearchCmd performs a search
-func SearchCmd(svc *service.SearchService, query string) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		results, err := svc.Search(ctx, query)
-		if err != nil {
-			return ErrMsg{Err: err, Context: "searching"}
-		}
-		return SearchResultsMsg{Results: results, Query: query}
-	}
-}
-
 // PlayItemCmd starts playback of an item
 func PlayItemCmd(svc *service.PlaybackService, item domain.MediaItem, resume bool) tea.Cmd {
 	return func() tea.Msg {
@@ -175,11 +161,6 @@ func ClearLibraryStatusCmd(libID string, delay time.Duration) tea.Cmd {
 	return tea.Tick(delay, func(t time.Time) tea.Msg {
 		return ClearLibraryStatusMsg{LibraryID: libID}
 	})
-}
-
-// BatchCmd combines multiple commands
-func BatchCmd(cmds ...tea.Cmd) tea.Cmd {
-	return tea.Batch(cmds...)
 }
 
 // LoadAllForGlobalSearchCmd loads cached content from all libraries for global search

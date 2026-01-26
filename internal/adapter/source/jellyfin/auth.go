@@ -154,14 +154,3 @@ func buildAuthHeader(token, userID string) string {
 
 	return strings.Join(parts, ", ")
 }
-
-// PromptForServerURL prompts the user to enter a Jellyfin server URL
-func PromptForServerURL() (string, error) {
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Print("Enter your Jellyfin server URL (e.g., http://192.168.1.100:8096): ")
-	url, err := reader.ReadString('\n')
-	if err != nil {
-		return "", fmt.Errorf("failed to read input: %w", err)
-	}
-	return strings.TrimSpace(url), nil
-}
