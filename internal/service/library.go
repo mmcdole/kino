@@ -15,9 +15,36 @@ import (
 )
 
 const (
-	defaultPageSize = 50
-	syncChunkSize   = 50 // Smaller batches to work around Jellyfin server issues
+	syncChunkSize = 50 // Smaller batches to work around Jellyfin server issues
 )
+
+// Cache key prefixes for library content
+const (
+	// PrefixLibraries is the cache key for the libraries list
+	PrefixLibraries = "libraries"
+
+	// PrefixMovies is the prefix for movie library caches (movies:{libID})
+	PrefixMovies = "movies:"
+
+	// PrefixShows is the prefix for TV show library caches (shows:{libID})
+	PrefixShows = "shows:"
+
+	// PrefixMixed is the prefix for mixed library caches (mixed:{libID})
+	PrefixMixed = "mixed:"
+
+	// PrefixSeasons is the prefix for show season caches (seasons:{showID})
+	PrefixSeasons = "seasons:"
+
+	// PrefixEpisodes is the prefix for season episode caches (episodes:{seasonID})
+	PrefixEpisodes = "episodes:"
+)
+
+// LibraryCachePrefixes returns all cache key prefixes that should be invalidated
+// when refreshing a library. This includes top-level library content but not
+// nested content like seasons/episodes which are keyed by parent ID, not library ID.
+func LibraryCachePrefixes() []string {
+	return []string{PrefixMovies, PrefixShows, PrefixMixed}
+}
 
 // cachedResult stores cached data
 type cachedResult struct {
@@ -123,15 +150,10 @@ func (s *LibraryService) GetLibraries(ctx context.Context) ([]domain.Library, er
 	return libraries, nil
 }
 
-// GetLibraryDetails returns details for a specific library
-func (s *LibraryService) GetLibraryDetails(ctx context.Context, libID string) (*domain.Library, error) {
-	return s.repo.GetLibraryDetails(ctx, libID)
-}
-
-// SmartSync fetches library content with smart timestamp comparison
+// SyncLibrary fetches library content with smart timestamp comparison
 // Sends progress updates to the channel for live UI updates
 // The channel is closed when sync is complete
-func (s *LibraryService) SmartSync(
+func (s *LibraryService) SyncLibrary(
 	ctx context.Context,
 	lib domain.Library, // Already has UpdatedAt from GetLibraries()
 	force bool,
@@ -583,34 +605,6 @@ func (s *LibraryService) GetEpisodes(ctx context.Context, seasonID string) ([]*d
 	return episodes, nil
 }
 
-// GetRecentlyAdded returns recently added items from a library
-func (s *LibraryService) GetRecentlyAdded(ctx context.Context, libID string, limit int) ([]*domain.MediaItem, error) {
-	if limit <= 0 {
-		limit = defaultPageSize
-	}
-
-	cacheKey := PrefixRecent + libID
-
-	// Check cache
-	if cached, ok := s.getFromCache(cacheKey); ok {
-		s.logger.Debug("cache hit", "key", cacheKey)
-		return cached.([]*domain.MediaItem), nil
-	}
-
-	// Fetch from repository
-	items, err := s.repo.GetRecentlyAdded(ctx, libID, limit)
-	if err != nil {
-		s.logger.Error("failed to get recently added", "error", err, "libID", libID)
-		return nil, err
-	}
-
-	// Store in cache
-	s.setCache(cacheKey, items)
-	s.logger.Debug("loaded recently added", "count", len(items), "libID", libID)
-
-	return items, nil
-}
-
 // RefreshLibrary clears cache for a specific library
 func (s *LibraryService) RefreshLibrary(libID string) {
 	s.cacheMu.Lock()
@@ -638,22 +632,6 @@ func (s *LibraryService) RefreshAll() {
 
 	s.cache = make(map[string]cachedResult)
 	s.logger.Info("cleared all cache")
-}
-
-// InvalidateItem removes an item's parent container from cache
-func (s *LibraryService) InvalidateItem(item domain.MediaItem) {
-	s.cacheMu.Lock()
-	defer s.cacheMu.Unlock()
-
-	// Invalidate based on item type
-	switch item.Type {
-	case domain.MediaTypeMovie:
-		delete(s.cache, PrefixMovies+item.LibraryID)
-	case domain.MediaTypeEpisode:
-		delete(s.cache, PrefixEpisodes+item.ParentID)
-	}
-
-	s.logger.Debug("invalidated cache for item", "itemID", item.ID)
 }
 
 // getFromCache retrieves an item from memory cache
@@ -761,7 +739,7 @@ func (s *LibraryService) saveDiskCacheEntry(key string, data interface{}, server
 }
 
 // loadFromDiskLegacy loads cached data from disk (supports old format)
-// Note: This is a legacy fallback for old cache format. No TTL check - the SmartSync
+// Note: This is a legacy fallback for old cache format. No TTL check - the SyncLibrary
 // mechanism handles cache invalidation via server timestamp comparison.
 func (s *LibraryService) loadFromDiskLegacy(key string, target interface{}) bool {
 	if s.cacheDir == "" {

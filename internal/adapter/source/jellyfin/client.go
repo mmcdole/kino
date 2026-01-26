@@ -155,27 +155,6 @@ func (c *Client) GetLibraries(ctx context.Context) ([]domain.Library, error) {
 	return MapLibraries(resp.Items), nil
 }
 
-// GetLibraryDetails returns details for a specific library
-func (c *Client) GetLibraryDetails(ctx context.Context, libID string) (*domain.Library, error) {
-	path := fmt.Sprintf("/Users/%s/Items/%s", c.userID, libID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	var item Item
-	if err := json.Unmarshal(body, &item); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	lib := mapLibrary(item)
-	if lib == nil {
-		return nil, domain.ErrItemNotFound
-	}
-
-	return lib, nil
-}
-
 // GetMovies returns paginated movies from a movie library
 func (c *Client) GetMovies(ctx context.Context, libID string, offset, limit int) ([]*domain.MediaItem, int, error) {
 	query := url.Values{}
@@ -404,44 +383,6 @@ func (c *Client) GetEpisodes(ctx context.Context, seasonID string) ([]*domain.Me
 	return MapEpisodes(resp.Items, c.baseURL), nil
 }
 
-// GetRecentlyAdded returns recently added items from a library
-func (c *Client) GetRecentlyAdded(ctx context.Context, libID string, limit int) ([]*domain.MediaItem, error) {
-	query := url.Values{}
-	query.Set("ParentId", libID)
-	query.Set("IncludeItemTypes", "Movie,Episode")
-	query.Set("Recursive", "true")
-	query.Set("Fields", "Overview,MediaSources,DateCreated")
-	query.Set("Limit", strconv.Itoa(limit))
-	query.Set("SortBy", "DateCreated")
-	query.Set("SortOrder", "Descending")
-
-	path := fmt.Sprintf("/Users/%s/Items", c.userID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, query)
-	if err != nil {
-		return nil, err
-	}
-
-	var resp ItemsResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	// Map items (could be movies or episodes)
-	items := make([]*domain.MediaItem, 0, len(resp.Items))
-	for _, item := range resp.Items {
-		switch item.Type {
-		case "Movie":
-			movie := mapMovie(item, c.baseURL)
-			items = append(items, &movie)
-		case "Episode":
-			episode := mapEpisode(item, c.baseURL)
-			items = append(items, &episode)
-		}
-	}
-
-	return items, nil
-}
-
 // Search performs a search across all libraries
 func (c *Client) Search(ctx context.Context, query string) ([]domain.MediaItem, error) {
 	params := url.Values{}
@@ -493,34 +434,6 @@ func (c *Client) ResolvePlayableURL(ctx context.Context, itemID string) (string,
 		c.baseURL, itemID, source.Container, c.token)
 
 	return streamURL, nil
-}
-
-// GetNextEpisode returns the next episode in a series
-func (c *Client) GetNextEpisode(ctx context.Context, episodeID string) (*domain.MediaItem, error) {
-	// Get the current episode to find its series and position
-	current, err := c.GetMediaItem(ctx, episodeID)
-	if err != nil {
-		return nil, err
-	}
-
-	if current.Type != domain.MediaTypeEpisode {
-		return nil, domain.ErrNoNextEpisode
-	}
-
-	// Get all episodes in the season
-	episodes, err := c.GetEpisodes(ctx, current.ParentID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Find the next episode
-	for i, ep := range episodes {
-		if ep.ID == episodeID && i+1 < len(episodes) {
-			return episodes[i+1], nil
-		}
-	}
-
-	return nil, domain.ErrNoNextEpisode
 }
 
 // GetMediaItem returns detailed metadata for a specific item

@@ -15,22 +15,6 @@ const (
 	MediaTypeEpisode
 )
 
-// String returns a human-readable representation of the media type
-func (m MediaType) String() string {
-	switch m {
-	case MediaTypeMovie:
-		return "Movie"
-	case MediaTypeShow:
-		return "Show"
-	case MediaTypeSeason:
-		return "Season"
-	case MediaTypeEpisode:
-		return "Episode"
-	default:
-		return "Unknown"
-	}
-}
-
 // MediaItem represents a playable item (Movie or Episode)
 type MediaItem struct {
 	ID         string        // Plex RatingKey
@@ -66,14 +50,6 @@ func (m MediaItem) WatchStatus() WatchStatus {
 		return WatchStatusInProgress
 	}
 	return WatchStatusUnwatched
-}
-
-// ProgressPercent returns the watch progress as a percentage (0-100)
-func (m MediaItem) ProgressPercent() float64 {
-	if m.Duration == 0 {
-		return 0
-	}
-	return float64(m.ViewOffset) / float64(m.Duration) * 100
 }
 
 // FormattedDuration returns the duration in a human-readable format
@@ -164,15 +140,6 @@ func (s Show) WatchStatus() WatchStatus {
 	return WatchStatusUnwatched
 }
 
-// ProgressPercent returns the watch progress as a percentage (0-100)
-func (s Show) ProgressPercent() float64 {
-	if s.EpisodeCount == 0 {
-		return 0
-	}
-	watched := s.EpisodeCount - s.UnwatchedCount
-	return float64(watched) / float64(s.EpisodeCount) * 100
-}
-
 // ListItem interface implementation for Show
 
 func (s *Show) GetID() string    { return s.ID }
@@ -223,15 +190,6 @@ func (s Season) WatchStatus() WatchStatus {
 		return WatchStatusInProgress
 	}
 	return WatchStatusUnwatched
-}
-
-// ProgressPercent returns the watch progress as a percentage (0-100)
-func (s Season) ProgressPercent() float64 {
-	if s.EpisodeCount == 0 {
-		return 0
-	}
-	watched := s.EpisodeCount - s.UnwatchedCount
-	return float64(watched) / float64(s.EpisodeCount) * 100
 }
 
 // DisplayTitle returns the display title for the season
@@ -285,11 +243,6 @@ func (l Library) IsMovieLibrary() bool {
 // IsShowLibrary returns true if this is a TV show library
 func (l Library) IsShowLibrary() bool {
 	return l.Type == "show"
-}
-
-// IsMixedLibrary returns true if this is a mixed library (movies and shows)
-func (l Library) IsMixedLibrary() bool {
-	return l.Type == "mixed"
 }
 
 // ListItem interface implementation for Library
