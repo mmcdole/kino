@@ -308,14 +308,7 @@ func readSyncProgress(
 	// Index chunk immediately for incremental search
 	if progress.Items != nil {
 		// Calculate offset: total loaded minus current chunk size
-		var chunkSize int
-		switch v := progress.Items.(type) {
-		case []*domain.MediaItem:
-			chunkSize = len(v)
-		case []*domain.Show:
-			chunkSize = len(v)
-		}
-		offset := progress.Loaded - chunkSize
+		offset := progress.Loaded - progress.Items.ChunkSize()
 		indexChunkForSearch(searchSvc, progress.Items, lib, offset)
 	}
 
@@ -365,9 +358,9 @@ func SyncAllLibrariesCmd(
 
 // indexChunkForSearch indexes a chunk of items for global search
 // offset is the starting index of this chunk in the full library list
-func indexChunkForSearch(searchSvc *service.SearchService, items interface{}, lib domain.Library, offset int) {
-	switch v := items.(type) {
-	case []*domain.MediaItem:
+func indexChunkForSearch(searchSvc *service.SearchService, chunk service.SyncChunk, lib domain.Library, offset int) {
+	switch v := chunk.(type) {
+	case service.MovieChunk:
 		filterItems := make([]service.FilterItem, len(v))
 		for i, movie := range v {
 			filterItems[i] = service.FilterItem{
@@ -383,7 +376,7 @@ func indexChunkForSearch(searchSvc *service.SearchService, items interface{}, li
 		}
 		searchSvc.IndexForFilter(filterItems)
 
-	case []*domain.Show:
+	case service.ShowChunk:
 		filterItems := make([]service.FilterItem, len(v))
 		for i, show := range v {
 			filterItems[i] = service.FilterItem{
@@ -400,7 +393,7 @@ func indexChunkForSearch(searchSvc *service.SearchService, items interface{}, li
 		}
 		searchSvc.IndexForFilter(filterItems)
 
-	case []domain.ListItem:
+	case service.MixedChunk:
 		filterItems := make([]service.FilterItem, 0, len(v))
 		for _, item := range v {
 			switch t := item.(type) {

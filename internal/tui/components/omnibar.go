@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -169,24 +170,24 @@ func (o Omnibar) Update(msg tea.Msg) (Omnibar, tea.Cmd, bool) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "esc":
+		switch {
+		case key.Matches(msg, OmnibarKeys.Escape):
 			o.Hide()
 			return o, nil, false
 
-		case "enter":
+		case key.Matches(msg, OmnibarKeys.Enter):
 			if resultCount > 0 {
 				return o, nil, true // Selected
 			}
 			return o, nil, false
 
-		case "down", "ctrl+n":
+		case key.Matches(msg, OmnibarKeys.Down):
 			if o.cursor < resultCount-1 {
 				o.cursor++
 			}
 			return o, nil, false
 
-		case "up", "ctrl+p":
+		case key.Matches(msg, OmnibarKeys.Up):
 			if o.cursor > 0 {
 				o.cursor--
 			}

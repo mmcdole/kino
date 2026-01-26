@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mmcdole/kino/internal/domain"
@@ -577,22 +578,232 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Handle state-specific keys
 	switch m.State {
 	case StateHelp:
-		if msg.String() == "esc" || msg.String() == "?" || msg.String() == "q" {
+		if key.Matches(msg, Keys.Escape, Keys.Help, Keys.Quit) {
 			m.State = StateBrowsing
 		}
 		return m, nil
 
 	case StateConfirmLogout:
-		switch msg.String() {
-		case "y", "Y":
+		switch {
+		case key.Matches(msg, Keys.Confirm):
 			// User confirmed logout
 			return m, LogoutCmd()
-		case "n", "N", "esc":
+		case key.Matches(msg, Keys.Deny):
 			// User cancelled
 			m.State = StateBrowsing
 		}
 		return m, nil
 	}
+
+	// Route to active modal if any
+	if handled, newModel, cmd := m.routeToModal(msg); handled {
+		return newModel, cmd
+	}
+
+	// Global keys
+	switch {
+	case key.Matches(msg, Keys.Quit):
+		return m, tea.Quit
+
+	case key.Matches(msg, Keys.Help):
+		m.State = StateHelp
+		return m, nil
+
+	case key.Matches(msg, Keys.Escape):
+		// Clear active filter if any
+		if top := m.ColumnStack.Top(); top != nil && top.IsFiltering() {
+			top.ClearFilter()
+			return m, nil
+		}
+		// Cancel active nav plan if any
+		if m.navPlan != nil {
+			m.clearNavPlan()
+			m.StatusMsg = "Navigation cancelled"
+			return m, ClearStatusCmd(2 * time.Second)
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.Filter):
+		// Activate filter in middle column
+		if top := m.ColumnStack.Top(); top != nil {
+			top.ToggleFilter()
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.GlobalSearch):
+		// Global search via Omnibar
+		m.Omnibar.ShowFilterMode()
+		m.Omnibar.SetSize(m.Width, m.Height)
+		m.Omnibar.SetLoading(true)
+		return m, tea.Batch(
+			m.Omnibar.Init(),
+			LoadAllForGlobalSearchCmd(m.LibrarySvc, m.SearchSvc, m.Libraries),
+		)
+
+	case key.Matches(msg, Keys.Sort):
+		// Sort modal (only for movies/shows columns)
+		if top := m.ColumnStack.Top(); top != nil {
+			var opts []components.SortField
+			switch top.ColumnType() {
+			case components.ColumnTypeMovies:
+				opts = components.MovieSortOptions()
+			case components.ColumnTypeShows:
+				opts = components.ShowSortOptions()
+			}
+			if opts != nil {
+				field, dir := top.SortState()
+				m.SortModal.Show(opts, field, dir)
+			}
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.Back):
+		// Go back (pop column stack)
+		return m.handleBack()
+
+	case key.Matches(msg, Keys.Right):
+		// Drill into (push new column)
+		return m.handleDrillIn()
+
+	case key.Matches(msg, Keys.Enter):
+		// Enter can drill in OR play depending on selection
+		return m.handleEnter()
+
+	case key.Matches(msg, Keys.Refresh):
+		// Refresh single selected library
+		if libCol := m.libraryColumn(); libCol != nil {
+			if lib := libCol.SelectedLibrary(); lib != nil {
+				m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
+				m.SyncingCount++
+				m.Loading = true
+				m.MultiLibSync = false
+				m.updateLibraryStates()
+				return m, SyncLibraryCmd(m.LibrarySvc, m.SearchSvc, *lib, true)
+			}
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.RefreshAll):
+		// Refresh ALL libraries
+		m.SearchSvc.ClearFilterIndex()
+		m.LibraryStates = make(map[string]components.LibrarySyncState)
+		for _, lib := range m.Libraries {
+			m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
+		}
+		m.SyncingCount = len(m.Libraries)
+		m.Loading = true
+		m.MultiLibSync = true
+		m.updateLibraryStates()
+
+		// Append synthetic "Playlists" entry at bottom
+		playlistsEntry := domain.Library{
+			ID:   "__playlists__",
+			Name: "Playlists",
+			Type: "playlist",
+		}
+		allEntries := append(m.Libraries, playlistsEntry)
+
+		// Reset to library view
+		libCol := components.NewLibraryColumn(allEntries)
+		libCol.SetLibraryStates(m.LibraryStates)
+		m.Inspector.SetLibraryStates(m.LibraryStates)
+		m.ColumnStack.Reset(libCol)
+
+		return m, SyncAllLibrariesCmd(m.LibrarySvc, m.SearchSvc, m.Libraries, true)
+
+	case key.Matches(msg, Keys.MarkWatched):
+		// Mark as watched
+		if top := m.ColumnStack.Top(); top != nil {
+			if item := top.SelectedMediaItem(); item != nil {
+				return m, MarkWatchedCmd(m.PlaybackSvc, item.ID, item.Title)
+			}
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.MarkUnwatched):
+		// Mark as unwatched
+		if top := m.ColumnStack.Top(); top != nil {
+			if item := top.SelectedMediaItem(); item != nil {
+				return m, MarkUnwatchedCmd(m.PlaybackSvc, item.ID, item.Title)
+			}
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.Play):
+		// Play from beginning
+		if top := m.ColumnStack.Top(); top != nil {
+			if item := top.SelectedMediaItem(); item != nil {
+				return m, PlayItemCmd(m.PlaybackSvc, *item, false)
+			}
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.ToggleInspector):
+		// Toggle inspector visibility
+		m.ShowInspector = !m.ShowInspector
+		m.updateLayout()
+		return m, nil
+
+	case key.Matches(msg, Keys.Logout):
+		// Logout (Shift+L) - show confirmation modal
+		m.State = StateConfirmLogout
+		return m, nil
+
+	case key.Matches(msg, Keys.PlaylistModal):
+		// Space: Open playlist modal for selected playable item
+		if top := m.ColumnStack.Top(); top != nil {
+			item := top.SelectedMediaItem()
+			if item != nil && m.PlaylistSvc != nil {
+				return m, LoadPlaylistModalDataCmd(m.PlaylistSvc, item)
+			}
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.Delete):
+		if top := m.ColumnStack.Top(); top != nil {
+			switch top.ColumnType() {
+			case components.ColumnTypePlaylistItems:
+				// Remove item from playlist
+				if item := top.SelectedMediaItem(); item != nil && m.currentPlaylistID != "" {
+					return m, RemoveFromPlaylistCmd(m.PlaylistSvc, m.currentPlaylistID, item.ID)
+				}
+			case components.ColumnTypePlaylists:
+				// Delete playlist
+				if playlist := top.SelectedPlaylist(); playlist != nil {
+					return m, DeletePlaylistCmd(m.PlaylistSvc, playlist.ID)
+				}
+			}
+		}
+		return m, nil
+
+	case key.Matches(msg, Keys.NewPlaylist):
+		// Plex doesn't support empty playlists - show hint to use Space instead
+		if top := m.ColumnStack.Top(); top != nil && top.ColumnType() == components.ColumnTypePlaylists {
+			m.StatusMsg = "Use Space on an item to create a playlist"
+			return m, ClearStatusCmd(3 * time.Second)
+		}
+	}
+
+	// Let the focused column handle remaining keys (j/k/g/G navigation)
+	if top := m.ColumnStack.Top(); top != nil {
+		oldCursor := top.SelectedIndex()
+		newCol, cmd := top.Update(msg)
+		m.ColumnStack.columns[len(m.ColumnStack.columns)-1] = newCol
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		if oldCursor != top.SelectedIndex() {
+			m.updateInspector()
+		}
+	}
+
+	return m, tea.Batch(cmds...)
+}
+
+// routeToModal routes key input to active modals
+// Returns (handled, model, cmd) where handled is true if a modal consumed the input
+func (m Model) routeToModal(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
+	var cmds []tea.Cmd
 
 	// Handle omnibar if visible
 	if m.Omnibar.IsVisible() {
@@ -625,7 +836,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		return m, tea.Batch(cmds...)
+		return true, m, tea.Batch(cmds...)
 	}
 
 	// Handle sort modal if visible
@@ -639,7 +850,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.updateInspector()
 				}
 			}
-			return m, nil
+			return true, m, nil
 		}
 	}
 
@@ -665,7 +876,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 							batchCmds = append(batchCmds, RemoveFromPlaylistCmd(m.PlaylistSvc, change.PlaylistID, item.ID))
 						}
 					}
-					return m, tea.Batch(batchCmds...)
+					return true, m, tea.Batch(batchCmds...)
 				}
 			}
 			if shouldClose {
@@ -685,11 +896,11 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						}
 					}
 					if len(batchCmds) > 0 {
-						return m, tea.Batch(batchCmds...)
+						return true, m, tea.Batch(batchCmds...)
 					}
 				}
 			}
-			return m, nil
+			return true, m, nil
 		}
 	}
 
@@ -702,13 +913,13 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			title := m.InputModal.Value()
 			m.InputModal.Hide()
 			if title != "" {
-				return m, CreatePlaylistCmd(m.PlaylistSvc, title, []string{})
+				return true, m, CreatePlaylistCmd(m.PlaylistSvc, title, []string{})
 			}
 		}
 		if cmd != nil {
-			return m, cmd
+			return true, m, cmd
 		}
-		return m, nil
+		return true, m, nil
 	}
 
 	// Handle filter typing mode
@@ -719,207 +930,10 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if oldCursor != top.SelectedIndex() {
 			m.updateInspector()
 		}
-		return m, nil
+		return true, m, nil
 	}
 
-	// Global keys
-	switch msg.String() {
-	case "q", "ctrl+c":
-		return m, tea.Quit
-
-	case "?":
-		m.State = StateHelp
-		return m, nil
-
-	case "esc":
-		// Clear active filter if any
-		if top := m.ColumnStack.Top(); top != nil && top.IsFiltering() {
-			top.ClearFilter()
-			return m, nil
-		}
-		// Cancel active nav plan if any
-		if m.navPlan != nil {
-			m.clearNavPlan()
-			m.StatusMsg = "Navigation cancelled"
-			return m, ClearStatusCmd(2 * time.Second)
-		}
-		return m, nil
-
-	case "/":
-		// Activate filter in middle column
-		if top := m.ColumnStack.Top(); top != nil {
-			top.ToggleFilter()
-		}
-		return m, nil
-
-	case "f":
-		// Global search via Omnibar
-		m.Omnibar.ShowFilterMode()
-		m.Omnibar.SetSize(m.Width, m.Height)
-		m.Omnibar.SetLoading(true)
-		return m, tea.Batch(
-			m.Omnibar.Init(),
-			LoadAllForGlobalSearchCmd(m.LibrarySvc, m.SearchSvc, m.Libraries),
-		)
-
-	case "s":
-		// Sort modal (only for movies/shows columns)
-		if top := m.ColumnStack.Top(); top != nil {
-			var opts []components.SortField
-			switch top.ColumnType() {
-			case components.ColumnTypeMovies:
-				opts = components.MovieSortOptions()
-			case components.ColumnTypeShows:
-				opts = components.ShowSortOptions()
-			}
-			if opts != nil {
-				field, dir := top.SortState()
-				m.SortModal.Show(opts, field, dir)
-			}
-		}
-		return m, nil
-
-	case "h", "left", "backspace":
-		// Go back (pop column stack)
-		return m.handleBack()
-
-	case "l", "right":
-		// Drill into (push new column)
-		return m.handleDrillIn()
-
-	case "enter":
-		// Enter can drill in OR play depending on selection
-		return m.handleEnter()
-
-	case "r":
-		// Refresh single selected library
-		if libCol := m.libraryColumn(); libCol != nil {
-			if lib := libCol.SelectedLibrary(); lib != nil {
-				m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
-				m.SyncingCount++
-				m.Loading = true
-				m.MultiLibSync = false
-				m.updateLibraryStates()
-				return m, SyncLibraryCmd(m.LibrarySvc, m.SearchSvc, *lib, true)
-			}
-		}
-		return m, nil
-
-	case "R":
-		// Refresh ALL libraries
-		m.SearchSvc.ClearFilterIndex()
-		m.LibraryStates = make(map[string]components.LibrarySyncState)
-		for _, lib := range m.Libraries {
-			m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
-		}
-		m.SyncingCount = len(m.Libraries)
-		m.Loading = true
-		m.MultiLibSync = true
-		m.updateLibraryStates()
-
-		// Append synthetic "Playlists" entry at bottom
-		playlistsEntry := domain.Library{
-			ID:   "__playlists__",
-			Name: "Playlists",
-			Type: "playlist",
-		}
-		allEntries := append(m.Libraries, playlistsEntry)
-
-		// Reset to library view
-		libCol := components.NewLibraryColumn(allEntries)
-		libCol.SetLibraryStates(m.LibraryStates)
-		m.Inspector.SetLibraryStates(m.LibraryStates)
-		m.ColumnStack.Reset(libCol)
-
-		return m, SyncAllLibrariesCmd(m.LibrarySvc, m.SearchSvc, m.Libraries, true)
-
-	case "w":
-		// Mark as watched
-		if top := m.ColumnStack.Top(); top != nil {
-			if item := top.SelectedMediaItem(); item != nil {
-				return m, MarkWatchedCmd(m.PlaybackSvc, item.ID, item.Title)
-			}
-		}
-		return m, nil
-
-	case "u":
-		// Mark as unwatched
-		if top := m.ColumnStack.Top(); top != nil {
-			if item := top.SelectedMediaItem(); item != nil {
-				return m, MarkUnwatchedCmd(m.PlaybackSvc, item.ID, item.Title)
-			}
-		}
-		return m, nil
-
-	case "p":
-		// Play from beginning
-		if top := m.ColumnStack.Top(); top != nil {
-			if item := top.SelectedMediaItem(); item != nil {
-				return m, PlayItemCmd(m.PlaybackSvc, *item, false)
-			}
-		}
-		return m, nil
-
-	case "i":
-		// Toggle inspector visibility
-		m.ShowInspector = !m.ShowInspector
-		m.updateLayout()
-		return m, nil
-
-	case "L":
-		// Logout (Shift+L) - show confirmation modal
-		m.State = StateConfirmLogout
-		return m, nil
-
-	case " ":
-		// Space: Open playlist modal for selected playable item
-		if top := m.ColumnStack.Top(); top != nil {
-			item := top.SelectedMediaItem()
-			if item != nil && m.PlaylistSvc != nil {
-				return m, LoadPlaylistModalDataCmd(m.PlaylistSvc, item)
-			}
-		}
-		return m, nil
-
-	case "x":
-		if top := m.ColumnStack.Top(); top != nil {
-			switch top.ColumnType() {
-			case components.ColumnTypePlaylistItems:
-				// Remove item from playlist
-				if item := top.SelectedMediaItem(); item != nil && m.currentPlaylistID != "" {
-					return m, RemoveFromPlaylistCmd(m.PlaylistSvc, m.currentPlaylistID, item.ID)
-				}
-			case components.ColumnTypePlaylists:
-				// Delete playlist
-				if playlist := top.SelectedPlaylist(); playlist != nil {
-					return m, DeletePlaylistCmd(m.PlaylistSvc, playlist.ID)
-				}
-			}
-		}
-		return m, nil
-
-	case "n":
-		// Plex doesn't support empty playlists - show hint to use Space instead
-		if top := m.ColumnStack.Top(); top != nil && top.ColumnType() == components.ColumnTypePlaylists {
-			m.StatusMsg = "Use Space on an item to create a playlist"
-			return m, ClearStatusCmd(3 * time.Second)
-		}
-	}
-
-	// Let the focused column handle remaining keys (j/k/g/G navigation)
-	if top := m.ColumnStack.Top(); top != nil {
-		oldCursor := top.SelectedIndex()
-		newCol, cmd := top.Update(msg)
-		m.ColumnStack.columns[len(m.ColumnStack.columns)-1] = newCol
-		if cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-		if oldCursor != top.SelectedIndex() {
-			m.updateInspector()
-		}
-	}
-
-	return m, tea.Batch(cmds...)
+	return false, m, nil
 }
 
 // handleDrillIn handles drilling into the selected item (l key)
@@ -1355,6 +1369,72 @@ func (m *Model) updateLayout() {
 	}
 }
 
+// columnLayout holds calculated column widths for the View
+type columnLayout struct {
+	grandparentWidth int // 0 if not shown
+	parentWidth      int // 0 if not shown
+	activeWidth      int
+	inspectorWidth   int // 0 if not shown
+}
+
+// calculateColumnLayout computes column widths based on stack depth and inspector visibility
+func (m Model) calculateColumnLayout(availableWidth int) columnLayout {
+	stackLen := m.ColumnStack.Len()
+	layout := columnLayout{}
+
+	// Helper to apply minimum width
+	applyMin := func(width int) int {
+		if width < MinColumnWidth {
+			return MinColumnWidth
+		}
+		return width
+	}
+
+	switch {
+	case stackLen == 0:
+		// Empty stack - shouldn't happen
+		layout.activeWidth = availableWidth
+
+	case stackLen == 1:
+		// Root level: single column (Libraries)
+		if m.ShowInspector {
+			layout.activeWidth = applyMin(availableWidth * RootColumnPercent / 100)
+			layout.inspectorWidth = availableWidth - layout.activeWidth
+		} else {
+			layout.activeWidth = availableWidth
+		}
+
+	case stackLen == 2:
+		// 2 columns in stack
+		if m.ShowInspector {
+			// [Parent | Active | Inspector]
+			layout.parentWidth = applyMin(availableWidth * ParentColumnPercent3 / 100)
+			layout.inspectorWidth = applyMin(availableWidth * InspectorColumnPercent / 100)
+			layout.activeWidth = applyMin(availableWidth - layout.parentWidth - layout.inspectorWidth)
+		} else {
+			// [Parent | Active]
+			layout.parentWidth = applyMin(availableWidth * ParentColumnPercent2 / 100)
+			layout.activeWidth = applyMin(availableWidth - layout.parentWidth)
+		}
+
+	default:
+		// 3+ columns in stack
+		if m.ShowInspector {
+			// [Parent | Active | Inspector]
+			layout.parentWidth = applyMin(availableWidth * ParentColumnPercent3 / 100)
+			layout.inspectorWidth = applyMin(availableWidth * InspectorColumnPercent / 100)
+			layout.activeWidth = applyMin(availableWidth - layout.parentWidth - layout.inspectorWidth)
+		} else {
+			// [Grandparent | Parent | Active]
+			layout.grandparentWidth = applyMin(availableWidth * GrandparentColumnPercent / 100)
+			layout.parentWidth = applyMin(availableWidth * ParentColumnPercent2 / 100)
+			layout.activeWidth = applyMin(availableWidth - layout.grandparentWidth - layout.parentWidth)
+		}
+	}
+
+	return layout
+}
+
 // View renders the application
 func (m Model) View() string {
 	if !m.Ready {
@@ -1370,153 +1450,47 @@ func (m Model) View() string {
 		return m.renderLogoutConfirmation()
 	}
 
-	availableWidth := m.Width
 	contentHeight := m.Height - ChromeHeight
 	stackLen := m.ColumnStack.Len()
+	layout := m.calculateColumnLayout(m.Width)
 
 	var content string
 
 	if stackLen == 0 {
-		// No columns - shouldn't happen
 		content = ""
-	} else if stackLen == 1 {
-		// Root level: single column (Libraries)
-		col := m.ColumnStack.Get(0)
-
-		if m.ShowInspector {
-			// [Libraries | Inspector]
-			leftWidth := availableWidth * RootColumnPercent / 100
-			if leftWidth < MinColumnWidth {
-				leftWidth = MinColumnWidth
-			}
-			rightWidth := availableWidth - leftWidth
-
-			col.SetSize(leftWidth, contentHeight)
-			m.Inspector.SetSize(rightWidth, contentHeight)
-			m.Inspector.SetItem(col.SelectedItem())
-
-			content = lipgloss.JoinHorizontal(
-				lipgloss.Top,
-				col.View(),
-				m.Inspector.View(),
-			)
-		} else {
-			// [Libraries] - full width
-			col.SetSize(availableWidth, contentHeight)
-			content = col.View()
-		}
-	} else if stackLen == 2 {
-		// 2 columns in stack
-		topIdx := stackLen - 1
-		parentCol := m.ColumnStack.Get(topIdx - 1)
-		currentCol := m.ColumnStack.Get(topIdx)
-
-		if m.ShowInspector {
-			// 3-Column: [Parent | Active | Inspector]
-			parentWidth := availableWidth * ParentColumnPercent3 / 100
-			if parentWidth < MinColumnWidth {
-				parentWidth = MinColumnWidth
-			}
-			inspectorWidth := availableWidth * InspectorColumnPercent / 100
-			if inspectorWidth < MinColumnWidth {
-				inspectorWidth = MinColumnWidth
-			}
-			activeWidth := availableWidth - parentWidth - inspectorWidth
-			if activeWidth < MinColumnWidth {
-				activeWidth = MinColumnWidth
-			}
-
-			parentCol.SetSize(parentWidth, contentHeight)
-			currentCol.SetSize(activeWidth, contentHeight)
-			m.Inspector.SetSize(inspectorWidth, contentHeight)
-			m.Inspector.SetItem(currentCol.SelectedItem())
-
-			content = lipgloss.JoinHorizontal(
-				lipgloss.Top,
-				parentCol.View(),
-				currentCol.View(),
-				m.Inspector.View(),
-			)
-		} else {
-			// 2-Column: [Parent | Active]
-			parentWidth := availableWidth * ParentColumnPercent2 / 100
-			if parentWidth < MinColumnWidth {
-				parentWidth = MinColumnWidth
-			}
-			activeWidth := availableWidth - parentWidth
-			if activeWidth < MinColumnWidth {
-				activeWidth = MinColumnWidth
-			}
-
-			parentCol.SetSize(parentWidth, contentHeight)
-			currentCol.SetSize(activeWidth, contentHeight)
-
-			content = lipgloss.JoinHorizontal(
-				lipgloss.Top,
-				parentCol.View(),
-				currentCol.View(),
-			)
-		}
 	} else {
-		// 3+ columns in stack
 		topIdx := stackLen - 1
 		currentCol := m.ColumnStack.Get(topIdx)
-		parentCol := m.ColumnStack.Get(topIdx - 1)
 
-		if m.ShowInspector {
-			// 3-Column: [Parent | Active | Inspector]
-			parentWidth := availableWidth * ParentColumnPercent3 / 100
-			if parentWidth < MinColumnWidth {
-				parentWidth = MinColumnWidth
-			}
-			inspectorWidth := availableWidth * InspectorColumnPercent / 100
-			if inspectorWidth < MinColumnWidth {
-				inspectorWidth = MinColumnWidth
-			}
-			activeWidth := availableWidth - parentWidth - inspectorWidth
-			if activeWidth < MinColumnWidth {
-				activeWidth = MinColumnWidth
-			}
+		// Build columns list based on what's visible
+		var columnViews []string
 
-			parentCol.SetSize(parentWidth, contentHeight)
-			currentCol.SetSize(activeWidth, contentHeight)
-			m.Inspector.SetSize(inspectorWidth, contentHeight)
-			m.Inspector.SetItem(currentCol.SelectedItem())
-
-			content = lipgloss.JoinHorizontal(
-				lipgloss.Top,
-				parentCol.View(),
-				currentCol.View(),
-				m.Inspector.View(),
-			)
-		} else {
-			// 3-Column Navigation: [Grandparent | Parent | Active]
+		// Add grandparent column if visible (3+ columns, inspector hidden)
+		if layout.grandparentWidth > 0 {
 			grandparentCol := m.ColumnStack.Get(topIdx - 2)
-
-			grandparentWidth := availableWidth * GrandparentColumnPercent / 100
-			if grandparentWidth < MinColumnWidth {
-				grandparentWidth = MinColumnWidth
-			}
-			parentWidth := availableWidth * ParentColumnPercent2 / 100
-			if parentWidth < MinColumnWidth {
-				parentWidth = MinColumnWidth
-			}
-			activeWidth := availableWidth - grandparentWidth - parentWidth
-			if activeWidth < MinColumnWidth {
-				activeWidth = MinColumnWidth
-			}
-
-			grandparentCol.SetSize(grandparentWidth, contentHeight)
-			parentCol.SetSize(parentWidth, contentHeight)
-			currentCol.SetSize(activeWidth, contentHeight)
-
-			content = lipgloss.JoinHorizontal(
-				lipgloss.Top,
-				grandparentCol.View(),
-				parentCol.View(),
-				currentCol.View(),
-			)
+			grandparentCol.SetSize(layout.grandparentWidth, contentHeight)
+			columnViews = append(columnViews, grandparentCol.View())
 		}
+
+		// Add parent column if visible (2+ columns)
+		if layout.parentWidth > 0 {
+			parentCol := m.ColumnStack.Get(topIdx - 1)
+			parentCol.SetSize(layout.parentWidth, contentHeight)
+			columnViews = append(columnViews, parentCol.View())
+		}
+
+		// Active column is always visible
+		currentCol.SetSize(layout.activeWidth, contentHeight)
+		columnViews = append(columnViews, currentCol.View())
+
+		// Add inspector if visible
+		if layout.inspectorWidth > 0 {
+			m.Inspector.SetSize(layout.inspectorWidth, contentHeight)
+			m.Inspector.SetItem(currentCol.SelectedItem())
+			columnViews = append(columnViews, m.Inspector.View())
+		}
+
+		content = lipgloss.JoinHorizontal(lipgloss.Top, columnViews...)
 	}
 
 	// Footer

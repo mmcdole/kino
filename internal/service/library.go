@@ -57,13 +57,43 @@ type diskCacheEntry struct {
 	ServerUpdatedAt int64           `json:"serverUpdatedAt"`
 }
 
+// SyncChunk is a marker interface for typed sync chunks
+type SyncChunk interface {
+	syncChunk() // marker method
+	ChunkSize() int
+}
+
+// MovieChunk is a chunk of movies during sync
+type MovieChunk []*domain.MediaItem
+
+func (MovieChunk) syncChunk() {}
+
+// ChunkSize returns the number of items in the chunk
+func (c MovieChunk) ChunkSize() int { return len(c) }
+
+// ShowChunk is a chunk of shows during sync
+type ShowChunk []*domain.Show
+
+func (ShowChunk) syncChunk() {}
+
+// ChunkSize returns the number of items in the chunk
+func (c ShowChunk) ChunkSize() int { return len(c) }
+
+// MixedChunk is a chunk of mixed content during sync
+type MixedChunk []domain.ListItem
+
+func (MixedChunk) syncChunk() {}
+
+// ChunkSize returns the number of items in the chunk
+func (c MixedChunk) ChunkSize() int { return len(c) }
+
 // SyncProgress reports progress during library sync
 type SyncProgress struct {
 	LibraryID   string
 	LibraryType string
-	Loaded      int         // Items loaded so far
-	Total       int         // Total items (from first response)
-	Items       interface{} // Current chunk: []*MediaItem or []*Show
+	Loaded      int       // Items loaded so far
+	Total       int       // Total items (from first response)
+	Items       SyncChunk // Current chunk (MovieChunk, ShowChunk, or MixedChunk)
 	Done        bool
 	FromDisk    bool
 	Error       error
@@ -184,7 +214,7 @@ func (s *LibraryService) SyncLibrary(
 						LibraryType: lib.Type,
 						Loaded:      len(movies),
 						Total:       len(movies),
-						Items:       movies,
+						Items:       MovieChunk(movies),
 						Done:        true,
 						FromDisk:    true,
 					}
@@ -199,7 +229,7 @@ func (s *LibraryService) SyncLibrary(
 						LibraryType: lib.Type,
 						Loaded:      len(shows),
 						Total:       len(shows),
-						Items:       shows,
+						Items:       ShowChunk(shows),
 						Done:        true,
 						FromDisk:    true,
 					}
@@ -214,7 +244,7 @@ func (s *LibraryService) SyncLibrary(
 						LibraryType: lib.Type,
 						Loaded:      len(items),
 						Total:       len(items),
-						Items:       items,
+						Items:       MixedChunk(items),
 						Done:        true,
 						FromDisk:    true,
 					}
@@ -293,7 +323,7 @@ func (s *LibraryService) syncMovies(ctx context.Context, lib domain.Library, ser
 			LibraryType: lib.Type,
 			Loaded:      len(allMovies),
 			Total:       knownTotal,
-			Items:       movies, // Just this chunk
+			Items:       MovieChunk(movies), // Just this chunk
 			Done:        done,
 		}:
 		case <-ctx.Done():
@@ -345,7 +375,7 @@ func (s *LibraryService) syncShows(ctx context.Context, lib domain.Library, serv
 			LibraryType: lib.Type,
 			Loaded:      len(allShows),
 			Total:       total,
-			Items:       shows, // Just this chunk
+			Items:       ShowChunk(shows), // Just this chunk
 			Done:        done,
 		}:
 		case <-ctx.Done():
@@ -397,7 +427,7 @@ func (s *LibraryService) syncMixed(ctx context.Context, lib domain.Library, serv
 			LibraryType: lib.Type,
 			Loaded:      len(allItems),
 			Total:       total,
-			Items:       items, // Just this chunk
+			Items:       MixedChunk(items), // Just this chunk
 			Done:        done,
 		}:
 		case <-ctx.Done():

@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -94,23 +95,25 @@ func (c *ListColumn) Update(msg tea.Msg) (*ListColumn, tea.Cmd) {
 		return c, nil
 	}
 
+	keyMsg, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return c, nil
+	}
+
 	// Handle filter input when active AND focused (typing mode)
 	if c.filterActive && c.filterInput.Focused() {
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch msg.String() {
-			case "esc":
+		switch {
+		case key.Matches(keyMsg, ListColumnKeys.Escape):
+			c.clearFilter()
+			return c, nil
+		case key.Matches(keyMsg, ListColumnKeys.Enter):
+			// Accept filter, blur input to allow navigation
+			c.filterInput.Blur()
+			return c, nil
+		case keyMsg.String() == "backspace":
+			if c.filterInput.Value() == "" {
 				c.clearFilter()
 				return c, nil
-			case "enter":
-				// Accept filter, blur input to allow navigation
-				c.filterInput.Blur()
-				return c, nil
-			case "backspace":
-				if c.filterInput.Value() == "" {
-					c.clearFilter()
-					return c, nil
-				}
 			}
 		}
 
@@ -123,18 +126,15 @@ func (c *ListColumn) Update(msg tea.Msg) (*ListColumn, tea.Cmd) {
 
 	// Handle keys when filter is active but blurred (navigation mode with filter results)
 	if c.filterActive {
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch msg.String() {
-			case "esc":
-				// Clear filter and show all items
-				c.clearFilter()
-				return c, nil
-			case "/":
-				// Re-activate filter input
-				c.filterInput.Focus()
-				return c, nil
-			}
+		switch {
+		case key.Matches(keyMsg, ListColumnKeys.Escape):
+			// Clear filter and show all items
+			c.clearFilter()
+			return c, nil
+		case key.Matches(keyMsg, ListColumnKeys.Filter):
+			// Re-activate filter input
+			c.filterInput.Focus()
+			return c, nil
 		}
 		// Fall through to normal navigation handling
 	}
@@ -144,54 +144,51 @@ func (c *ListColumn) Update(msg tea.Msg) (*ListColumn, tea.Cmd) {
 		return c, nil
 	}
 
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "j", "down":
-			if c.cursor < count-1 {
-				c.cursor++
-				c.ensureVisible()
-			}
-		case "k", "up":
-			if c.cursor > 0 {
-				c.cursor--
-				c.ensureVisible()
-			}
-		case "g", "home":
-			c.cursor = 0
-			c.offset = 0
-		case "G", "end":
-			c.cursor = count - 1
-			c.ensureVisible()
-		case "ctrl+d":
-			// Half page down
-			c.cursor += c.maxVisible / 2
-			if c.cursor >= count {
-				c.cursor = count - 1
-			}
-			c.ensureVisible()
-		case "ctrl+u":
-			// Half page up
-			c.cursor -= c.maxVisible / 2
-			if c.cursor < 0 {
-				c.cursor = 0
-			}
-			c.ensureVisible()
-		case "pgdown":
-			// Full page down
-			c.cursor += c.maxVisible
-			if c.cursor >= count {
-				c.cursor = count - 1
-			}
-			c.ensureVisible()
-		case "pgup":
-			// Full page up
-			c.cursor -= c.maxVisible
-			if c.cursor < 0 {
-				c.cursor = 0
-			}
+	switch {
+	case key.Matches(keyMsg, ListColumnKeys.Down):
+		if c.cursor < count-1 {
+			c.cursor++
 			c.ensureVisible()
 		}
+	case key.Matches(keyMsg, ListColumnKeys.Up):
+		if c.cursor > 0 {
+			c.cursor--
+			c.ensureVisible()
+		}
+	case key.Matches(keyMsg, ListColumnKeys.Home):
+		c.cursor = 0
+		c.offset = 0
+	case key.Matches(keyMsg, ListColumnKeys.End):
+		c.cursor = count - 1
+		c.ensureVisible()
+	case key.Matches(keyMsg, ListColumnKeys.HalfDown):
+		// Half page down
+		c.cursor += c.maxVisible / 2
+		if c.cursor >= count {
+			c.cursor = count - 1
+		}
+		c.ensureVisible()
+	case key.Matches(keyMsg, ListColumnKeys.HalfUp):
+		// Half page up
+		c.cursor -= c.maxVisible / 2
+		if c.cursor < 0 {
+			c.cursor = 0
+		}
+		c.ensureVisible()
+	case key.Matches(keyMsg, ListColumnKeys.PageDown):
+		// Full page down
+		c.cursor += c.maxVisible
+		if c.cursor >= count {
+			c.cursor = count - 1
+		}
+		c.ensureVisible()
+	case key.Matches(keyMsg, ListColumnKeys.PageUp):
+		// Full page up
+		c.cursor -= c.maxVisible
+		if c.cursor < 0 {
+			c.cursor = 0
+		}
+		c.ensureVisible()
 	}
 
 	return c, nil
