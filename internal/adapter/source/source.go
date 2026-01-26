@@ -1,8 +1,10 @@
 package source
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/mmcdole/kino/internal/adapter"
 	"github.com/mmcdole/kino/internal/adapter/source/jellyfin"
@@ -45,7 +47,17 @@ func NewClient(cfg *SourceConfig, logger *slog.Logger) (MediaSource, error) {
 
 	switch cfg.Type {
 	case adapter.SourceTypePlex:
-		return plex.NewClient(cfg.URL, cfg.Token, logger), nil
+		client := plex.NewClient(cfg.URL, cfg.Token, logger)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if err := client.FetchIdentity(ctx); err != nil {
+			logger.Warn("failed to fetch plex identity", "error", err)
+			// Non-fatal: playlist creation will fail but browsing works
+		}
+
+		return client, nil
 
 	case adapter.SourceTypeJellyfin:
 		if cfg.UserID == "" {

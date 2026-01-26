@@ -3,6 +3,7 @@ package plex
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mmcdole/kino/internal/domain"
@@ -24,10 +26,11 @@ const (
 // Client implements domain.LibraryRepository, domain.SearchRepository,
 // domain.MetadataRepository, and domain.Scrobbler for Plex
 type Client struct {
-	baseURL    string
-	token      string
-	httpClient *http.Client
-	logger     *slog.Logger
+	baseURL           string
+	token             string
+	machineIdentifier string // fetched from /identity on init
+	httpClient        *http.Client
+	logger            *slog.Logger
 }
 
 // NewClient creates a new Plex API client
@@ -48,6 +51,38 @@ func NewClient(baseURL, token string, logger *slog.Logger) *Client {
 // SetToken updates the authentication token
 func (c *Client) SetToken(token string) {
 	c.token = token
+}
+
+// FetchIdentity fetches and stores the server's machineIdentifier
+func (c *Client) FetchIdentity(ctx context.Context) error {
+	reqURL := fmt.Sprintf("%s/identity", c.baseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	// Parse XML response
+	var identity struct {
+		XMLName           xml.Name `xml:"MediaContainer"`
+		MachineIdentifier string   `xml:"machineIdentifier,attr"`
+	}
+	if err := xml.Unmarshal(body, &identity); err != nil {
+		return err
+	}
+
+	c.machineIdentifier = identity.MachineIdentifier
+	return nil
 }
 
 // doRequest performs an authenticated HTTP request
@@ -517,18 +552,23 @@ func (c *Client) GetPlaylistItems(ctx context.Context, playlistID string) ([]*do
 	return MapOnDeck(container.Metadata, c.baseURL), nil
 }
 
-// CreatePlaylist creates a new playlist with the given title and optional initial items
+// CreatePlaylist creates a new playlist with the given title and initial items.
+// Plex does not support creating empty playlists, so at least one itemID is required.
 func (c *Client) CreatePlaylist(ctx context.Context, title string, itemIDs []string) (*domain.Playlist, error) {
+	if len(itemIDs) == 0 {
+		return nil, fmt.Errorf("plex does not support creating empty playlists")
+	}
+
+	// Build canonical URI with machineIdentifier
+	ids := strings.Join(itemIDs, ",")
+	uri := fmt.Sprintf("server://%s/com.plexapp.plugins.library/library/metadata/%s",
+		c.machineIdentifier, ids)
+
 	query := url.Values{}
 	query.Set("type", "video")
 	query.Set("title", title)
 	query.Set("smart", "0")
-
-	// If items are provided, build the URI parameter
-	if len(itemIDs) > 0 {
-		// Plex expects a URI in the format: server://machineID/com.plexapp.plugins.library/library/metadata/itemID
-		// For simplicity, we'll create an empty playlist and add items separately
-	}
+	query.Set("uri", uri)
 
 	reqURL := fmt.Sprintf("%s/playlists?%s", c.baseURL, query.Encode())
 
@@ -575,14 +615,6 @@ func (c *Client) CreatePlaylist(ctx context.Context, title string, itemIDs []str
 		return nil, fmt.Errorf("failed to parse created playlist")
 	}
 
-	// If items were provided, add them to the playlist
-	if len(itemIDs) > 0 {
-		if err := c.AddToPlaylist(ctx, playlists[0].ID, itemIDs); err != nil {
-			// Playlist was created but items couldn't be added
-			c.logger.Warn("playlist created but failed to add items", "error", err)
-		}
-	}
-
 	return playlists[0], nil
 }
 
@@ -592,28 +624,20 @@ func (c *Client) AddToPlaylist(ctx context.Context, playlistID string, itemIDs [
 		return nil
 	}
 
-	// Build the URI for each item
-	// Plex expects: library://libraryUUID/item//itemID
-	// We use a simplified format that works: library:///item/itemID
-	uris := make([]string, len(itemIDs))
-	for i, id := range itemIDs {
-		uris[i] = fmt.Sprintf("library:///item/%%2Flibrary%%2Fmetadata%%2F%s", id)
-	}
-
-	query := url.Values{}
-	query.Set("uri", uris[0]) // Plex accepts one URI at a time in most cases
-
 	path := fmt.Sprintf("/playlists/%s/items", playlistID)
-	reqURL := fmt.Sprintf("%s%s?%s", c.baseURL, path, query.Encode())
 
 	// Add items one at a time for reliability
 	for _, itemID := range itemIDs {
-		itemQuery := url.Values{}
-		itemQuery.Set("uri", fmt.Sprintf("library:///item/%%2Flibrary%%2Fmetadata%%2F%s", itemID))
+		// Use canonical Plex URI format with machineIdentifier
+		uri := fmt.Sprintf("server://%s/com.plexapp.plugins.library/library/metadata/%s",
+			c.machineIdentifier, itemID)
 
-		itemURL := fmt.Sprintf("%s%s?%s", c.baseURL, path, itemQuery.Encode())
+		query := url.Values{}
+		query.Set("uri", uri)
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodPut, itemURL, nil)
+		reqURL := fmt.Sprintf("%s%s?%s", c.baseURL, path, query.Encode())
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut, reqURL, nil)
 		if err != nil {
 			return fmt.Errorf("failed to create request: %w", err)
 		}
@@ -637,7 +661,6 @@ func (c *Client) AddToPlaylist(ctx context.Context, playlistID string, itemIDs [
 		}
 	}
 
-	_ = reqURL // unused in loop version
 	return nil
 }
 
