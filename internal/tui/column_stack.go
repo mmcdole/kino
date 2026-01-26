@@ -93,21 +93,6 @@ func (cs *ColumnStack) Pop() (*components.ListColumn, int) {
 	return popped, savedCursor
 }
 
-// Replace replaces the top column with a new one (used when switching libraries)
-func (cs *ColumnStack) Replace(col *components.ListColumn) {
-	if len(cs.columns) == 0 {
-		// Just push if empty
-		col.SetFocused(true)
-		cs.columns = append(cs.columns, col)
-		return
-	}
-
-	// Unfocus and replace
-	cs.columns[len(cs.columns)-1].SetFocused(false)
-	col.SetFocused(true)
-	cs.columns[len(cs.columns)-1] = col
-}
-
 // Clear removes all columns from the stack
 func (cs *ColumnStack) Clear() {
 	for _, col := range cs.columns {

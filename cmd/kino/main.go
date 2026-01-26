@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -15,10 +14,9 @@ import (
 	"github.com/mmcdole/kino/internal/adapter/source"
 	"github.com/mmcdole/kino/internal/service"
 	"github.com/mmcdole/kino/internal/tui"
+	"github.com/mmcdole/kino/internal/tui/styles"
 )
 
-// CLI spinner frames (same as TUI)
-var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 func main() {
 	if err := run(); err != nil {
@@ -177,11 +175,9 @@ func detectServerWithSpinner(serverURL string) (adapter.SourceType, error) {
 
 	// Spinner animation
 	frame := 0
-	var mu sync.Mutex
-	done := false
 
 	// Print initial spinner
-	fmt.Printf("\r%s Detecting server type...", spinnerFrames[frame])
+	fmt.Printf("\r%s Detecting server type...", styles.SpinnerFrames[frame])
 
 	ticker := time.NewTicker(80 * time.Millisecond)
 	defer ticker.Stop()
@@ -189,10 +185,6 @@ func detectServerWithSpinner(serverURL string) (adapter.SourceType, error) {
 	for {
 		select {
 		case res := <-resultCh:
-			mu.Lock()
-			done = true
-			mu.Unlock()
-
 			// Clear spinner line
 			fmt.Print("\r                                    \r")
 
@@ -213,12 +205,8 @@ func detectServerWithSpinner(serverURL string) (adapter.SourceType, error) {
 			return res.serverType, nil
 
 		case <-ticker.C:
-			mu.Lock()
-			if !done {
-				frame++
-				fmt.Printf("\r%s Detecting server type...", spinnerFrames[frame%len(spinnerFrames)])
-			}
-			mu.Unlock()
+			frame++
+			fmt.Printf("\r%s Detecting server type...", styles.SpinnerFrames[frame%len(styles.SpinnerFrames)])
 
 		case <-ctx.Done():
 			fmt.Print("\r                                    \r")

@@ -252,12 +252,12 @@ func mapEpisode(item Item, serverURL string) domain.MediaItem {
 }
 
 // MapSearchResults converts Jellyfin search hints to domain media items
-func MapSearchResults(hints []SearchHint, serverURL string) []domain.MediaItem {
-	items := make([]domain.MediaItem, 0, len(hints))
+func MapSearchResults(hints []SearchHint, serverURL string) []*domain.MediaItem {
+	items := make([]*domain.MediaItem, 0, len(hints))
 	for _, hint := range hints {
 		item := mapSearchHint(hint, serverURL)
 		if item != nil {
-			items = append(items, *item)
+			items = append(items, item)
 		}
 	}
 	return items

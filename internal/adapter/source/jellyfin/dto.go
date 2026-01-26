@@ -37,34 +37,30 @@ type ItemsResponse struct {
 
 // Item represents a media item from Jellyfin (movie, show, season, episode, etc.)
 type Item struct {
-	ID                   string    `json:"Id"`
-	Name                 string    `json:"Name"`
-	SortName             string    `json:"SortName"`
-	Overview             string    `json:"Overview"`
-	Type                 string    `json:"Type"`
-	CollectionType       string    `json:"CollectionType,omitempty"` // For libraries: "movies", "tvshows"
-	DateCreated          string    `json:"DateCreated,omitempty"`
-	DateLastMediaAdded   string    `json:"DateLastMediaAdded,omitempty"` // When last episode was added to show
-	PremiereDate         string    `json:"PremiereDate,omitempty"`
-	ProductionYear       int       `json:"ProductionYear,omitempty"`
-	RunTimeTicks         int64     `json:"RunTimeTicks,omitempty"` // Duration in 100-nanosecond units
-	CommunityRating      float64   `json:"CommunityRating,omitempty"`
-	OfficialRating       string    `json:"OfficialRating,omitempty"`
-	ImageTags            ImageTags `json:"ImageTags,omitempty"`
-	BackdropImageTags    []string  `json:"BackdropImageTags,omitempty"`
-	ParentID             string    `json:"ParentId,omitempty"`
-	SeriesID             string    `json:"SeriesId,omitempty"`
-	SeriesName           string    `json:"SeriesName,omitempty"`
-	SeasonID             string    `json:"SeasonId,omitempty"`
-	SeasonName           string    `json:"SeasonName,omitempty"`
-	ParentIndexNumber    int       `json:"ParentIndexNumber,omitempty"` // Season number
-	IndexNumber          int       `json:"IndexNumber,omitempty"`       // Episode number
-	ChildCount           int       `json:"ChildCount,omitempty"`        // Number of child items (seasons for show, episodes for season)
-	RecursiveItemCount   int       `json:"RecursiveItemCount,omitempty"` // Total items recursively (episodes for show)
-	UserData             *UserData `json:"UserData,omitempty"`
+	ID                   string        `json:"Id"`
+	Name                 string        `json:"Name"`
+	SortName             string        `json:"SortName"`
+	Overview             string        `json:"Overview"`
+	Type                 string        `json:"Type"`
+	CollectionType       string        `json:"CollectionType,omitempty"` // For libraries: "movies", "tvshows"
+	DateCreated          string        `json:"DateCreated,omitempty"`
+	DateLastMediaAdded   string        `json:"DateLastMediaAdded,omitempty"` // When last episode was added to show
+	ProductionYear       int           `json:"ProductionYear,omitempty"`
+	RunTimeTicks         int64         `json:"RunTimeTicks,omitempty"` // Duration in 100-nanosecond units
+	CommunityRating      float64       `json:"CommunityRating,omitempty"`
+	ImageTags            ImageTags     `json:"ImageTags,omitempty"`
+	ParentID             string        `json:"ParentId,omitempty"`
+	SeriesID             string        `json:"SeriesId,omitempty"`
+	SeriesName           string        `json:"SeriesName,omitempty"`
+	SeasonID             string        `json:"SeasonId,omitempty"`
+	SeasonName           string        `json:"SeasonName,omitempty"`
+	ParentIndexNumber    int           `json:"ParentIndexNumber,omitempty"`  // Season number
+	IndexNumber          int           `json:"IndexNumber,omitempty"`        // Episode number
+	ChildCount           int           `json:"ChildCount,omitempty"`         // Number of child items (seasons for show, episodes for season)
+	RecursiveItemCount   int           `json:"RecursiveItemCount,omitempty"` // Total items recursively (episodes for show)
+	UserData             *UserData     `json:"UserData,omitempty"`
 	MediaSources         []MediaSource `json:"MediaSources,omitempty"`
-	Path                 string    `json:"Path,omitempty"`
-	Container            string    `json:"Container,omitempty"`
+	Container            string        `json:"Container,omitempty"`
 	MediaStreams         []MediaStream `json:"MediaStreams,omitempty"`
 }
 

@@ -20,7 +20,6 @@ type ApplicationState int
 
 const (
 	StateBrowsing ApplicationState = iota
-	StateSearching
 	StateHelp
 	StateConfirmLogout
 )
@@ -1274,9 +1273,7 @@ func (m *Model) updateLayout() {
 		return
 	}
 
-	availableWidth := m.Width
 	contentHeight := m.Height - ChromeHeight
-
 	m.Omnibar.SetSize(m.Width, m.Height)
 
 	stackLen := m.ColumnStack.Len()
@@ -1284,87 +1281,33 @@ func (m *Model) updateLayout() {
 		return
 	}
 
-	// Calculate column widths based on stack depth and inspector visibility
-	if stackLen == 1 {
-		// Root level: single column (Libraries)
+	// Calculate layout using shared logic
+	layout := m.calculateColumnLayout(m.Width)
+	topIdx := stackLen - 1
+
+	// Apply calculated sizes to components
+	switch {
+	case stackLen == 1:
+		m.ColumnStack.Get(0).SetSize(layout.activeWidth, contentHeight)
 		if m.ShowInspector {
-			leftWidth := availableWidth * RootColumnPercent / 100
-			if leftWidth < MinColumnWidth {
-				leftWidth = MinColumnWidth
-			}
-			rightWidth := availableWidth - leftWidth
-			m.ColumnStack.Get(0).SetSize(leftWidth, contentHeight)
-			m.Inspector.SetSize(rightWidth, contentHeight)
-		} else {
-			m.ColumnStack.Get(0).SetSize(availableWidth, contentHeight)
+			m.Inspector.SetSize(layout.inspectorWidth, contentHeight)
 		}
-	} else if stackLen == 2 {
-		// 2 columns in stack
-		topIdx := stackLen - 1
+
+	case stackLen == 2:
+		m.ColumnStack.Get(topIdx - 1).SetSize(layout.parentWidth, contentHeight)
+		m.ColumnStack.Get(topIdx).SetSize(layout.activeWidth, contentHeight)
 		if m.ShowInspector {
-			parentWidth := availableWidth * ParentColumnPercent3 / 100
-			if parentWidth < MinColumnWidth {
-				parentWidth = MinColumnWidth
-			}
-			inspectorWidth := availableWidth * InspectorColumnPercent / 100
-			if inspectorWidth < MinColumnWidth {
-				inspectorWidth = MinColumnWidth
-			}
-			activeWidth := availableWidth - parentWidth - inspectorWidth
-			if activeWidth < MinColumnWidth {
-				activeWidth = MinColumnWidth
-			}
-			m.ColumnStack.Get(topIdx - 1).SetSize(parentWidth, contentHeight)
-			m.ColumnStack.Get(topIdx).SetSize(activeWidth, contentHeight)
-			m.Inspector.SetSize(inspectorWidth, contentHeight)
-		} else {
-			parentWidth := availableWidth * ParentColumnPercent2 / 100
-			if parentWidth < MinColumnWidth {
-				parentWidth = MinColumnWidth
-			}
-			activeWidth := availableWidth - parentWidth
-			if activeWidth < MinColumnWidth {
-				activeWidth = MinColumnWidth
-			}
-			m.ColumnStack.Get(topIdx - 1).SetSize(parentWidth, contentHeight)
-			m.ColumnStack.Get(topIdx).SetSize(activeWidth, contentHeight)
+			m.Inspector.SetSize(layout.inspectorWidth, contentHeight)
 		}
-	} else {
-		// 3+ columns in stack
-		topIdx := stackLen - 1
+
+	default: // 3+ columns
+		if layout.grandparentWidth > 0 {
+			m.ColumnStack.Get(topIdx - 2).SetSize(layout.grandparentWidth, contentHeight)
+		}
+		m.ColumnStack.Get(topIdx - 1).SetSize(layout.parentWidth, contentHeight)
+		m.ColumnStack.Get(topIdx).SetSize(layout.activeWidth, contentHeight)
 		if m.ShowInspector {
-			parentWidth := availableWidth * ParentColumnPercent3 / 100
-			if parentWidth < MinColumnWidth {
-				parentWidth = MinColumnWidth
-			}
-			inspectorWidth := availableWidth * InspectorColumnPercent / 100
-			if inspectorWidth < MinColumnWidth {
-				inspectorWidth = MinColumnWidth
-			}
-			activeWidth := availableWidth - parentWidth - inspectorWidth
-			if activeWidth < MinColumnWidth {
-				activeWidth = MinColumnWidth
-			}
-			m.ColumnStack.Get(topIdx - 1).SetSize(parentWidth, contentHeight)
-			m.ColumnStack.Get(topIdx).SetSize(activeWidth, contentHeight)
-			m.Inspector.SetSize(inspectorWidth, contentHeight)
-		} else {
-			// 3-Column Navigation: [Grandparent | Parent | Active]
-			grandparentWidth := availableWidth * GrandparentColumnPercent / 100
-			if grandparentWidth < MinColumnWidth {
-				grandparentWidth = MinColumnWidth
-			}
-			parentWidth := availableWidth * ParentColumnPercent2 / 100
-			if parentWidth < MinColumnWidth {
-				parentWidth = MinColumnWidth
-			}
-			activeWidth := availableWidth - grandparentWidth - parentWidth
-			if activeWidth < MinColumnWidth {
-				activeWidth = MinColumnWidth
-			}
-			m.ColumnStack.Get(topIdx - 2).SetSize(grandparentWidth, contentHeight)
-			m.ColumnStack.Get(topIdx - 1).SetSize(parentWidth, contentHeight)
-			m.ColumnStack.Get(topIdx).SetSize(activeWidth, contentHeight)
+			m.Inspector.SetSize(layout.inspectorWidth, contentHeight)
 		}
 	}
 }

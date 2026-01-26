@@ -232,16 +232,6 @@ type Library struct {
 	UpdatedAt int64  // Server's contentChangedAt timestamp
 }
 
-// IsMovieLibrary returns true if this is a movie library
-func (l Library) IsMovieLibrary() bool {
-	return l.Type == "movie"
-}
-
-// IsShowLibrary returns true if this is a TV show library
-func (l Library) IsShowLibrary() bool {
-	return l.Type == "show"
-}
-
 // ListItem interface implementation for Library
 
 func (l *Library) GetID() string           { return l.ID }

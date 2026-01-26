@@ -18,26 +18,15 @@ type MediaContainer struct {
 
 // Directory represents a library section
 type Directory struct {
-	AllowSync        bool   `json:"allowSync,omitempty"`
 	Art              string `json:"art,omitempty"`
 	Composite        string `json:"composite,omitempty"`
-	Filters          bool   `json:"filters,omitempty"`
-	Refreshing       bool   `json:"refreshing,omitempty"`
 	Thumb            string `json:"thumb,omitempty"`
 	Key              string `json:"key"`
 	Type             string `json:"type"`
 	Title            string `json:"title"`
-	Agent            string `json:"agent,omitempty"`
-	Scanner          string `json:"scanner,omitempty"`
-	Language         string `json:"language,omitempty"`
-	UUID             string `json:"uuid,omitempty"`
 	UpdatedAt        int64  `json:"updatedAt,omitempty"`
 	CreatedAt        int64  `json:"createdAt,omitempty"`
-	ScannedAt        int64  `json:"scannedAt,omitempty"`
-	Content          bool   `json:"content,omitempty"`
-	Directory        bool   `json:"directory,omitempty"`
 	ContentChangedAt int64  `json:"contentChangedAt,omitempty"`
-	Hidden           int    `json:"hidden,omitempty"`
 }
 
 // Metadata represents a media item (movie, show, season, or episode)
@@ -45,10 +34,9 @@ type Metadata struct {
 	RatingKey             string  `json:"ratingKey"`
 	Key                   string  `json:"key"`
 	ParentRatingKey       string  `json:"parentRatingKey,omitempty"`
-	GrandparentRatingKey  string        `json:"grandparentRatingKey,omitempty"`
-	GUID                  string        `json:"guid,omitempty"`
-	GuidList              []interface{} `json:"Guid,omitempty"`
-	Studio                string        `json:"studio,omitempty"`
+	GrandparentRatingKey  string  `json:"grandparentRatingKey,omitempty"`
+	GUID                  string  `json:"guid,omitempty"`
+	Studio                string  `json:"studio,omitempty"`
 	Type                  string  `json:"type"`
 	Title                 string  `json:"title"`
 	GrandparentKey        string  `json:"grandparentKey,omitempty"`
@@ -59,9 +47,8 @@ type Metadata struct {
 	Summary               string  `json:"summary,omitempty"`
 	Index                 int     `json:"index,omitempty"`
 	ParentIndex           int     `json:"parentIndex,omitempty"`
-	Rating                float64       `json:"rating,omitempty"`
-	RatingList            []interface{} `json:"Rating,omitempty"`
-	AudienceRating        float64       `json:"audienceRating,omitempty"`
+	Rating                float64 `json:"rating,omitempty"`
+	AudienceRating        float64 `json:"audienceRating,omitempty"`
 	ViewOffset            int     `json:"viewOffset,omitempty"`
 	LastViewedAt          int64   `json:"lastViewedAt,omitempty"`
 	Year                  int     `json:"year,omitempty"`
@@ -81,16 +68,9 @@ type Metadata struct {
 	LeafCount             int     `json:"leafCount,omitempty"`
 	ViewedLeafCount       int     `json:"viewedLeafCount,omitempty"`
 	LibrarySectionID      int     `json:"librarySectionID,omitempty"`
-	LibrarySectionKey     string        `json:"librarySectionKey,omitempty"`
-	LibrarySectionTitle   string        `json:"librarySectionTitle,omitempty"`
-	Media                 []Media       `json:"Media,omitempty"`
-	Image                 []interface{} `json:"Image,omitempty"`
-	Genre                 []interface{} `json:"Genre,omitempty"`
-	Country               []interface{} `json:"Country,omitempty"`
-	Director              []interface{} `json:"Director,omitempty"`
-	Writer                []interface{} `json:"Writer,omitempty"`
-	Role                  []interface{} `json:"Role,omitempty"`
-	Producer              []interface{} `json:"Producer,omitempty"`
+	LibrarySectionKey     string  `json:"librarySectionKey,omitempty"`
+	LibrarySectionTitle   string  `json:"librarySectionTitle,omitempty"`
+	Media                 []Media `json:"Media,omitempty"`
 }
 
 // Media represents media information (video streams, codecs, etc.)

@@ -65,11 +65,6 @@ func (i Inspector) IsFocused() bool {
 	return i.focused
 }
 
-// Clear clears the inspector
-func (i *Inspector) Clear() {
-	i.item = nil
-}
-
 // HasItem returns true if there is an item to display
 func (i Inspector) HasItem() bool {
 	return i.item != nil
@@ -340,7 +335,7 @@ func (i Inspector) renderLibraryInspector(lib domain.Library, width int) string 
 
 	// Library type
 	typeLabel := "Movies"
-	if lib.IsShowLibrary() {
+	if lib.Type == "show" {
 		typeLabel = "TV Shows"
 	}
 	b.WriteString(styles.DimStyle.Render(fmt.Sprintf("Type: %s", typeLabel)))
