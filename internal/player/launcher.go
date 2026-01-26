@@ -1,4 +1,4 @@
-package adapter
+package player
 
 import (
 	"fmt"

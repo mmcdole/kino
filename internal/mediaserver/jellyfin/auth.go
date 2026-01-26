@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,15 +15,29 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mmcdole/kino/internal/domain"
 	"golang.org/x/term"
+)
+
+// AuthResult contains the result of a successful Jellyfin authentication
+type AuthResult struct {
+	Token    string
+	UserID   string
+	Username string
+}
+
+// Jellyfin auth errors
+var (
+	// ErrServerOffline indicates the media server is unreachable
+	ErrServerOffline = errors.New("media server is unreachable")
+	// ErrAuthFailed indicates authentication failed
+	ErrAuthFailed = errors.New("authentication failed")
 )
 
 const (
 	authTimeout = 30 * time.Second
 )
 
-// AuthFlow implements domain.AuthFlow for Jellyfin username/password authentication
+// AuthFlow handles Jellyfin username/password authentication
 type AuthFlow struct {
 	logger     *slog.Logger
 	httpClient *http.Client
@@ -43,7 +58,7 @@ func NewAuthFlow(logger *slog.Logger) *AuthFlow {
 
 // Run executes the Jellyfin username/password authentication flow.
 // It prompts the user for credentials and authenticates against the server.
-func (f *AuthFlow) Run(ctx context.Context, serverURL string) (*domain.AuthResult, error) {
+func (f *AuthFlow) Run(ctx context.Context, serverURL string) (*AuthResult, error) {
 	serverURL = strings.TrimRight(serverURL, "/")
 
 	fmt.Println()
@@ -84,7 +99,7 @@ func (f *AuthFlow) Run(ctx context.Context, serverURL string) (*domain.AuthResul
 }
 
 // authenticate performs the actual authentication against the Jellyfin server
-func (f *AuthFlow) authenticate(ctx context.Context, serverURL, username, password string) (*domain.AuthResult, error) {
+func (f *AuthFlow) authenticate(ctx context.Context, serverURL, username, password string) (*AuthResult, error) {
 	url := serverURL + "/Users/AuthenticateByName"
 
 	// Build request body
@@ -104,12 +119,12 @@ func (f *AuthFlow) authenticate(ctx context.Context, serverURL, username, passwo
 
 	// Set required headers
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Emby-Authorization", buildAuthHeader("", "")) // No token/userID yet
+	req.Header.Set("X-Emby-Authorization", buildAuthHeader("")) // No token yet
 
 	resp, err := f.httpClient.Do(req)
 	if err != nil {
 		f.logger.Error("Jellyfin auth request failed", "error", err)
-		return nil, domain.ErrServerOffline
+		return nil, ErrServerOffline
 	}
 	defer resp.Body.Close()
 
@@ -119,7 +134,7 @@ func (f *AuthFlow) authenticate(ctx context.Context, serverURL, username, passwo
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, domain.ErrAuthFailed
+		return nil, ErrAuthFailed
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -132,7 +147,7 @@ func (f *AuthFlow) authenticate(ctx context.Context, serverURL, username, passwo
 		return nil, fmt.Errorf("failed to parse auth response: %w", err)
 	}
 
-	return &domain.AuthResult{
+	return &AuthResult{
 		Token:    authResp.AccessToken,
 		UserID:   authResp.User.ID,
 		Username: authResp.User.Name,
@@ -140,7 +155,7 @@ func (f *AuthFlow) authenticate(ctx context.Context, serverURL, username, passwo
 }
 
 // buildAuthHeader constructs the X-Emby-Authorization header
-func buildAuthHeader(token, userID string) string {
+func buildAuthHeader(token string) string {
 	parts := []string{
 		`MediaBrowser Client="Kino"`,
 		`Device="CLI"`,

@@ -24,7 +24,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, Keys.Confirm):
 			// User confirmed logout
-			return m, LogoutCmd(m.SessionSvc)
+			return m, LogoutCmd()
 		case key.Matches(msg, Keys.Deny):
 			// User cancelled
 			m.State = StateBrowsing

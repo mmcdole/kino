@@ -2,7 +2,6 @@ package domain
 
 import (
 	"context"
-	"time"
 )
 
 // LibraryRepository provides access to media libraries and their content
@@ -78,28 +77,4 @@ type PlaylistRepository interface {
 
 	// DeletePlaylist deletes a playlist
 	DeletePlaylist(ctx context.Context, playlistID string) error
-}
-
-// Launcher abstracts media player launching
-type Launcher interface {
-	// Launch opens a media URL with optional start offset
-	Launch(url string, startOffset time.Duration) error
-}
-
-// AuthResult contains the result of a successful authentication
-type AuthResult struct {
-	Token    string // Access token for API calls
-	UserID   string // User identifier (required for Jellyfin)
-	Username string // Display username
-}
-
-// AuthFlow defines a generic authentication flow for any media server.
-// Different backends implement this differently:
-// - Plex: PIN-based OAuth flow (display PIN -> user visits plex.tv/link -> poll for token)
-// - Jellyfin: Username/password authentication
-type AuthFlow interface {
-	// Run executes the authentication flow and returns credentials.
-	// The serverURL parameter is the base URL of the media server.
-	// Implementations handle their own user interaction (prompting for credentials, etc.)
-	Run(ctx context.Context, serverURL string) (*AuthResult, error)
 }

@@ -70,7 +70,6 @@ type Model struct {
 	PlaybackSvc *service.PlaybackService
 	SearchSvc   *service.SearchService
 	PlaylistSvc *service.PlaylistService
-	SessionSvc  *service.SessionService
 
 	// UI Components - Miller Columns
 	ColumnStack   *ColumnStack             // Stack of navigable list columns
@@ -112,7 +111,6 @@ func NewModel(
 	playbackSvc *service.PlaybackService,
 	searchSvc *service.SearchService,
 	playlistSvc *service.PlaylistService,
-	sessionSvc *service.SessionService,
 ) Model {
 	return Model{
 		State:         StateBrowsing,
@@ -120,7 +118,6 @@ func NewModel(
 		PlaybackSvc:   playbackSvc,
 		SearchSvc:     searchSvc,
 		PlaylistSvc:   playlistSvc,
-		SessionSvc:    sessionSvc,
 		ColumnStack:   NewColumnStack(),
 		Inspector:     components.NewInspector(),
 		GlobalSearch:  components.NewGlobalSearch(),

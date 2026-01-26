@@ -11,8 +11,10 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mmcdole/kino/internal/adapter"
-	"github.com/mmcdole/kino/internal/adapter/source"
+	"github.com/mmcdole/kino/internal/config"
+	"github.com/mmcdole/kino/internal/log"
+	"github.com/mmcdole/kino/internal/mediaserver"
+	"github.com/mmcdole/kino/internal/player"
 	"github.com/mmcdole/kino/internal/service"
 	"github.com/mmcdole/kino/internal/tui"
 	"github.com/mmcdole/kino/internal/tui/styles"
@@ -23,11 +25,12 @@ var Version = "dev"
 
 func main() {
 	// Handle version flag
-	versionFlag := flag.Bool("v", false, "print version")
-	versionLongFlag := flag.Bool("version", false, "print version")
+	var showVersion bool
+	flag.BoolVar(&showVersion, "v", false, "print version")
+	flag.BoolVar(&showVersion, "version", false, "print version")
 	flag.Parse()
 
-	if *versionFlag || *versionLongFlag {
+	if showVersion {
 		fmt.Printf("kino %s\n", Version)
 		return
 	}
@@ -40,16 +43,16 @@ func main() {
 
 func run() error {
 	// Load configuration
-	cfg, err := adapter.LoadConfig()
+	cfg, err := config.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	// Setup logger
-	logger, err := adapter.SetupLogger(&cfg.Logging)
+	logger, err := log.SetupLogger(&cfg.Logging)
 	if err != nil {
 		// Fall back to null logger if file logging fails
-		logger = adapter.NullLogger()
+		logger = log.NullLogger()
 	}
 	slog.SetDefault(logger)
 
@@ -61,23 +64,22 @@ func run() error {
 	}
 
 	// Create media source client
-	client, err := source.NewClient(cfg, logger)
+	client, err := mediaserver.NewClient(cfg, logger)
 	if err != nil {
 		return fmt.Errorf("failed to create media client: %w", err)
 	}
 
 	// Create launcher (uses configured player or auto-detects)
-	launcher := adapter.NewLauncher(cfg.Player.Command, cfg.Player.Args, cfg.Player.StartFlag, logger)
+	launcher := player.NewLauncher(cfg.Player.Command, cfg.Player.Args, cfg.Player.StartFlag, logger)
 
 	// Create services
 	librarySvc := service.NewLibraryService(client, logger, cfg.Server.URL)
 	searchSvc := service.NewSearchService(client, librarySvc, logger)
 	playbackSvc := service.NewPlaybackService(launcher, client, logger)
 	playlistSvc := service.NewPlaylistService(client, logger)
-	sessionSvc := service.NewSessionService()
 
 	// Create TUI model
-	model := tui.NewModel(librarySvc, playbackSvc, searchSvc, playlistSvc, sessionSvc)
+	model := tui.NewModel(librarySvc, playbackSvc, searchSvc, playlistSvc)
 
 	// Run the TUI
 	p := tea.NewProgram(
@@ -98,14 +100,14 @@ func run() error {
 }
 
 // runSetupFlow handles the initial setup when not configured
-func runSetupFlow(cfg *adapter.Config, logger *slog.Logger) error {
+func runSetupFlow(cfg *config.Config, logger *slog.Logger) error {
 	fmt.Println()
 	fmt.Println("Welcome to Kino!")
 	fmt.Println()
 
 	// Loop until we get a valid server URL
 	var serverURL string
-	var serverType adapter.SourceType
+	var serverType config.SourceType
 
 	for {
 		// Prompt for server URL
@@ -141,7 +143,7 @@ func runSetupFlow(cfg *adapter.Config, logger *slog.Logger) error {
 	cfg.Server.Type = serverType
 
 	// Run the appropriate auth flow
-	authFlow, err := source.NewAuthFlow(serverType, logger)
+	authFlow, err := mediaserver.NewAuthFlow(serverType, logger)
 	if err != nil {
 		return fmt.Errorf("failed to create auth flow: %w", err)
 	}
@@ -157,7 +159,7 @@ func runSetupFlow(cfg *adapter.Config, logger *slog.Logger) error {
 	cfg.Server.UserID = result.UserID
 	cfg.Server.Username = result.Username
 
-	if err := adapter.SaveConfig(cfg); err != nil {
+	if err := config.SaveConfig(cfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
@@ -170,20 +172,20 @@ func runSetupFlow(cfg *adapter.Config, logger *slog.Logger) error {
 }
 
 // detectServerWithSpinner detects the server type with a visual spinner
-func detectServerWithSpinner(serverURL string) (adapter.SourceType, error) {
+func detectServerWithSpinner(serverURL string) (config.SourceType, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	// Channel to receive result
 	type result struct {
-		serverType adapter.SourceType
+		serverType config.SourceType
 		err        error
 	}
 	resultCh := make(chan result, 1)
 
 	// Start detection in background
 	go func() {
-		serverType, err := source.DetectServerType(ctx, serverURL)
+		serverType, err := mediaserver.DetectServerType(ctx, serverURL)
 		resultCh <- result{serverType, err}
 	}()
 
@@ -209,9 +211,9 @@ func detectServerWithSpinner(serverURL string) (adapter.SourceType, error) {
 			// Show success with server type
 			serverName := "Unknown"
 			switch res.serverType {
-			case adapter.SourceTypePlex:
+			case config.SourceTypePlex:
 				serverName = "Plex Media Server"
-			case adapter.SourceTypeJellyfin:
+			case config.SourceTypeJellyfin:
 				serverName = "Jellyfin"
 			}
 			fmt.Printf("✓ Detected: %s\n", serverName)

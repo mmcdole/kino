@@ -8,16 +8,21 @@ import (
 	"github.com/mmcdole/kino/internal/domain"
 )
 
+// launcher abstracts media player launching (consumer-defined interface)
+type launcher interface {
+	Launch(url string, startOffset time.Duration) error
+}
+
 // PlaybackService orchestrates playback operations
 type PlaybackService struct {
-	launcher domain.Launcher
+	launcher launcher
 	metadata domain.MetadataRepository
 	logger   *slog.Logger
 }
 
 // NewPlaybackService creates a new playback service
 func NewPlaybackService(
-	launcher domain.Launcher,
+	launcher launcher,
 	metadata domain.MetadataRepository,
 	logger *slog.Logger,
 ) *PlaybackService {

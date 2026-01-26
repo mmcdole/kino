@@ -1,4 +1,4 @@
-package adapter
+package config
 
 import (
 	"fmt"
@@ -55,15 +55,6 @@ type LoggingConfig struct {
 // DefaultConfig returns the default configuration
 func DefaultConfig() *Config {
 	return &Config{
-		Server: ServerConfig{
-			Type:  "",
-			URL:   "",
-			Token: "",
-		},
-		Player: PlayerConfig{
-			Command: "",
-			Args:    []string{},
-		},
 		UI: UIConfig{
 			ShowWatchStatus: true,
 		},

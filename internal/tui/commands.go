@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mmcdole/kino/internal/config"
 	"github.com/mmcdole/kino/internal/domain"
 	"github.com/mmcdole/kino/internal/service"
 )
@@ -246,9 +247,12 @@ func SyncAllLibrariesCmd(
 }
 
 // LogoutCmd clears server config and cache, then signals completion
-func LogoutCmd(svc *service.SessionService) tea.Cmd {
+func LogoutCmd() tea.Cmd {
 	return func() tea.Msg {
-		if err := svc.Logout(); err != nil {
+		if err := config.ClearServerConfig(); err != nil {
+			return LogoutCompleteMsg{Error: err}
+		}
+		if err := config.ClearCache(); err != nil {
 			return LogoutCompleteMsg{Error: err}
 		}
 		return LogoutCompleteMsg{Error: nil}
