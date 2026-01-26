@@ -52,6 +52,11 @@ func (m MediaItem) WatchStatus() WatchStatus {
 	return WatchStatusUnwatched
 }
 
+// ShouldResume returns true if playback should resume from saved position
+func (m MediaItem) ShouldResume() bool {
+	return m.ViewOffset > 0 && !m.IsPlayed
+}
+
 // FormattedDuration returns the duration in a human-readable format
 func (m MediaItem) FormattedDuration() string {
 	h := int(m.Duration.Hours())
@@ -80,9 +85,9 @@ func (m *MediaItem) GetSortTitle() string {
 	}
 	return m.Title
 }
-func (m *MediaItem) GetYear() int        { return m.Year }
-func (m *MediaItem) GetAddedAt() int64   { return m.AddedAt }
-func (m *MediaItem) GetUpdatedAt() int64  { return m.UpdatedAt }
+func (m *MediaItem) GetYear() int                { return m.Year }
+func (m *MediaItem) GetAddedAt() int64           { return m.AddedAt }
+func (m *MediaItem) GetUpdatedAt() int64         { return m.UpdatedAt }
 func (m *MediaItem) GetWatchStatus() WatchStatus { return m.WatchStatus() }
 
 func (m *MediaItem) GetItemType() string {
@@ -149,10 +154,10 @@ func (s *Show) GetSortTitle() string {
 	}
 	return s.Title
 }
-func (s *Show) GetYear() int        { return s.Year }
-func (s *Show) GetAddedAt() int64   { return s.AddedAt }
-func (s *Show) GetUpdatedAt() int64    { return s.UpdatedAt }
-func (s *Show) GetItemType() string    { return "show" }
+func (s *Show) GetYear() int                { return s.Year }
+func (s *Show) GetAddedAt() int64           { return s.AddedAt }
+func (s *Show) GetUpdatedAt() int64         { return s.UpdatedAt }
+func (s *Show) GetItemType() string         { return "show" }
 func (s *Show) GetWatchStatus() WatchStatus { return s.WatchStatus() }
 
 func (s *Show) GetDescription() string {
@@ -203,13 +208,13 @@ func (s Season) DisplayTitle() string {
 
 // ListItem interface implementation for Season
 
-func (s *Season) GetID() string           { return s.ID }
-func (s *Season) GetTitle() string        { return s.DisplayTitle() }
-func (s *Season) GetSortTitle() string { return fmt.Sprintf("%03d", s.SeasonNum) }
-func (s *Season) GetYear() int         { return 0 } // Seasons don't have a year
-func (s *Season) GetAddedAt() int64    { return 0 }
-func (s *Season) GetUpdatedAt() int64     { return 0 }
-func (s *Season) GetItemType() string     { return "season" }
+func (s *Season) GetID() string               { return s.ID }
+func (s *Season) GetTitle() string            { return s.DisplayTitle() }
+func (s *Season) GetSortTitle() string        { return fmt.Sprintf("%03d", s.SeasonNum) }
+func (s *Season) GetYear() int                { return 0 } // Seasons don't have a year
+func (s *Season) GetAddedAt() int64           { return 0 }
+func (s *Season) GetUpdatedAt() int64         { return 0 }
+func (s *Season) GetItemType() string         { return "season" }
 func (s *Season) GetWatchStatus() WatchStatus { return s.WatchStatus() }
 
 func (s *Season) GetDescription() string {
@@ -234,16 +239,16 @@ type Library struct {
 
 // ListItem interface implementation for Library
 
-func (l *Library) GetID() string           { return l.ID }
-func (l *Library) GetTitle() string        { return l.Name }
-func (l *Library) GetSortTitle() string { return l.Name }
-func (l *Library) GetYear() int         { return 0 }
-func (l *Library) GetAddedAt() int64    { return 0 }
-func (l *Library) GetUpdatedAt() int64     { return l.UpdatedAt }
-func (l *Library) GetItemType() string     { return "library" }
+func (l *Library) GetID() string               { return l.ID }
+func (l *Library) GetTitle() string            { return l.Name }
+func (l *Library) GetSortTitle() string        { return l.Name }
+func (l *Library) GetYear() int                { return 0 }
+func (l *Library) GetAddedAt() int64           { return 0 }
+func (l *Library) GetUpdatedAt() int64         { return l.UpdatedAt }
+func (l *Library) GetItemType() string         { return "library" }
 func (l *Library) GetWatchStatus() WatchStatus { return WatchStatusUnwatched }
-func (l *Library) GetDescription() string  { return l.Type }
-func (l *Library) CanDrillDown() bool      { return true }
+func (l *Library) GetDescription() string      { return l.Type }
+func (l *Library) CanDrillDown() bool          { return true }
 
 // Playlist represents a user-created playlist
 type Playlist struct {
@@ -259,13 +264,13 @@ type Playlist struct {
 
 // ListItem interface implementation for Playlist
 
-func (p *Playlist) GetID() string           { return p.ID }
-func (p *Playlist) GetTitle() string        { return p.Title }
-func (p *Playlist) GetSortTitle() string { return p.Title }
-func (p *Playlist) GetYear() int         { return 0 }
-func (p *Playlist) GetAddedAt() int64    { return 0 }
-func (p *Playlist) GetUpdatedAt() int64     { return p.UpdatedAt }
-func (p *Playlist) GetItemType() string     { return "playlist" }
+func (p *Playlist) GetID() string               { return p.ID }
+func (p *Playlist) GetTitle() string            { return p.Title }
+func (p *Playlist) GetSortTitle() string        { return p.Title }
+func (p *Playlist) GetYear() int                { return 0 }
+func (p *Playlist) GetAddedAt() int64           { return 0 }
+func (p *Playlist) GetUpdatedAt() int64         { return p.UpdatedAt }
+func (p *Playlist) GetItemType() string         { return "playlist" }
 func (p *Playlist) GetWatchStatus() WatchStatus { return WatchStatusUnwatched }
 
 func (p *Playlist) GetDescription() string {
@@ -299,4 +304,3 @@ func (w WatchStatus) String() string {
 		return "Unknown"
 	}
 }
-

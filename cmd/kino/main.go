@@ -60,9 +60,10 @@ func run() error {
 	searchSvc := service.NewSearchService(client, librarySvc, logger)
 	playbackSvc := service.NewPlaybackService(launcher, client, logger)
 	playlistSvc := service.NewPlaylistService(client, logger)
+	sessionSvc := service.NewSessionService()
 
 	// Create TUI model
-	model := tui.NewModel(librarySvc, playbackSvc, searchSvc, playlistSvc)
+	model := tui.NewModel(librarySvc, playbackSvc, searchSvc, playlistSvc, sessionSvc)
 
 	// Run the TUI
 	p := tea.NewProgram(
