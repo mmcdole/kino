@@ -2,7 +2,7 @@
 
 ![Kino Demo](demo.gif?v=2)
 
-> A fast, keyboard-driven TUI for browsing and playing media from Plex and Jellyfin servers
+> A fast terminal client for browsing and playing media from Plex and Jellyfin servers
 
 ## Features
 
