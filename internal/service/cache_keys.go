@@ -30,9 +30,3 @@ const (
 func LibraryCachePrefixes() []string {
 	return []string{PrefixMovies, PrefixShows, PrefixMixed, PrefixRecent}
 }
-
-// AllContentPrefixes returns all cache key prefixes for content data.
-// Use this for complete cache invalidation.
-func AllContentPrefixes() []string {
-	return []string{PrefixMovies, PrefixShows, PrefixMixed, PrefixSeasons, PrefixEpisodes, PrefixRecent}
-}

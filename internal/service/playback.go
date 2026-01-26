@@ -64,35 +64,3 @@ func (s *PlaybackService) MarkWatched(ctx context.Context, itemID string) error 
 func (s *PlaybackService) MarkUnwatched(ctx context.Context, itemID string) error {
 	return s.metadata.MarkUnplayed(ctx, itemID)
 }
-
-// HasViewOffset returns true if the item has a saved position to resume from
-func HasViewOffset(item domain.MediaItem) bool {
-	return item.ViewOffset > 0
-}
-
-// FormatViewOffset returns a human-readable string for the view offset
-func FormatViewOffset(offset time.Duration) string {
-	hours := int(offset.Hours())
-	minutes := int(offset.Minutes()) % 60
-	seconds := int(offset.Seconds()) % 60
-
-	if hours > 0 {
-		return formatTime(hours, minutes, seconds)
-	}
-	return formatTimeShort(minutes, seconds)
-}
-
-func formatTime(h, m, s int) string {
-	return formatNum(h) + ":" + formatNum(m) + ":" + formatNum(s)
-}
-
-func formatTimeShort(m, s int) string {
-	return formatNum(m) + ":" + formatNum(s)
-}
-
-func formatNum(n int) string {
-	if n < 10 {
-		return "0" + string(rune('0'+n))
-	}
-	return string(rune('0'+n/10)) + string(rune('0'+n%10))
-}

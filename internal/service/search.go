@@ -239,39 +239,6 @@ func calculateMatchScore(title, query string, item domain.MediaItem) int {
 	return score
 }
 
-// FilterByType filters search results by media type
-func FilterByType(items []domain.MediaItem, mediaType domain.MediaType) []domain.MediaItem {
-	filtered := make([]domain.MediaItem, 0)
-	for _, item := range items {
-		if item.Type == mediaType {
-			filtered = append(filtered, item)
-		}
-	}
-	return filtered
-}
-
-// FilterByLibrary filters search results by library ID
-func FilterByLibrary(items []domain.MediaItem, libID string) []domain.MediaItem {
-	filtered := make([]domain.MediaItem, 0)
-	for _, item := range items {
-		if item.LibraryID == libID {
-			filtered = append(filtered, item)
-		}
-	}
-	return filtered
-}
-
-// FilterUnwatched filters to only unwatched items
-func FilterUnwatched(items []domain.MediaItem) []domain.MediaItem {
-	filtered := make([]domain.MediaItem, 0)
-	for _, item := range items {
-		if !item.IsPlayed {
-			filtered = append(filtered, item)
-		}
-	}
-	return filtered
-}
-
 // IndexForFilter adds items to the global filter index, deduplicating by item ID
 // Pre-computes lowercase titles at index time for zero-allocation search
 func (s *SearchService) IndexForFilter(items []FilterItem) {

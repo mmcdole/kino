@@ -98,18 +98,6 @@ type PlaylistRepository interface {
 	DeletePlaylist(ctx context.Context, playlistID string) error
 }
 
-// AuthProvider handles authentication with the media server (legacy Plex-specific interface)
-type AuthProvider interface {
-	// GetPIN generates a new authentication PIN
-	GetPIN(ctx context.Context) (pin string, id int, err error)
-
-	// CheckPIN polls for PIN claim status and returns the auth token
-	CheckPIN(ctx context.Context, pinID int) (token string, claimed bool, err error)
-
-	// ValidateToken checks if a token is still valid
-	ValidateToken(ctx context.Context, token string) error
-}
-
 // AuthResult contains the result of a successful authentication
 type AuthResult struct {
 	Token    string // Access token for API calls
