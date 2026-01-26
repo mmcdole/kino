@@ -125,7 +125,7 @@ func MarkWatchedCmd(svc *service.PlaybackService, itemID, title string) tea.Cmd 
 		if err := svc.MarkWatched(ctx, itemID); err != nil {
 			return ErrMsg{Err: err, Context: "marking as watched"}
 		}
-		return MarkWatchedMsg{ItemID: itemID, Title: title}
+		return MarkWatchedMsg{Title: title}
 	}
 }
 
@@ -138,7 +138,7 @@ func MarkUnwatchedCmd(svc *service.PlaybackService, itemID, title string) tea.Cm
 		if err := svc.MarkUnwatched(ctx, itemID); err != nil {
 			return ErrMsg{Err: err, Context: "marking as unwatched"}
 		}
-		return MarkUnwatchedMsg{ItemID: itemID, Title: title}
+		return MarkUnwatchedMsg{Title: title}
 	}
 }
 
@@ -167,7 +167,6 @@ func ClearLibraryStatusCmd(libID string, delay time.Duration) tea.Cmd {
 // Uses cache-only access to avoid blocking network requests and UI freezes
 func LoadAllForGlobalSearchCmd(libSvc *service.LibraryService, searchSvc *service.SearchService, libraries []domain.Library) tea.Cmd {
 	return func() tea.Msg {
-		var movieCount, showCount, episodeCount int
 		var skippedLibraries int
 
 		for _, lib := range libraries {
@@ -193,7 +192,6 @@ func LoadAllForGlobalSearchCmd(libSvc *service.LibraryService, searchSvc *servic
 					}
 				}
 				searchSvc.IndexForFilter(items)
-				movieCount += len(movies)
 
 			case "show":
 				shows := libSvc.GetCachedShows(lib.ID)
@@ -217,7 +215,6 @@ func LoadAllForGlobalSearchCmd(libSvc *service.LibraryService, searchSvc *servic
 					}
 				}
 				searchSvc.IndexForFilter(items)
-				showCount += len(shows)
 
 			case "mixed":
 				content := libSvc.GetCachedLibraryContent(lib.ID)
@@ -240,7 +237,6 @@ func LoadAllForGlobalSearchCmd(libSvc *service.LibraryService, searchSvc *servic
 								MovieID:     v.ID,
 							},
 						})
-						movieCount++
 					case *domain.Show:
 						items = append(items, service.FilterItem{
 							Item:  v,
@@ -253,7 +249,6 @@ func LoadAllForGlobalSearchCmd(libSvc *service.LibraryService, searchSvc *servic
 								ShowTitle:   v.Title,
 							},
 						})
-						showCount++
 					}
 				}
 				searchSvc.IndexForFilter(items)
@@ -261,9 +256,6 @@ func LoadAllForGlobalSearchCmd(libSvc *service.LibraryService, searchSvc *servic
 		}
 
 		return GlobalSearchReadyMsg{
-			MovieCount:       movieCount,
-			ShowCount:        showCount,
-			EpisodeCount:     episodeCount,
 			SkippedLibraries: skippedLibraries,
 		}
 	}
@@ -508,9 +500,9 @@ func AddToPlaylistCmd(svc *service.PlaylistService, playlistID string, itemIDs [
 
 		err := svc.AddToPlaylist(ctx, playlistID, itemIDs)
 		if err != nil {
-			return PlaylistUpdatedMsg{PlaylistID: playlistID, Success: false, Error: err}
+			return PlaylistUpdatedMsg{PlaylistID: playlistID, Error: err}
 		}
-		return PlaylistUpdatedMsg{PlaylistID: playlistID, Success: true}
+		return PlaylistUpdatedMsg{PlaylistID: playlistID}
 	}
 }
 
@@ -522,9 +514,9 @@ func RemoveFromPlaylistCmd(svc *service.PlaylistService, playlistID, itemID stri
 
 		err := svc.RemoveFromPlaylist(ctx, playlistID, itemID)
 		if err != nil {
-			return PlaylistUpdatedMsg{PlaylistID: playlistID, Success: false, Error: err}
+			return PlaylistUpdatedMsg{PlaylistID: playlistID, Error: err}
 		}
-		return PlaylistUpdatedMsg{PlaylistID: playlistID, Success: true}
+		return PlaylistUpdatedMsg{PlaylistID: playlistID}
 	}
 }
 
@@ -536,9 +528,9 @@ func DeletePlaylistCmd(svc *service.PlaylistService, playlistID string) tea.Cmd 
 
 		err := svc.DeletePlaylist(ctx, playlistID)
 		if err != nil {
-			return PlaylistDeletedMsg{PlaylistID: playlistID, Success: false, Error: err}
+			return PlaylistDeletedMsg{PlaylistID: playlistID, Error: err}
 		}
-		return PlaylistDeletedMsg{PlaylistID: playlistID, Success: true}
+		return PlaylistDeletedMsg{PlaylistID: playlistID}
 	}
 }
 

@@ -75,11 +75,6 @@ func (i Inspector) HasItem() bool {
 	return i.item != nil
 }
 
-// Init initializes the component
-func (i Inspector) Init() tea.Cmd {
-	return nil
-}
-
 // Update handles messages
 func (i Inspector) Update(msg tea.Msg) (Inspector, tea.Cmd) {
 	if !i.focused {

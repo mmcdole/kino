@@ -20,8 +20,6 @@ type ApplicationState int
 const (
 	StateBrowsing ApplicationState = iota
 	StateSearching
-	StateSettings
-	StateAuthRequired
 	StateHelp
 	StateConfirmLogout
 )
@@ -405,7 +403,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				// If we're at library level and this is selected library, show its content
 				if m.ColumnStack.Len() == 1 {
-					if libCol, ok := m.ColumnStack.Top().(*components.ListColumn); ok {
+					if libCol := m.ColumnStack.Top(); libCol != nil {
 						if lib := libCol.SelectedLibrary(); lib != nil && lib.ID == msg.LibraryID {
 							// Don't auto-drill; user must press l/Enter
 						}
@@ -494,10 +492,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.StatusMsg = fmt.Sprintf("Created playlist: %s", msg.Playlist.Title)
 			// Refresh playlists if viewing playlists
-			if top := m.ColumnStack.Top(); top != nil {
-				if lc, ok := top.(*components.ListColumn); ok && lc.ColumnType() == components.ColumnTypePlaylists {
-					return m, LoadPlaylistsCmd(m.PlaylistSvc)
-				}
+			if top := m.ColumnStack.Top(); top != nil && top.ColumnType() == components.ColumnTypePlaylists {
+				return m, LoadPlaylistsCmd(m.PlaylistSvc)
 			}
 		}
 		cmds = append(cmds, ClearStatusCmd(3*time.Second))
@@ -521,12 +517,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Update the focused column (top of stack)
 	if top := m.ColumnStack.Top(); top != nil {
 		oldCursor := top.SelectedIndex()
-		var cmd tea.Cmd
 		newCol, cmd := top.Update(msg)
-		// Replace the top column with updated version
-		if lc, ok := newCol.(*components.ListColumn); ok {
-			m.ColumnStack.columns[len(m.ColumnStack.columns)-1] = lc
-		}
+		m.ColumnStack.columns[len(m.ColumnStack.columns)-1] = newCol
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
@@ -643,10 +635,8 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if selection != nil {
 				// Apply sort to current column
 				if top := m.ColumnStack.Top(); top != nil {
-					if lc, ok := top.(*components.ListColumn); ok {
-						lc.ApplySort(selection.Field, selection.Direction)
-						m.updateInspector()
-					}
+					top.ApplySort(selection.Field, selection.Direction)
+					m.updateInspector()
 				}
 			}
 			return m, nil
@@ -722,16 +712,14 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Handle filter typing mode
-	if top := m.ColumnStack.Top(); top != nil {
-		if lc, ok := top.(*components.ListColumn); ok && lc.IsFilterTyping() {
-			oldCursor := lc.SelectedIndex()
-			newCol, _ := lc.Update(msg)
-			m.ColumnStack.columns[len(m.ColumnStack.columns)-1] = newCol
-			if oldCursor != top.SelectedIndex() {
-				m.updateInspector()
-			}
-			return m, nil
+	if top := m.ColumnStack.Top(); top != nil && top.IsFilterTyping() {
+		oldCursor := top.SelectedIndex()
+		newCol, _ := top.Update(msg)
+		m.ColumnStack.columns[len(m.ColumnStack.columns)-1] = newCol
+		if oldCursor != top.SelectedIndex() {
+			m.updateInspector()
 		}
+		return m, nil
 	}
 
 	// Global keys
@@ -745,11 +733,9 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "esc":
 		// Clear active filter if any
-		if top := m.ColumnStack.Top(); top != nil {
-			if lc, ok := top.(*components.ListColumn); ok && lc.IsFiltering() {
-				lc.ClearFilter()
-				return m, nil
-			}
+		if top := m.ColumnStack.Top(); top != nil && top.IsFiltering() {
+			top.ClearFilter()
+			return m, nil
 		}
 		// Cancel active nav plan if any
 		if m.navPlan != nil {
@@ -762,9 +748,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "/":
 		// Activate filter in middle column
 		if top := m.ColumnStack.Top(); top != nil {
-			if lc, ok := top.(*components.ListColumn); ok {
-				lc.ToggleFilter()
-			}
+			top.ToggleFilter()
 		}
 		return m, nil
 
@@ -781,18 +765,16 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "s":
 		// Sort modal (only for movies/shows columns)
 		if top := m.ColumnStack.Top(); top != nil {
-			if lc, ok := top.(*components.ListColumn); ok {
-				var opts []components.SortField
-				switch lc.ColumnType() {
-				case components.ColumnTypeMovies:
-					opts = components.MovieSortOptions()
-				case components.ColumnTypeShows:
-					opts = components.ShowSortOptions()
-				}
-				if opts != nil {
-					field, dir := lc.SortState()
-					m.SortModal.Show(opts, field, dir)
-				}
+			var opts []components.SortField
+			switch top.ColumnType() {
+			case components.ColumnTypeMovies:
+				opts = components.MovieSortOptions()
+			case components.ColumnTypeShows:
+				opts = components.ShowSortOptions()
+			}
+			if opts != nil {
+				field, dir := top.SortState()
+				m.SortModal.Show(opts, field, dir)
 			}
 		}
 		return m, nil
@@ -811,16 +793,14 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "r":
 		// Refresh single selected library
-		if m.ColumnStack.Len() >= 1 {
-			if libCol, ok := m.ColumnStack.Get(0).(*components.ListColumn); ok {
-				if lib := libCol.SelectedLibrary(); lib != nil {
-					m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
-					m.SyncingCount++
-					m.Loading = true
-					m.MultiLibSync = false
-					m.updateLibraryStates()
-					return m, SyncLibraryCmd(m.LibrarySvc, m.SearchSvc, *lib, true)
-				}
+		if libCol := m.libraryColumn(); libCol != nil {
+			if lib := libCol.SelectedLibrary(); lib != nil {
+				m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
+				m.SyncingCount++
+				m.Loading = true
+				m.MultiLibSync = false
+				m.updateLibraryStates()
+				return m, SyncLibraryCmd(m.LibrarySvc, m.SearchSvc, *lib, true)
 			}
 		}
 		return m, nil
@@ -856,10 +836,8 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "w":
 		// Mark as watched
 		if top := m.ColumnStack.Top(); top != nil {
-			if lc, ok := top.(*components.ListColumn); ok {
-				if item := lc.SelectedMediaItem(); item != nil {
-					return m, MarkWatchedCmd(m.PlaybackSvc, item.ID, item.Title)
-				}
+			if item := top.SelectedMediaItem(); item != nil {
+				return m, MarkWatchedCmd(m.PlaybackSvc, item.ID, item.Title)
 			}
 		}
 		return m, nil
@@ -867,10 +845,8 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "u":
 		// Mark as unwatched
 		if top := m.ColumnStack.Top(); top != nil {
-			if lc, ok := top.(*components.ListColumn); ok {
-				if item := lc.SelectedMediaItem(); item != nil {
-					return m, MarkUnwatchedCmd(m.PlaybackSvc, item.ID, item.Title)
-				}
+			if item := top.SelectedMediaItem(); item != nil {
+				return m, MarkUnwatchedCmd(m.PlaybackSvc, item.ID, item.Title)
 			}
 		}
 		return m, nil
@@ -878,10 +854,8 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "p":
 		// Play from beginning
 		if top := m.ColumnStack.Top(); top != nil {
-			if lc, ok := top.(*components.ListColumn); ok {
-				if item := lc.SelectedMediaItem(); item != nil {
-					return m, PlayItemCmd(m.PlaybackSvc, *item, false)
-				}
+			if item := top.SelectedMediaItem(); item != nil {
+				return m, PlayItemCmd(m.PlaybackSvc, *item, false)
 			}
 		}
 		return m, nil
@@ -900,29 +874,25 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ":
 		// Space: Open playlist modal for selected playable item
 		if top := m.ColumnStack.Top(); top != nil {
-			if lc, ok := top.(*components.ListColumn); ok {
-				item := lc.SelectedMediaItem()
-				if item != nil && m.PlaylistSvc != nil {
-					return m, LoadPlaylistModalDataCmd(m.PlaylistSvc, item)
-				}
+			item := top.SelectedMediaItem()
+			if item != nil && m.PlaylistSvc != nil {
+				return m, LoadPlaylistModalDataCmd(m.PlaylistSvc, item)
 			}
 		}
 		return m, nil
 
 	case "x":
 		if top := m.ColumnStack.Top(); top != nil {
-			if lc, ok := top.(*components.ListColumn); ok {
-				switch lc.ColumnType() {
-				case components.ColumnTypePlaylistItems:
-					// Remove item from playlist
-					if item := lc.SelectedMediaItem(); item != nil && m.currentPlaylistID != "" {
-						return m, RemoveFromPlaylistCmd(m.PlaylistSvc, m.currentPlaylistID, item.ID)
-					}
-				case components.ColumnTypePlaylists:
-					// Delete playlist
-					if playlist := lc.SelectedPlaylist(); playlist != nil {
-						return m, DeletePlaylistCmd(m.PlaylistSvc, playlist.ID)
-					}
+			switch top.ColumnType() {
+			case components.ColumnTypePlaylistItems:
+				// Remove item from playlist
+				if item := top.SelectedMediaItem(); item != nil && m.currentPlaylistID != "" {
+					return m, RemoveFromPlaylistCmd(m.PlaylistSvc, m.currentPlaylistID, item.ID)
+				}
+			case components.ColumnTypePlaylists:
+				// Delete playlist
+				if playlist := top.SelectedPlaylist(); playlist != nil {
+					return m, DeletePlaylistCmd(m.PlaylistSvc, playlist.ID)
 				}
 			}
 		}
@@ -930,11 +900,9 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "n":
 		// Plex doesn't support empty playlists - show hint to use Space instead
-		if top := m.ColumnStack.Top(); top != nil {
-			if lc, ok := top.(*components.ListColumn); ok && lc.ColumnType() == components.ColumnTypePlaylists {
-				m.StatusMsg = "Use Space on an item to create a playlist"
-				return m, ClearStatusCmd(3 * time.Second)
-			}
+		if top := m.ColumnStack.Top(); top != nil && top.ColumnType() == components.ColumnTypePlaylists {
+			m.StatusMsg = "Use Space on an item to create a playlist"
+			return m, ClearStatusCmd(3 * time.Second)
 		}
 	}
 
@@ -942,10 +910,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if top := m.ColumnStack.Top(); top != nil {
 		oldCursor := top.SelectedIndex()
 		newCol, cmd := top.Update(msg)
-		// Replace the top column
-		if lc, ok := newCol.(*components.ListColumn); ok {
-			m.ColumnStack.columns[len(m.ColumnStack.columns)-1] = lc
-		}
+		m.ColumnStack.columns[len(m.ColumnStack.columns)-1] = newCol
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
@@ -966,11 +931,9 @@ func (m Model) handleDrillIn() (tea.Model, tea.Cmd) {
 
 	if !top.CanDrillInto() {
 		// Can't drill into leaf items - play instead
-		if lc, ok := top.(*components.ListColumn); ok {
-			if item := lc.SelectedMediaItem(); item != nil {
-				resume := item.ViewOffset > 0 && !item.IsPlayed
-				return m, PlayItemCmd(m.PlaybackSvc, *item, resume)
-			}
+		if item := top.SelectedMediaItem(); item != nil {
+			resume := item.ViewOffset > 0 && !item.IsPlayed
+			return m, PlayItemCmd(m.PlaybackSvc, *item, resume)
 		}
 		return m, nil
 	}
@@ -990,11 +953,9 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 	}
 
 	// Not drillable - play the item
-	if lc, ok := top.(*components.ListColumn); ok {
-		if item := lc.SelectedMediaItem(); item != nil {
-			resume := item.ViewOffset > 0 && !item.IsPlayed
-			return m, PlayItemCmd(m.PlaybackSvc, *item, resume)
-		}
+	if item := top.SelectedMediaItem(); item != nil {
+		resume := item.ViewOffset > 0 && !item.IsPlayed
+		return m, PlayItemCmd(m.PlaybackSvc, *item, resume)
 	}
 
 	return m, nil
@@ -1190,10 +1151,8 @@ func (m Model) handleBack() (tea.Model, tea.Cmd) {
 	}
 
 	// Check if we're leaving playlist items view
-	if top := m.ColumnStack.Top(); top != nil {
-		if lc, ok := top.(*components.ListColumn); ok && lc.ColumnType() == components.ColumnTypePlaylistItems {
-			m.currentPlaylistID = ""
-		}
+	if top := m.ColumnStack.Top(); top != nil && top.ColumnType() == components.ColumnTypePlaylistItems {
+		m.currentPlaylistID = ""
 	}
 
 	_, savedCursor := m.ColumnStack.Pop()
@@ -1214,13 +1173,15 @@ func (m Model) handleItemSelection(item domain.MediaItem) (Model, tea.Cmd) {
 	return m, PlayItemCmd(m.PlaybackSvc, item, resume)
 }
 
+// libraryColumn returns the library column (index 0) or nil if not available
+func (m *Model) libraryColumn() *components.ListColumn {
+	return m.ColumnStack.Get(0)
+}
+
 // updateLibraryStates updates the library states in the library column and inspector
 func (m *Model) updateLibraryStates() {
-	// Find the library column (should be at index 0)
-	if m.ColumnStack.Len() > 0 {
-		if libCol, ok := m.ColumnStack.Get(0).(*components.ListColumn); ok {
-			libCol.SetLibraryStates(m.LibraryStates)
-		}
+	if libCol := m.libraryColumn(); libCol != nil {
+		libCol.SetLibraryStates(m.LibraryStates)
 	}
 	m.Inspector.SetLibraryStates(m.LibraryStates)
 }
@@ -1236,51 +1197,37 @@ func (m *Model) refreshCurrentView() tea.Cmd {
 	}
 
 	// Get context from column stack to reload
-	if lc, ok := top.(*components.ListColumn); ok {
-		switch lc.ColumnType() {
-		case components.ColumnTypeMovies:
-			// Find the library from the library column
-			if m.ColumnStack.Len() > 0 {
-				if libCol, ok := m.ColumnStack.Get(0).(*components.ListColumn); ok {
-					if lib := libCol.SelectedLibrary(); lib != nil {
-						return LoadMoviesCmd(m.LibrarySvc, lib.ID)
-					}
-				}
+	switch top.ColumnType() {
+	case components.ColumnTypeMovies:
+		if libCol := m.libraryColumn(); libCol != nil {
+			if lib := libCol.SelectedLibrary(); lib != nil {
+				return LoadMoviesCmd(m.LibrarySvc, lib.ID)
 			}
-		case components.ColumnTypeShows:
-			if m.ColumnStack.Len() > 0 {
-				if libCol, ok := m.ColumnStack.Get(0).(*components.ListColumn); ok {
-					if lib := libCol.SelectedLibrary(); lib != nil {
-						return LoadShowsCmd(m.LibrarySvc, lib.ID)
-					}
-				}
+		}
+	case components.ColumnTypeShows:
+		if libCol := m.libraryColumn(); libCol != nil {
+			if lib := libCol.SelectedLibrary(); lib != nil {
+				return LoadShowsCmd(m.LibrarySvc, lib.ID)
 			}
-		case components.ColumnTypeSeasons:
-			// Get show from parent column
-			if m.ColumnStack.Len() > 1 {
-				if showCol, ok := m.ColumnStack.Get(m.ColumnStack.Len()-2).(*components.ListColumn); ok {
-					if show := showCol.SelectedShow(); show != nil {
-						return LoadSeasonsCmd(m.LibrarySvc, show.ID)
-					}
-				}
+		}
+	case components.ColumnTypeSeasons:
+		// Get show from parent column
+		if showCol := m.ColumnStack.Get(m.ColumnStack.Len() - 2); showCol != nil {
+			if show := showCol.SelectedShow(); show != nil {
+				return LoadSeasonsCmd(m.LibrarySvc, show.ID)
 			}
-		case components.ColumnTypeEpisodes:
-			// Get season from parent column
-			if m.ColumnStack.Len() > 1 {
-				if seasonCol, ok := m.ColumnStack.Get(m.ColumnStack.Len()-2).(*components.ListColumn); ok {
-					if season := seasonCol.SelectedSeason(); season != nil {
-						return LoadEpisodesCmd(m.LibrarySvc, season.ID)
-					}
-				}
+		}
+	case components.ColumnTypeEpisodes:
+		// Get season from parent column
+		if seasonCol := m.ColumnStack.Get(m.ColumnStack.Len() - 2); seasonCol != nil {
+			if season := seasonCol.SelectedSeason(); season != nil {
+				return LoadEpisodesCmd(m.LibrarySvc, season.ID)
 			}
-		case components.ColumnTypeMixed:
-			// Get library from the library column
-			if m.ColumnStack.Len() > 0 {
-				if libCol, ok := m.ColumnStack.Get(0).(*components.ListColumn); ok {
-					if lib := libCol.SelectedLibrary(); lib != nil {
-						return LoadLibraryContentCmd(m.LibrarySvc, lib.ID)
-					}
-				}
+		}
+	case components.ColumnTypeMixed:
+		if libCol := m.libraryColumn(); libCol != nil {
+			if lib := libCol.SelectedLibrary(); lib != nil {
+				return LoadLibraryContentCmd(m.LibrarySvc, lib.ID)
 			}
 		}
 	}
@@ -1663,13 +1610,11 @@ func (m Model) renderFooter() string {
 	// Center section: context-specific hints based on column type
 	var center string
 	if top := m.ColumnStack.Top(); top != nil {
-		if lc, ok := top.(*components.ListColumn); ok {
-			switch lc.ColumnType() {
-			case components.ColumnTypePlaylists:
-				center = styles.AccentStyle.Render("x") + styles.DimStyle.Render(" Delete")
-			case components.ColumnTypePlaylistItems:
-				center = styles.AccentStyle.Render("x") + styles.DimStyle.Render(" Remove")
-			}
+		switch top.ColumnType() {
+		case components.ColumnTypePlaylists:
+			center = styles.AccentStyle.Render("x") + styles.DimStyle.Render(" Delete")
+		case components.ColumnTypePlaylistItems:
+			center = styles.AccentStyle.Render("x") + styles.DimStyle.Render(" Remove")
 		}
 	}
 
@@ -1863,8 +1808,7 @@ func (m *Model) advanceNavPlanAfterLoad(kind NavAwaitKind, id string) tea.Cmd {
 
 	// Apply ID selection if requested
 	if target.ID != "" {
-		lc, ok := top.(*components.ListColumn)
-		if !ok || !lc.SetSelectedByID(target.ID) {
+		if !top.SetSelectedByID(target.ID) {
 			m.clearNavPlan()
 			m.StatusMsg = "Item not found (library may have changed)"
 			m.StatusIsErr = true

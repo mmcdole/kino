@@ -80,9 +80,8 @@ func (m *MediaItem) GetSortTitle() string {
 	}
 	return m.Title
 }
-func (m *MediaItem) GetYear() int         { return m.Year }
-func (m *MediaItem) GetFilterValue() string { return m.Title }
-func (m *MediaItem) GetAddedAt() int64    { return m.AddedAt }
+func (m *MediaItem) GetYear() int        { return m.Year }
+func (m *MediaItem) GetAddedAt() int64   { return m.AddedAt }
 func (m *MediaItem) GetUpdatedAt() int64  { return m.UpdatedAt }
 func (m *MediaItem) GetWatchStatus() WatchStatus { return m.WatchStatus() }
 
@@ -150,9 +149,8 @@ func (s *Show) GetSortTitle() string {
 	}
 	return s.Title
 }
-func (s *Show) GetYear() int           { return s.Year }
-func (s *Show) GetFilterValue() string { return s.Title }
-func (s *Show) GetAddedAt() int64      { return s.AddedAt }
+func (s *Show) GetYear() int        { return s.Year }
+func (s *Show) GetAddedAt() int64   { return s.AddedAt }
 func (s *Show) GetUpdatedAt() int64    { return s.UpdatedAt }
 func (s *Show) GetItemType() string    { return "show" }
 func (s *Show) GetWatchStatus() WatchStatus { return s.WatchStatus() }
@@ -207,10 +205,9 @@ func (s Season) DisplayTitle() string {
 
 func (s *Season) GetID() string           { return s.ID }
 func (s *Season) GetTitle() string        { return s.DisplayTitle() }
-func (s *Season) GetSortTitle() string    { return fmt.Sprintf("%03d", s.SeasonNum) }
-func (s *Season) GetYear() int            { return 0 } // Seasons don't have a year
-func (s *Season) GetFilterValue() string  { return s.DisplayTitle() }
-func (s *Season) GetAddedAt() int64       { return 0 }
+func (s *Season) GetSortTitle() string { return fmt.Sprintf("%03d", s.SeasonNum) }
+func (s *Season) GetYear() int         { return 0 } // Seasons don't have a year
+func (s *Season) GetAddedAt() int64    { return 0 }
 func (s *Season) GetUpdatedAt() int64     { return 0 }
 func (s *Season) GetItemType() string     { return "season" }
 func (s *Season) GetWatchStatus() WatchStatus { return s.WatchStatus() }
@@ -249,10 +246,9 @@ func (l Library) IsShowLibrary() bool {
 
 func (l *Library) GetID() string           { return l.ID }
 func (l *Library) GetTitle() string        { return l.Name }
-func (l *Library) GetSortTitle() string    { return l.Name }
-func (l *Library) GetYear() int            { return 0 }
-func (l *Library) GetFilterValue() string  { return l.Name }
-func (l *Library) GetAddedAt() int64       { return 0 }
+func (l *Library) GetSortTitle() string { return l.Name }
+func (l *Library) GetYear() int         { return 0 }
+func (l *Library) GetAddedAt() int64    { return 0 }
 func (l *Library) GetUpdatedAt() int64     { return l.UpdatedAt }
 func (l *Library) GetItemType() string     { return "library" }
 func (l *Library) GetWatchStatus() WatchStatus { return WatchStatusUnwatched }
@@ -275,10 +271,9 @@ type Playlist struct {
 
 func (p *Playlist) GetID() string           { return p.ID }
 func (p *Playlist) GetTitle() string        { return p.Title }
-func (p *Playlist) GetSortTitle() string    { return p.Title }
-func (p *Playlist) GetYear() int            { return 0 }
-func (p *Playlist) GetFilterValue() string  { return p.Title }
-func (p *Playlist) GetAddedAt() int64       { return 0 }
+func (p *Playlist) GetSortTitle() string { return p.Title }
+func (p *Playlist) GetYear() int         { return 0 }
+func (p *Playlist) GetAddedAt() int64    { return 0 }
 func (p *Playlist) GetUpdatedAt() int64     { return p.UpdatedAt }
 func (p *Playlist) GetItemType() string     { return "playlist" }
 func (p *Playlist) GetWatchStatus() WatchStatus { return WatchStatusUnwatched }

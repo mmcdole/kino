@@ -69,14 +69,12 @@ type PlaybackStartedMsg struct {
 
 // MarkWatchedMsg signals a request to mark an item as watched
 type MarkWatchedMsg struct {
-	ItemID string
-	Title  string
+	Title string
 }
 
 // MarkUnwatchedMsg signals a request to mark an item as unwatched
 type MarkUnwatchedMsg struct {
-	ItemID string
-	Title  string
+	Title string
 }
 
 // TickMsg is a general tick message for animations
@@ -93,9 +91,6 @@ type StatusMsg struct {
 
 // GlobalSearchReadyMsg signals that all content is loaded for global search
 type GlobalSearchReadyMsg struct {
-	MovieCount       int
-	ShowCount        int
-	EpisodeCount     int
 	SkippedLibraries int // Libraries not yet cached (still syncing)
 }
 
@@ -155,7 +150,6 @@ type PlaylistItemsLoadedMsg struct {
 // PlaylistUpdatedMsg signals that a playlist was updated (item added/removed)
 type PlaylistUpdatedMsg struct {
 	PlaylistID string
-	Success    bool
 	Error      error
 }
 
@@ -168,7 +162,6 @@ type PlaylistCreatedMsg struct {
 // PlaylistDeletedMsg signals that a playlist was deleted
 type PlaylistDeletedMsg struct {
 	PlaylistID string
-	Success    bool
 	Error      error
 }
 

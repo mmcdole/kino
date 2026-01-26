@@ -17,14 +17,14 @@ import (
 // The "left" column shows parent context.
 // The "right" column (Inspector) shows details for the selection in middle column.
 type ColumnStack struct {
-	columns     []components.Column
+	columns     []*components.ListColumn
 	cursorStack []int // Saved cursor positions for back navigation
 }
 
 // NewColumnStack creates a new empty column stack
 func NewColumnStack() *ColumnStack {
 	return &ColumnStack{
-		columns:     make([]components.Column, 0),
+		columns:     make([]*components.ListColumn, 0),
 		cursorStack: make([]int, 0),
 	}
 }
@@ -35,7 +35,7 @@ func (cs *ColumnStack) Len() int {
 }
 
 // Get returns the column at the given index (0 = bottom/oldest)
-func (cs *ColumnStack) Get(idx int) components.Column {
+func (cs *ColumnStack) Get(idx int) *components.ListColumn {
 	if idx < 0 || idx >= len(cs.columns) {
 		return nil
 	}
@@ -43,7 +43,7 @@ func (cs *ColumnStack) Get(idx int) components.Column {
 }
 
 // Top returns the topmost (current/focused) column
-func (cs *ColumnStack) Top() components.Column {
+func (cs *ColumnStack) Top() *components.ListColumn {
 	if len(cs.columns) == 0 {
 		return nil
 	}
@@ -51,7 +51,7 @@ func (cs *ColumnStack) Top() components.Column {
 }
 
 // Push adds a new column to the stack, saving the current cursor position
-func (cs *ColumnStack) Push(col components.Column, saveCursor int) {
+func (cs *ColumnStack) Push(col *components.ListColumn, saveCursor int) {
 	// Save current cursor position for back navigation
 	cs.cursorStack = append(cs.cursorStack, saveCursor)
 
@@ -67,7 +67,7 @@ func (cs *ColumnStack) Push(col components.Column, saveCursor int) {
 
 // Pop removes and returns the top column, along with the saved cursor position.
 // Returns nil if stack would become empty (must have at least 1 column).
-func (cs *ColumnStack) Pop() (components.Column, int) {
+func (cs *ColumnStack) Pop() (*components.ListColumn, int) {
 	if len(cs.columns) <= 1 {
 		// Don't pop the last column (root level)
 		return nil, 0
@@ -94,7 +94,7 @@ func (cs *ColumnStack) Pop() (components.Column, int) {
 }
 
 // Replace replaces the top column with a new one (used when switching libraries)
-func (cs *ColumnStack) Replace(col components.Column) {
+func (cs *ColumnStack) Replace(col *components.ListColumn) {
 	if len(cs.columns) == 0 {
 		// Just push if empty
 		col.SetFocused(true)
@@ -118,7 +118,7 @@ func (cs *ColumnStack) Clear() {
 }
 
 // Reset resets the stack to a single column (used when switching libraries)
-func (cs *ColumnStack) Reset(col components.Column) {
+func (cs *ColumnStack) Reset(col *components.ListColumn) {
 	cs.Clear()
 	col.SetFocused(true)
 	cs.columns = append(cs.columns, col)
@@ -133,7 +133,7 @@ func (cs *ColumnStack) SetSizes(width, height int) {
 }
 
 // Parent returns the parent column (second from top), or nil if at root
-func (cs *ColumnStack) Parent() components.Column {
+func (cs *ColumnStack) Parent() *components.ListColumn {
 	if len(cs.columns) < 2 {
 		return nil
 	}
@@ -156,8 +156,6 @@ func (cs *ColumnStack) Depth() int {
 // UpdateSpinnerFrame updates the spinner frame for all columns
 func (cs *ColumnStack) UpdateSpinnerFrame(frame int) {
 	for _, col := range cs.columns {
-		if lc, ok := col.(*components.ListColumn); ok {
-			lc.SetSpinnerFrame(frame)
-		}
+		col.SetSpinnerFrame(frame)
 	}
 }
