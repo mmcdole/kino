@@ -33,16 +33,6 @@ type LibraryRepository interface {
 	// GetAllLibraryContent returns all content from a mixed library (handles pagination internally)
 	GetAllLibraryContent(ctx context.Context, libID string) ([]ListItem, error)
 
-	// GetMoviesWithProgress fetches movies and reports progress via callback
-	// The callback receives each batch as it's fetched: (batch, loadedSoFar, total)
-	GetMoviesWithProgress(ctx context.Context, libID string, progress func([]*MediaItem, int, int)) error
-
-	// GetShowsWithProgress fetches shows and reports progress via callback
-	GetShowsWithProgress(ctx context.Context, libID string, progress func([]*Show, int, int)) error
-
-	// GetLibraryContentWithProgress fetches mixed library content and reports progress via callback
-	GetLibraryContentWithProgress(ctx context.Context, libID string, progress func([]ListItem, int, int)) error
-
 	// GetSeasons returns all seasons for a TV show
 	GetSeasons(ctx context.Context, showID string) ([]*Season, error)
 
