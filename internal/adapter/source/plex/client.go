@@ -483,32 +483,6 @@ func (c *Client) GetNextEpisode(ctx context.Context, episodeID string) (*domain.
 	return nil, domain.ErrNoNextEpisode
 }
 
-// MarkPlaying indicates playback has started
-func (c *Client) MarkPlaying(ctx context.Context, itemID string) error {
-	query := url.Values{}
-	query.Set("key", itemID)
-	query.Set("state", "playing")
-
-	_, err := c.doRequest(ctx, http.MethodGet, "/:/timeline", query)
-	return err
-}
-
-// ReportProgress updates the watch position
-func (c *Client) ReportProgress(ctx context.Context, itemID string, status domain.PlayerStatus) error {
-	query := url.Values{}
-	query.Set("key", itemID)
-	query.Set("time", strconv.FormatInt(status.CurrentTime.Milliseconds(), 10))
-	query.Set("duration", strconv.FormatInt(status.TotalTime.Milliseconds(), 10))
-	if status.IsPaused {
-		query.Set("state", "paused")
-	} else {
-		query.Set("state", "playing")
-	}
-
-	_, err := c.doRequest(ctx, http.MethodGet, "/:/timeline", query)
-	return err
-}
-
 // MarkPlayed marks an item as fully watched
 func (c *Client) MarkPlayed(ctx context.Context, itemID string) error {
 	query := url.Values{}

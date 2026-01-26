@@ -10,12 +10,6 @@ var (
 	// ErrServerOffline indicates the media server is unreachable
 	ErrServerOffline = errors.New("media server is unreachable")
 
-	// ErrPlayerCrashed indicates the external player process crashed
-	ErrPlayerCrashed = errors.New("external player process crashed")
-
-	// ErrPlayerNotRunning indicates the player is not currently running
-	ErrPlayerNotRunning = errors.New("player is not running")
-
 	// ErrAuthFailed indicates authentication failed
 	ErrAuthFailed = errors.New("authentication token is invalid")
 
@@ -37,15 +31,6 @@ var (
 	// ErrPINExpired indicates the authentication PIN has expired
 	ErrPINExpired = errors.New("authentication PIN has expired")
 
-	// ErrPINNotClaimed indicates the PIN has not been claimed yet
-	ErrPINNotClaimed = errors.New("authentication PIN not yet claimed")
-
-	// ErrSocketConnection indicates a socket connection failure
-	ErrSocketConnection = errors.New("failed to connect to socket")
-
 	// ErrInvalidResponse indicates an unexpected response from the server
 	ErrInvalidResponse = errors.New("invalid response from server")
-
-	// ErrPlaybackFailed indicates playback could not be started
-	ErrPlaybackFailed = errors.New("failed to start playback")
 )

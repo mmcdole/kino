@@ -150,16 +150,6 @@ type PINCheckResponse struct {
 	ExpiresAt string `json:"expiresAt"`
 }
 
-// UserResponse represents user information
-type UserResponse struct {
-	ID       int    `json:"id"`
-	UUID     string `json:"uuid"`
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Thumb    string `json:"thumb"`
-	Title    string `json:"title"`
-}
-
 // PlaylistMetadata represents a Plex playlist
 type PlaylistMetadata struct {
 	RatingKey    string `json:"ratingKey"`
@@ -177,25 +167,3 @@ type PlaylistMetadata struct {
 	UpdatedAt    int64  `json:"updatedAt,omitempty"`
 }
 
-// ServerResource represents a server from plex.tv resources
-type ServerResource struct {
-	Name        string       `json:"name"`
-	Product     string       `json:"product"`
-	ProductVersion string   `json:"productVersion"`
-	Platform    string       `json:"platform"`
-	ClientID    string       `json:"clientIdentifier"`
-	Owned       bool         `json:"owned"`
-	AccessToken string       `json:"accessToken"`
-	Connections []Connection `json:"connections"`
-}
-
-// Connection represents a server connection option
-type Connection struct {
-	Protocol string `json:"protocol"`
-	Address  string `json:"address"`
-	Port     int    `json:"port"`
-	URI      string `json:"uri"`
-	Local    bool   `json:"local"`
-	Relay    bool   `json:"relay"`
-	IPv6     bool   `json:"IPv6"`
-}
