@@ -398,7 +398,7 @@ func (m *Model) navigateToSearchResult(item service.FilterItem) tea.Cmd {
 	navCtx := m.buildNavContext(item)
 
 	// Reset stack to library level first
-	libCol := components.NewLibraryColumn(append(m.Libraries, playlistsLibraryEntry()))
+	libCol := components.NewLibraryColumn(m.allLibraryEntries())
 	libCol.SetLibraryStates(m.LibraryStates)
 	m.Inspector.SetLibraryStates(m.LibraryStates)
 

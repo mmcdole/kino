@@ -54,6 +54,11 @@ func playlistsLibraryEntry() domain.Library {
 	}
 }
 
+// allLibraryEntries returns libraries plus the synthetic Playlists entry
+func (m *Model) allLibraryEntries() []domain.Library {
+	return append(m.Libraries, playlistsLibraryEntry())
+}
+
 // Model is the main Bubble Tea model for the application
 type Model struct {
 	// Application state
@@ -167,11 +172,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.SyncingCount = len(msg.Libraries)
 		m.MultiLibSync = true
 
-		// Append synthetic "Playlists" entry at bottom
-		allEntries := append(msg.Libraries, playlistsLibraryEntry())
-
 		// Create the library column as the root
-		libCol := components.NewLibraryColumn(allEntries)
+		libCol := components.NewLibraryColumn(m.allLibraryEntries())
 		libCol.SetLibraryStates(m.LibraryStates)
 		m.Inspector.SetLibraryStates(m.LibraryStates)
 		m.ColumnStack.Reset(libCol)

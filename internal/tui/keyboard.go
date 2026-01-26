@@ -41,174 +41,42 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, Keys.Quit):
 		return m, tea.Quit
-
 	case key.Matches(msg, Keys.Help):
-		m.State = StateHelp
-		return m, nil
-
+		return m.handleHelp()
 	case key.Matches(msg, Keys.Escape):
-		// Clear active filter if any
-		if top := m.ColumnStack.Top(); top != nil && top.IsFiltering() {
-			top.ClearFilter()
-			return m, nil
-		}
-		// Cancel active nav plan if any
-		if m.navPlan != nil {
-			m.clearNavPlan()
-			m.StatusMsg = "Navigation cancelled"
-			return m, ClearStatusCmd(2 * time.Second)
-		}
-		return m, nil
-
+		return m.handleEscape()
 	case key.Matches(msg, Keys.Filter):
-		// Activate filter in middle column
-		if top := m.ColumnStack.Top(); top != nil {
-			top.ToggleFilter()
-		}
-		return m, nil
-
+		return m.handleFilter()
 	case key.Matches(msg, Keys.GlobalSearch):
-		// Global search via Omnibar
-		m.GlobalSearch.Show()
-		m.GlobalSearch.SetSize(m.Width, m.Height)
-		return m, m.GlobalSearch.Init()
-
+		return m.handleGlobalSearch()
 	case key.Matches(msg, Keys.Sort):
-		// Sort modal (only for movies/shows columns)
-		if top := m.ColumnStack.Top(); top != nil {
-			var opts []components.SortField
-			switch top.ColumnType() {
-			case components.ColumnTypeMovies:
-				opts = components.MovieSortOptions()
-			case components.ColumnTypeShows:
-				opts = components.ShowSortOptions()
-			}
-			if opts != nil {
-				field, dir := top.SortState()
-				m.SortModal.Show(opts, field, dir)
-			}
-		}
-		return m, nil
-
+		return m.handleSort()
 	case key.Matches(msg, Keys.Back):
-		// Go back (pop column stack)
 		return m.handleBack()
-
 	case key.Matches(msg, Keys.Right):
-		// Drill into (push new column)
 		return m.handleDrillIn()
-
 	case key.Matches(msg, Keys.Enter):
-		// Enter can drill in OR play depending on selection
 		return m.handleEnter()
-
 	case key.Matches(msg, Keys.Refresh):
-		// Refresh single selected library
-		if libCol := m.libraryColumn(); libCol != nil {
-			if lib := libCol.SelectedLibrary(); lib != nil {
-				m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
-				m.SyncingCount++
-				m.Loading = true
-				m.MultiLibSync = false
-				m.updateLibraryStates()
-				return m, SyncLibraryCmd(m.LibrarySvc, *lib, true)
-			}
-		}
-		return m, nil
-
+		return m.handleRefresh()
 	case key.Matches(msg, Keys.RefreshAll):
-		// Refresh ALL libraries
-		m.LibraryStates = make(map[string]components.LibrarySyncState)
-		for _, lib := range m.Libraries {
-			m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
-		}
-		m.SyncingCount = len(m.Libraries)
-		m.Loading = true
-		m.MultiLibSync = true
-		m.updateLibraryStates()
-
-		// Append synthetic "Playlists" entry at bottom
-		allEntries := append(m.Libraries, playlistsLibraryEntry())
-
-		// Reset to library view
-		libCol := components.NewLibraryColumn(allEntries)
-		libCol.SetLibraryStates(m.LibraryStates)
-		m.Inspector.SetLibraryStates(m.LibraryStates)
-		m.ColumnStack.Reset(libCol)
-
-		return m, SyncAllLibrariesCmd(m.LibrarySvc, m.Libraries, true)
-
+		return m.handleRefreshAll()
 	case key.Matches(msg, Keys.MarkWatched):
-		// Mark as watched
-		if top := m.ColumnStack.Top(); top != nil {
-			if item := top.SelectedMediaItem(); item != nil {
-				return m, MarkWatchedCmd(m.PlaybackSvc, item.ID, item.Title)
-			}
-		}
-		return m, nil
-
+		return m.handleMarkWatched()
 	case key.Matches(msg, Keys.MarkUnwatched):
-		// Mark as unwatched
-		if top := m.ColumnStack.Top(); top != nil {
-			if item := top.SelectedMediaItem(); item != nil {
-				return m, MarkUnwatchedCmd(m.PlaybackSvc, item.ID, item.Title)
-			}
-		}
-		return m, nil
-
+		return m.handleMarkUnwatched()
 	case key.Matches(msg, Keys.Play):
-		// Play from beginning
-		if top := m.ColumnStack.Top(); top != nil {
-			if item := top.SelectedMediaItem(); item != nil {
-				return m, PlayItemCmd(m.PlaybackSvc, *item, false)
-			}
-		}
-		return m, nil
-
+		return m.handlePlay()
 	case key.Matches(msg, Keys.ToggleInspector):
-		// Toggle inspector visibility
-		m.ShowInspector = !m.ShowInspector
-		m.updateLayout()
-		return m, nil
-
+		return m.handleToggleInspector()
 	case key.Matches(msg, Keys.Logout):
-		// Logout (Shift+L) - show confirmation modal
-		m.State = StateConfirmLogout
-		return m, nil
-
+		return m.handleLogout()
 	case key.Matches(msg, Keys.PlaylistModal):
-		// Space: Open playlist modal for selected playable item
-		if top := m.ColumnStack.Top(); top != nil {
-			item := top.SelectedMediaItem()
-			if item != nil && m.PlaylistSvc != nil {
-				return m, LoadPlaylistModalDataCmd(m.PlaylistSvc, item)
-			}
-		}
-		return m, nil
-
+		return m.handlePlaylistModal()
 	case key.Matches(msg, Keys.Delete):
-		if top := m.ColumnStack.Top(); top != nil {
-			switch top.ColumnType() {
-			case components.ColumnTypePlaylistItems:
-				// Remove item from playlist
-				if item := top.SelectedMediaItem(); item != nil && m.currentPlaylistID != "" {
-					return m, RemoveFromPlaylistCmd(m.PlaylistSvc, m.currentPlaylistID, item.ID)
-				}
-			case components.ColumnTypePlaylists:
-				// Delete playlist
-				if playlist := top.SelectedPlaylist(); playlist != nil {
-					return m, DeletePlaylistCmd(m.PlaylistSvc, playlist.ID)
-				}
-			}
-		}
-		return m, nil
-
+		return m.handleDelete()
 	case key.Matches(msg, Keys.NewPlaylist):
-		// Plex doesn't support empty playlists - show hint to use Space instead
-		if top := m.ColumnStack.Top(); top != nil && top.ColumnType() == components.ColumnTypePlaylists {
-			m.StatusMsg = "Use Space on an item to create a playlist"
-			return m, ClearStatusCmd(3 * time.Second)
-		}
+		return m.handleNewPlaylist()
 	}
 
 	// Let the focused column handle remaining keys (j/k/g/G navigation)
@@ -230,130 +98,61 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // routeToModal routes key input to active modals
 // Returns (handled, model, cmd) where handled is true if a modal consumed the input
 func (m Model) routeToModal(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
-	var cmds []tea.Cmd
-
-	// Handle omnibar if visible
 	if m.GlobalSearch.IsVisible() {
-		var cmd tea.Cmd
-		var selected bool
-		m.GlobalSearch, cmd, selected = m.GlobalSearch.Update(msg)
-		if cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-
-		if m.GlobalSearch.QueryChanged() {
-			query := m.GlobalSearch.Query()
-			results := m.SearchSvc.FilterLocal(query, nil, m.Libraries)
-			m.GlobalSearch.SetResults(results)
-		}
-
-		if selected {
-			if result := m.GlobalSearch.Selected(); result != nil {
-				m.GlobalSearch.Hide()
-				navCmd := m.navigateToSearchResult(*result)
-				if navCmd != nil {
-					cmds = append(cmds, navCmd)
-				}
-			}
-		}
-		return true, m, tea.Batch(cmds...)
+		return m.handleGlobalSearchInput(msg)
 	}
-
-	// Handle sort modal if visible
 	if m.SortModal.IsVisible() {
-		handled, selection := m.SortModal.HandleKey(msg.String())
-		if handled {
-			if selection != nil {
-				// Apply sort to current column
-				if top := m.ColumnStack.Top(); top != nil {
-					top.ApplySort(selection.Field, selection.Direction)
-					m.updateInspector()
-				}
-			}
-			return true, m, nil
-		}
+		return m.handleSortModalInput(msg)
 	}
-
-	// Handle playlist modal if visible
 	if m.PlaylistModal.IsVisible() {
-		handled, shouldClose, shouldCreate := m.PlaylistModal.HandleKeyMsg(msg)
-		if handled {
-			if shouldCreate {
-				// Create new playlist with current item, plus apply any checkbox changes
-				title := m.PlaylistModal.NewPlaylistTitle()
-				item := m.PlaylistModal.Item()
-				changes := m.PlaylistModal.GetChanges()
-				m.PlaylistModal.Hide()
-
-				if title != "" && item != nil {
-					var batchCmds []tea.Cmd
-					batchCmds = append(batchCmds, CreatePlaylistCmd(m.PlaylistSvc, title, []string{item.ID}))
-					// Also apply any checkbox changes
-					for _, change := range changes {
-						if change.Add {
-							batchCmds = append(batchCmds, AddToPlaylistCmd(m.PlaylistSvc, change.PlaylistID, []string{item.ID}))
-						} else {
-							batchCmds = append(batchCmds, RemoveFromPlaylistCmd(m.PlaylistSvc, change.PlaylistID, item.ID))
-						}
-					}
-					return true, m, tea.Batch(batchCmds...)
-				}
-			}
-			if shouldClose {
-				// Apply pending changes
-				changes := m.PlaylistModal.GetChanges()
-				item := m.PlaylistModal.Item()
-				m.PlaylistModal.Hide()
-
-				if len(changes) > 0 && item != nil {
-					// Apply changes (add/remove from playlists)
-					var batchCmds []tea.Cmd
-					for _, change := range changes {
-						if change.Add {
-							batchCmds = append(batchCmds, AddToPlaylistCmd(m.PlaylistSvc, change.PlaylistID, []string{item.ID}))
-						} else {
-							batchCmds = append(batchCmds, RemoveFromPlaylistCmd(m.PlaylistSvc, change.PlaylistID, item.ID))
-						}
-					}
-					if len(batchCmds) > 0 {
-						return true, m, tea.Batch(batchCmds...)
-					}
-				}
-			}
-			return true, m, nil
-		}
+		return m.handlePlaylistModalInput(msg)
 	}
-
-	// Handle input modal if visible
 	if m.InputModal.IsVisible() {
-		var cmd tea.Cmd
-		var submitted bool
-		m.InputModal, cmd, submitted = m.InputModal.Update(msg)
-		if submitted {
-			title := m.InputModal.Value()
-			m.InputModal.Hide()
-			if title != "" {
-				return true, m, CreatePlaylistCmd(m.PlaylistSvc, title, []string{})
-			}
-		}
-		if cmd != nil {
-			return true, m, cmd
-		}
-		return true, m, nil
+		return m.handleInputModalInput(msg)
 	}
-
-	// Handle filter typing mode
 	if top := m.ColumnStack.Top(); top != nil && top.IsFilterTyping() {
-		oldCursor := top.SelectedIndex()
-		newCol, _ := top.Update(msg)
-		m.ColumnStack.columns[len(m.ColumnStack.columns)-1] = newCol
-		if oldCursor != top.SelectedIndex() {
-			m.updateInspector()
-		}
-		return true, m, nil
+		return m.handleFilterTypingInput(msg)
 	}
-
 	return false, m, nil
+}
+
+// ----------------------------------------------------------------------------
+// Global key handlers
+// ----------------------------------------------------------------------------
+
+// handleHelp shows the help screen
+func (m Model) handleHelp() (tea.Model, tea.Cmd) {
+	m.State = StateHelp
+	return m, nil
+}
+
+// handleEscape clears active filter or cancels nav plan
+func (m Model) handleEscape() (tea.Model, tea.Cmd) {
+	if top := m.ColumnStack.Top(); top != nil && top.IsFiltering() {
+		top.ClearFilter()
+		return m, nil
+	}
+	if m.navPlan != nil {
+		m.clearNavPlan()
+		m.StatusMsg = "Navigation cancelled"
+		return m, ClearStatusCmd(2 * time.Second)
+	}
+	return m, nil
+}
+
+// handleFilter toggles filter mode in the current column
+func (m Model) handleFilter() (tea.Model, tea.Cmd) {
+	if top := m.ColumnStack.Top(); top != nil {
+		top.ToggleFilter()
+	}
+	return m, nil
+}
+
+// handleGlobalSearch opens the global search modal
+func (m Model) handleGlobalSearch() (tea.Model, tea.Cmd) {
+	m.GlobalSearch.Show()
+	m.GlobalSearch.SetSize(m.Width, m.Height)
+	return m, m.GlobalSearch.Init()
 }
 
 // handleDrillIn handles drilling into the selected item (l key)
@@ -362,16 +161,12 @@ func (m Model) handleDrillIn() (tea.Model, tea.Cmd) {
 	if top == nil {
 		return m, nil
 	}
-
 	if !top.CanDrillInto() {
-		// Can't drill into leaf items - play instead
 		if item := top.SelectedMediaItem(); item != nil {
-			resume := item.ShouldResume()
-			return m, PlayItemCmd(m.PlaybackSvc, *item, resume)
+			return m, PlayItemCmd(m.PlaybackSvc, *item, item.ShouldResume())
 		}
 		return m, nil
 	}
-
 	return m.drillIntoSelection()
 }
 
@@ -381,16 +176,305 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 	if top == nil {
 		return m, nil
 	}
-
 	if top.CanDrillInto() {
 		return m.drillIntoSelection()
 	}
-
-	// Not drillable - play the item
 	if item := top.SelectedMediaItem(); item != nil {
-		resume := item.ShouldResume()
-		return m, PlayItemCmd(m.PlaybackSvc, *item, resume)
+		return m, PlayItemCmd(m.PlaybackSvc, *item, item.ShouldResume())
+	}
+	return m, nil
+}
+
+// handleSort opens the sort modal for movies/shows columns
+func (m Model) handleSort() (tea.Model, tea.Cmd) {
+	top := m.ColumnStack.Top()
+	if top == nil {
+		return m, nil
+	}
+	var opts []components.SortField
+	switch top.ColumnType() {
+	case components.ColumnTypeMovies:
+		opts = components.MovieSortOptions()
+	case components.ColumnTypeShows:
+		opts = components.ShowSortOptions()
+	}
+	if opts != nil {
+		field, dir := top.SortState()
+		m.SortModal.Show(opts, field, dir)
+	}
+	return m, nil
+}
+
+// handleRefresh refreshes the single selected library
+func (m Model) handleRefresh() (tea.Model, tea.Cmd) {
+	libCol := m.libraryColumn()
+	if libCol == nil {
+		return m, nil
+	}
+	lib := libCol.SelectedLibrary()
+	if lib == nil {
+		return m, nil
+	}
+	m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
+	m.SyncingCount++
+	m.Loading = true
+	m.MultiLibSync = false
+	m.updateLibraryStates()
+	return m, SyncLibraryCmd(m.LibrarySvc, *lib, true)
+}
+
+// handleRefreshAll refreshes all libraries and resets to library view
+func (m Model) handleRefreshAll() (tea.Model, tea.Cmd) {
+	m.LibraryStates = make(map[string]components.LibrarySyncState)
+	for _, lib := range m.Libraries {
+		m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
+	}
+	m.SyncingCount = len(m.Libraries)
+	m.Loading = true
+	m.MultiLibSync = true
+	m.updateLibraryStates()
+
+	libCol := components.NewLibraryColumn(m.allLibraryEntries())
+	libCol.SetLibraryStates(m.LibraryStates)
+	m.Inspector.SetLibraryStates(m.LibraryStates)
+	m.ColumnStack.Reset(libCol)
+
+	return m, SyncAllLibrariesCmd(m.LibrarySvc, m.Libraries, true)
+}
+
+// handleMarkWatched marks the selected item as watched
+func (m Model) handleMarkWatched() (tea.Model, tea.Cmd) {
+	top := m.ColumnStack.Top()
+	if top == nil {
+		return m, nil
+	}
+	item := top.SelectedMediaItem()
+	if item == nil {
+		return m, nil
+	}
+	return m, MarkWatchedCmd(m.PlaybackSvc, item.ID, item.Title)
+}
+
+// handleMarkUnwatched marks the selected item as unwatched
+func (m Model) handleMarkUnwatched() (tea.Model, tea.Cmd) {
+	top := m.ColumnStack.Top()
+	if top == nil {
+		return m, nil
+	}
+	item := top.SelectedMediaItem()
+	if item == nil {
+		return m, nil
+	}
+	return m, MarkUnwatchedCmd(m.PlaybackSvc, item.ID, item.Title)
+}
+
+// handlePlay plays the selected item from the beginning
+func (m Model) handlePlay() (tea.Model, tea.Cmd) {
+	top := m.ColumnStack.Top()
+	if top == nil {
+		return m, nil
+	}
+	item := top.SelectedMediaItem()
+	if item == nil {
+		return m, nil
+	}
+	return m, PlayItemCmd(m.PlaybackSvc, *item, false)
+}
+
+// handleToggleInspector toggles the inspector panel visibility
+func (m Model) handleToggleInspector() (tea.Model, tea.Cmd) {
+	m.ShowInspector = !m.ShowInspector
+	m.updateLayout()
+	return m, nil
+}
+
+// handleLogout shows the logout confirmation
+func (m Model) handleLogout() (tea.Model, tea.Cmd) {
+	m.State = StateConfirmLogout
+	return m, nil
+}
+
+// handlePlaylistModal opens the playlist modal for the selected item
+func (m Model) handlePlaylistModal() (tea.Model, tea.Cmd) {
+	top := m.ColumnStack.Top()
+	if top == nil {
+		return m, nil
+	}
+	item := top.SelectedMediaItem()
+	if item != nil && m.PlaylistSvc != nil {
+		return m, LoadPlaylistModalDataCmd(m.PlaylistSvc, item)
+	}
+	return m, nil
+}
+
+// handleDelete handles deletion of playlists or playlist items
+func (m Model) handleDelete() (tea.Model, tea.Cmd) {
+	top := m.ColumnStack.Top()
+	if top == nil {
+		return m, nil
+	}
+	switch top.ColumnType() {
+	case components.ColumnTypePlaylistItems:
+		item := top.SelectedMediaItem()
+		if item != nil && m.currentPlaylistID != "" {
+			return m, RemoveFromPlaylistCmd(m.PlaylistSvc, m.currentPlaylistID, item.ID)
+		}
+	case components.ColumnTypePlaylists:
+		playlist := top.SelectedPlaylist()
+		if playlist != nil {
+			return m, DeletePlaylistCmd(m.PlaylistSvc, playlist.ID)
+		}
+	}
+	return m, nil
+}
+
+// handleNewPlaylist shows hint about creating playlists
+func (m Model) handleNewPlaylist() (tea.Model, tea.Cmd) {
+	top := m.ColumnStack.Top()
+	if top != nil && top.ColumnType() == components.ColumnTypePlaylists {
+		m.StatusMsg = "Use Space on an item to create a playlist"
+		return m, ClearStatusCmd(3 * time.Second)
+	}
+	return m, nil
+}
+
+// ----------------------------------------------------------------------------
+// Modal input handlers
+// ----------------------------------------------------------------------------
+
+// handleGlobalSearchInput handles input when global search is visible
+func (m Model) handleGlobalSearchInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
+	var cmds []tea.Cmd
+	var cmd tea.Cmd
+	var selected bool
+
+	m.GlobalSearch, cmd, selected = m.GlobalSearch.Update(msg)
+	if cmd != nil {
+		cmds = append(cmds, cmd)
 	}
 
-	return m, nil
+	if m.GlobalSearch.QueryChanged() {
+		query := m.GlobalSearch.Query()
+		results := m.SearchSvc.FilterLocal(query, nil, m.Libraries)
+		m.GlobalSearch.SetResults(results)
+	}
+
+	if selected {
+		if result := m.GlobalSearch.Selected(); result != nil {
+			m.GlobalSearch.Hide()
+			if navCmd := m.navigateToSearchResult(*result); navCmd != nil {
+				cmds = append(cmds, navCmd)
+			}
+		}
+	}
+	return true, m, tea.Batch(cmds...)
+}
+
+// handleSortModalInput handles input when sort modal is visible
+func (m Model) handleSortModalInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
+	handled, selection := m.SortModal.HandleKey(msg.String())
+	if handled {
+		if selection != nil {
+			if top := m.ColumnStack.Top(); top != nil {
+				top.ApplySort(selection.Field, selection.Direction)
+				m.updateInspector()
+			}
+		}
+		return true, m, nil
+	}
+	return false, m, nil
+}
+
+// handlePlaylistModalInput handles input when playlist modal is visible
+func (m Model) handlePlaylistModalInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
+	handled, shouldClose, shouldCreate := m.PlaylistModal.HandleKeyMsg(msg)
+	if !handled {
+		return false, m, nil
+	}
+
+	if shouldCreate {
+		return m.applyPlaylistCreate()
+	}
+	if shouldClose {
+		return m.applyPlaylistChanges()
+	}
+	return true, m, nil
+}
+
+// applyPlaylistCreate creates a new playlist and applies checkbox changes
+func (m Model) applyPlaylistCreate() (bool, Model, tea.Cmd) {
+	title := m.PlaylistModal.NewPlaylistTitle()
+	item := m.PlaylistModal.Item()
+	changes := m.PlaylistModal.GetChanges()
+	m.PlaylistModal.Hide()
+
+	if title == "" || item == nil {
+		return true, m, nil
+	}
+
+	cmds := []tea.Cmd{CreatePlaylistCmd(m.PlaylistSvc, title, []string{item.ID})}
+	for _, change := range changes {
+		if change.Add {
+			cmds = append(cmds, AddToPlaylistCmd(m.PlaylistSvc, change.PlaylistID, []string{item.ID}))
+		} else {
+			cmds = append(cmds, RemoveFromPlaylistCmd(m.PlaylistSvc, change.PlaylistID, item.ID))
+		}
+	}
+	return true, m, tea.Batch(cmds...)
+}
+
+// applyPlaylistChanges applies pending playlist checkbox changes
+func (m Model) applyPlaylistChanges() (bool, Model, tea.Cmd) {
+	changes := m.PlaylistModal.GetChanges()
+	item := m.PlaylistModal.Item()
+	m.PlaylistModal.Hide()
+
+	if len(changes) == 0 || item == nil {
+		return true, m, nil
+	}
+
+	var cmds []tea.Cmd
+	for _, change := range changes {
+		if change.Add {
+			cmds = append(cmds, AddToPlaylistCmd(m.PlaylistSvc, change.PlaylistID, []string{item.ID}))
+		} else {
+			cmds = append(cmds, RemoveFromPlaylistCmd(m.PlaylistSvc, change.PlaylistID, item.ID))
+		}
+	}
+	return true, m, tea.Batch(cmds...)
+}
+
+// handleInputModalInput handles input when input modal is visible
+func (m Model) handleInputModalInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
+	var cmd tea.Cmd
+	var submitted bool
+
+	m.InputModal, cmd, submitted = m.InputModal.Update(msg)
+	if submitted {
+		title := m.InputModal.Value()
+		m.InputModal.Hide()
+		if title != "" {
+			return true, m, CreatePlaylistCmd(m.PlaylistSvc, title, []string{})
+		}
+		return true, m, nil
+	}
+	if cmd != nil {
+		return true, m, cmd
+	}
+	return true, m, nil
+}
+
+// handleFilterTypingInput handles input when filter typing mode is active
+func (m Model) handleFilterTypingInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
+	top := m.ColumnStack.Top()
+	if top == nil {
+		return false, m, nil
+	}
+	oldCursor := top.SelectedIndex()
+	newCol, _ := top.Update(msg)
+	m.ColumnStack.columns[len(m.ColumnStack.columns)-1] = newCol
+	if oldCursor != top.SelectedIndex() {
+		m.updateInspector()
+	}
+	return true, m, nil
 }
