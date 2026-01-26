@@ -5,20 +5,19 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/mmcdole/kino/internal/adapter"
 	"github.com/mmcdole/kino/internal/domain"
 )
 
 // PlaybackService orchestrates playback operations
 type PlaybackService struct {
-	launcher *adapter.Launcher
+	launcher domain.Launcher
 	metadata domain.MetadataRepository
 	logger   *slog.Logger
 }
 
 // NewPlaybackService creates a new playback service
 func NewPlaybackService(
-	launcher *adapter.Launcher,
+	launcher domain.Launcher,
 	metadata domain.MetadataRepository,
 	logger *slog.Logger,
 ) *PlaybackService {

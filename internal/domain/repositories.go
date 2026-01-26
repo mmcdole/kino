@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"time"
 )
 
 // LibraryRepository provides access to media libraries and their content
@@ -77,6 +78,12 @@ type PlaylistRepository interface {
 
 	// DeletePlaylist deletes a playlist
 	DeletePlaylist(ctx context.Context, playlistID string) error
+}
+
+// Launcher abstracts media player launching
+type Launcher interface {
+	// Launch opens a media URL with optional start offset
+	Launch(url string, startOffset time.Duration) error
 }
 
 // AuthResult contains the result of a successful authentication

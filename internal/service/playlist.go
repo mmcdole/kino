@@ -11,8 +11,8 @@ import (
 
 // PlaylistService provides playlist management with memory caching
 type PlaylistService struct {
-	repo    domain.PlaylistRepository
-	logger  *slog.Logger
+	repo   domain.PlaylistRepository
+	logger *slog.Logger
 
 	// Memory-only cache (playlists change frequently, no disk persistence)
 	cacheMu   sync.RWMutex
@@ -140,11 +140,4 @@ func (s *PlaylistService) InvalidateCache() {
 	s.playlists = nil
 	s.cacheTime = time.Time{}
 	s.cacheMu.Unlock()
-}
-
-// GetCachedPlaylists returns cached playlists without fetching (for UI)
-func (s *PlaylistService) GetCachedPlaylists() []*domain.Playlist {
-	s.cacheMu.RLock()
-	defer s.cacheMu.RUnlock()
-	return s.playlists
 }

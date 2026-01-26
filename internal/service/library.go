@@ -33,13 +33,6 @@ const (
 	PrefixEpisodes = "episodes:"
 )
 
-// LibraryCachePrefixes returns all cache key prefixes that should be invalidated
-// when refreshing a library. This includes top-level library content but not
-// nested content like seasons/episodes which are keyed by parent ID, not library ID.
-func LibraryCachePrefixes() []string {
-	return []string{PrefixMovies, PrefixShows, PrefixMixed}
-}
-
 // cachedResult stores cached data
 type cachedResult struct {
 	Items interface{}
@@ -524,8 +517,8 @@ func (s *LibraryService) GetEpisodes(ctx context.Context, seasonID string) ([]*d
 func (s *LibraryService) RefreshLibrary(libID string) {
 	s.cacheMu.Lock()
 	defer s.cacheMu.Unlock()
-	// Clear all cache entries related to this library
-	for _, prefix := range LibraryCachePrefixes() {
+	// Clear all cache entries related to this library (movies, shows, mixed)
+	for _, prefix := range []string{PrefixMovies, PrefixShows, PrefixMixed} {
 		key := prefix + libID
 		delete(s.cache, key)
 		s.clearDiskCache(key) // Also clear disk cache
