@@ -122,18 +122,6 @@ type NavigateMsg struct {
 // NavigateBackMsg signals navigation back one level
 type NavigateBackMsg struct{}
 
-// ShowHelpMsg shows the help screen
-type ShowHelpMsg struct{}
-
-// HideHelpMsg hides the help screen
-type HideHelpMsg struct{}
-
-// ShowSearchMsg shows the search modal
-type ShowSearchMsg struct{}
-
-// HideSearchMsg hides the search modal
-type HideSearchMsg struct{}
-
 // SelectItemMsg signals item selection in the browser
 type SelectItemMsg struct {
 	Index int
