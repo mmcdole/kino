@@ -221,16 +221,6 @@ func Pad(s string, width int) string {
 	return s + spaces(width-len(s))
 }
 
-// Center centers a string in the given width
-func Center(s string, width int) string {
-	if len(s) >= width {
-		return s
-	}
-	leftPad := (width - len(s)) / 2
-	rightPad := width - len(s) - leftPad
-	return spaces(leftPad) + s + spaces(rightPad)
-}
-
 func spaces(n int) string {
 	if n <= 0 {
 		return ""
@@ -273,60 +263,6 @@ func RenderWatchStatus(isPlayed bool, viewOffset int64) string {
 		return InProgressDot
 	}
 	return UnplayedDot
-}
-
-// RenderWatchStatusWithBg renders watch status with optional background for selection
-func RenderWatchStatusWithBg(isPlayed bool, viewOffset int64, selected bool, bg lipgloss.Color) string {
-	var char string
-	var style lipgloss.Style
-
-	if isPlayed {
-		char = PlayedChar
-		style = PlayedStyle
-	} else if viewOffset > 0 {
-		char = InProgressChar
-		style = InProgressStyle
-	} else {
-		char = UnplayedChar
-		style = UnplayedStyle
-	}
-
-	if selected {
-		style = style.Background(bg)
-	}
-
-	return style.Render(char)
-}
-
-// WatchStatus enum values (mirrors domain.WatchStatus to avoid circular import)
-const (
-	WatchStatusUnwatched  = 0
-	WatchStatusInProgress = 1
-	WatchStatusWatched    = 2
-)
-
-// RenderWatchStatusEnumWithBg renders watch status from enum with optional background
-func RenderWatchStatusEnumWithBg(status int, selected bool, bg lipgloss.Color) string {
-	var char string
-	var style lipgloss.Style
-
-	switch status {
-	case WatchStatusWatched:
-		char = PlayedChar
-		style = PlayedStyle
-	case WatchStatusInProgress:
-		char = InProgressChar
-		style = InProgressStyle
-	default:
-		char = UnplayedChar
-		style = UnplayedStyle
-	}
-
-	if selected {
-		style = style.Background(bg)
-	}
-
-	return style.Render(char)
 }
 
 // RenderListRow renders a complete list row with uniform background when selected.

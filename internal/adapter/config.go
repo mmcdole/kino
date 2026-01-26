@@ -160,23 +160,6 @@ func SaveConfig(cfg *Config) error {
 	return nil
 }
 
-// SaveToken updates just the token in the configuration
-func SaveToken(token string) error {
-	viper.Set("server.token", token)
-
-	configPath := defaultConfigPath()
-	if err := os.MkdirAll(configPath, 0755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
-	}
-
-	configFile := filepath.Join(configPath, "config.yaml")
-	if err := viper.WriteConfigAs(configFile); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
-	}
-
-	return nil
-}
-
 // IsConfigured returns true if the server URL and token are set
 func (c *Config) IsConfigured() bool {
 	return c.Server.URL != "" && c.Server.Token != ""
@@ -223,9 +206,4 @@ func ClearCache() error {
 		return fmt.Errorf("failed to clear cache: %w", err)
 	}
 	return nil
-}
-
-// GetCachePath returns the cache directory path
-func GetCachePath() string {
-	return defaultCachePath()
 }

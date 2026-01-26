@@ -303,20 +303,6 @@ func mapPlaylist(m Metadata, serverURL string) domain.Playlist {
 	}
 }
 
-// MapPlaylistFromPlaylistMetadata converts PlaylistMetadata to domain.Playlist
-func MapPlaylistFromPlaylistMetadata(pm PlaylistMetadata, serverURL string) domain.Playlist {
-	return domain.Playlist{
-		ID:           pm.RatingKey,
-		Title:        pm.Title,
-		PlaylistType: pm.PlaylistType,
-		Smart:        pm.Smart == 1,
-		ItemCount:    pm.LeafCount,
-		Duration:     time.Duration(pm.Duration) * time.Millisecond,
-		ThumbURL:     buildThumbURL(serverURL, pm.Composite),
-		UpdatedAt:    pm.UpdatedAt,
-	}
-}
-
 // getPlaylistType extracts the playlist type from metadata
 func getPlaylistType(metadataType string) string {
 	// Plex uses "playlist" as the type, but we want the content type

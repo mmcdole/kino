@@ -1,7 +1,6 @@
 package plex
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,8 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
-	"strings"
 	"time"
 
 	"github.com/mmcdole/kino/internal/domain"
@@ -305,15 +302,4 @@ func (f *AuthFlow) Run(ctx context.Context, serverURL string) (*domain.AuthResul
 		UserID:   "",
 		Username: "", // Could fetch from /api/v2/user but not needed
 	}, nil
-}
-
-// PromptForServerURL prompts the user to enter a Plex server URL
-func PromptForServerURL() (string, error) {
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Print("Enter your Plex server URL (e.g., http://192.168.1.100:32400): ")
-	url, err := reader.ReadString('\n')
-	if err != nil {
-		return "", fmt.Errorf("failed to read input: %w", err)
-	}
-	return strings.TrimSpace(url), nil
 }
