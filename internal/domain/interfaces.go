@@ -19,9 +19,6 @@ type ListItem interface {
 	// GetDescription returns secondary info for display (e.g., "2024" for movies, "3 Seasons" for shows)
 	GetDescription() string
 
-	// GetFilterValue returns the string used for fuzzy filtering (usually same as title)
-	GetFilterValue() string
-
 	// GetItemType returns the type identifier: "movie", "show", "season", "episode"
 	GetItemType() string
 

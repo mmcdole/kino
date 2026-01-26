@@ -89,13 +89,7 @@ func NewLibraryColumn(libraries []domain.Library) *ListColumn {
 	return col
 }
 
-// Implement Column interface
-
-func (c *ListColumn) Init() tea.Cmd {
-	return nil
-}
-
-func (c *ListColumn) Update(msg tea.Msg) (Column, tea.Cmd) {
+func (c *ListColumn) Update(msg tea.Msg) (*ListColumn, tea.Cmd) {
 	if !c.focused {
 		return c, nil
 	}
@@ -245,10 +239,6 @@ func (c *ListColumn) IsFocused() bool {
 
 func (c *ListColumn) Title() string {
 	return c.title
-}
-
-func (c *ListColumn) SetTitle(title string) {
-	c.title = title
 }
 
 func (c *ListColumn) SelectedItem() interface{} {
@@ -578,7 +568,7 @@ func (c *ListColumn) getFilterValues() []string {
 			rawIdx = c.sortedIdx[i]
 		}
 		if rawIdx < len(c.items) {
-			titles[i] = c.items[rawIdx].GetFilterValue()
+			titles[i] = c.items[rawIdx].GetTitle()
 		}
 	}
 	return titles
