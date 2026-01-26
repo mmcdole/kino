@@ -134,7 +134,6 @@ type NavigationContext struct {
 	ShowID      string
 	ShowTitle   string
 	SeasonID    string
-	SeasonNum   int
 	EpisodeID   string
 }
 

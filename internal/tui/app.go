@@ -465,34 +465,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Update omnibar if visible
-	if m.GlobalSearch.IsVisible() {
-		var selected bool
-		var cmd tea.Cmd
-		m.GlobalSearch, cmd, selected = m.GlobalSearch.Update(msg)
-		if cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-
-		// Handle real-time filtering
-		if m.GlobalSearch.QueryChanged() {
-			query := m.GlobalSearch.Query()
-			results := m.SearchSvc.FilterLocal(query, nil, m.Libraries)
-			m.GlobalSearch.SetResults(results)
-		}
-
-		if selected {
-			result := m.GlobalSearch.Selected()
-			if result != nil {
-				m.GlobalSearch.Hide()
-				navCmd := m.navigateToSearchResult(*result)
-				if navCmd != nil {
-					cmds = append(cmds, navCmd)
-				}
-			}
-		}
-	}
-
 	return m, tea.Batch(cmds...)
 }
 

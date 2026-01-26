@@ -12,5 +12,4 @@ const (
 	ColumnTypeEpisodes
 	ColumnTypePlaylists
 	ColumnTypePlaylistItems
-	ColumnTypeEmpty
 )

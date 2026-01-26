@@ -20,7 +20,6 @@ type Inspector struct {
 	item          interface{}
 	width         int
 	height        int
-	focused       bool
 	offset        int // scroll offset
 	maxVisible    int // max visible lines
 	libraryStates map[string]LibrarySyncState
@@ -68,9 +67,6 @@ func (i Inspector) Update(_ tea.Msg) (Inspector, tea.Cmd) {
 // View renders the component
 func (i Inspector) View() string {
 	style := styles.InactiveBorder
-	if i.focused {
-		style = styles.ActiveBorder
-	}
 
 	// Border takes 2 chars (1 each side), leave 1 char safety margin
 	contentWidth := i.width - 3
@@ -132,24 +128,16 @@ func (i Inspector) renderInspector(width int) string {
 	switch v := i.item.(type) {
 	case *domain.MediaItem:
 		return i.renderMediaItemInspector(*v, width)
-	case domain.MediaItem:
-		return i.renderMediaItemInspector(v, width)
 	case *domain.Show:
 		return i.renderShowInspector(*v, width)
-	case domain.Show:
-		return i.renderShowInspector(v, width)
 	case *domain.Season:
 		return i.renderSeasonInspector(*v, width)
-	case domain.Season:
-		return i.renderSeasonInspector(v, width)
 	case *domain.Library:
 		return i.renderLibraryInspector(*v, width)
 	case domain.Library:
 		return i.renderLibraryInspector(v, width)
 	case *domain.Playlist:
 		return i.renderPlaylistInspector(*v, width)
-	case domain.Playlist:
-		return i.renderPlaylistInspector(v, width)
 	default:
 		return styles.DimStyle.Render("No item selected")
 	}
