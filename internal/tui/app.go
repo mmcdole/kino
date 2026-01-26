@@ -62,7 +62,7 @@ type Model struct {
 	// UI Components - Miller Columns
 	ColumnStack   *ColumnStack             // Stack of navigable list columns
 	Inspector     components.Inspector     // View projection (always shows details for middle column selection)
-	Omnibar       components.Omnibar       // Search modal
+	GlobalSearch  components.GlobalSearch  // Search modal
 	SortModal     components.SortModal     // Sort field selector
 	PlaylistModal components.PlaylistModal // Playlist management modal
 	InputModal    components.InputModal    // Simple text input modal
@@ -110,7 +110,7 @@ func NewModel(
 		SessionSvc:    sessionSvc,
 		ColumnStack:   NewColumnStack(),
 		Inspector:     components.NewInspector(),
-		Omnibar:       components.NewOmnibar(),
+		GlobalSearch:  components.NewGlobalSearch(),
 		PlaylistModal: components.NewPlaylistModal(),
 		InputModal:    components.NewInputModal(),
 		LibraryStates: make(map[string]components.LibrarySyncState),
@@ -279,10 +279,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.advanceNavPlanAfterLoad(AwaitEpisodes, msg.SeasonID); cmd != nil {
 			return m, cmd
 		}
-		return m, nil
-
-	case SearchResultsMsg:
-		m.Omnibar.SetResults(msg.Results)
 		return m, nil
 
 	case PlaybackStartedMsg:
@@ -468,40 +464,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Update omnibar if visible
-	if m.Omnibar.IsVisible() {
+	if m.GlobalSearch.IsVisible() {
 		var selected bool
 		var cmd tea.Cmd
-		m.Omnibar, cmd, selected = m.Omnibar.Update(msg)
+		m.GlobalSearch, cmd, selected = m.GlobalSearch.Update(msg)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 
 		// Handle real-time filtering
-		if m.Omnibar.IsFilterMode() && m.Omnibar.QueryChanged() {
-			query := m.Omnibar.Query()
+		if m.GlobalSearch.QueryChanged() {
+			query := m.GlobalSearch.Query()
 			results := m.SearchSvc.FilterLocal(query, nil, m.Libraries)
-			m.Omnibar.SetFilterResults(results)
+			m.GlobalSearch.SetResults(results)
 		}
 
 		if selected {
-			if m.Omnibar.IsFilterMode() {
-				result := m.Omnibar.SelectedFilterResult()
-				if result != nil {
-					m.Omnibar.Hide()
-					navCmd := m.navigateToFilteredItem(*result)
-					if navCmd != nil {
-						cmds = append(cmds, navCmd)
-					}
-				}
-			} else {
-				result := m.Omnibar.SelectedResult()
-				if result != nil {
-					m.Omnibar.Hide()
-					var cmd tea.Cmd
-					m, cmd = m.handleItemSelection(*result)
-					if cmd != nil {
-						cmds = append(cmds, cmd)
-					}
+			result := m.GlobalSearch.Selected()
+			if result != nil {
+				m.GlobalSearch.Hide()
+				navCmd := m.navigateToSearchResult(*result)
+				if navCmd != nil {
+					cmds = append(cmds, navCmd)
 				}
 			}
 		}
@@ -571,9 +555,9 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, Keys.GlobalSearch):
 		// Global search via Omnibar
-		m.Omnibar.ShowFilterMode()
-		m.Omnibar.SetSize(m.Width, m.Height)
-		return m, m.Omnibar.Init()
+		m.GlobalSearch.Show()
+		m.GlobalSearch.SetSize(m.Width, m.Height)
+		return m, m.GlobalSearch.Init()
 
 	case key.Matches(msg, Keys.Sort):
 		// Sort modal (only for movies/shows columns)
@@ -740,33 +724,26 @@ func (m Model) routeToModal(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	// Handle omnibar if visible
-	if m.Omnibar.IsVisible() {
+	if m.GlobalSearch.IsVisible() {
 		var cmd tea.Cmd
 		var selected bool
-		m.Omnibar, cmd, selected = m.Omnibar.Update(msg)
+		m.GlobalSearch, cmd, selected = m.GlobalSearch.Update(msg)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 
-		if m.Omnibar.IsFilterMode() && m.Omnibar.QueryChanged() {
-			query := m.Omnibar.Query()
+		if m.GlobalSearch.QueryChanged() {
+			query := m.GlobalSearch.Query()
 			results := m.SearchSvc.FilterLocal(query, nil, m.Libraries)
-			m.Omnibar.SetFilterResults(results)
+			m.GlobalSearch.SetResults(results)
 		}
 
 		if selected {
-			if m.Omnibar.IsFilterMode() {
-				if result := m.Omnibar.SelectedFilterResult(); result != nil {
-					m.Omnibar.Hide()
-					navCmd := m.navigateToFilteredItem(*result)
-					if navCmd != nil {
-						cmds = append(cmds, navCmd)
-					}
-				}
-			} else {
-				if result := m.Omnibar.SelectedResult(); result != nil {
-					m.Omnibar.Hide()
-					cmds = append(cmds, PlayItemCmd(m.PlaybackSvc, *result, false))
+			if result := m.GlobalSearch.Selected(); result != nil {
+				m.GlobalSearch.Hide()
+				navCmd := m.navigateToSearchResult(*result)
+				if navCmd != nil {
+					cmds = append(cmds, navCmd)
 				}
 			}
 		}
@@ -1003,7 +980,7 @@ func (m *Model) updateLayout() {
 	}
 
 	contentHeight := m.Height - ChromeHeight
-	m.Omnibar.SetSize(m.Width, m.Height)
+	m.GlobalSearch.SetSize(m.Width, m.Height)
 
 	stackLen := m.ColumnStack.Len()
 	if stackLen == 0 {
@@ -1176,10 +1153,10 @@ func (m Model) View() string {
 	)
 
 	// Overlay omnibar if visible
-	if m.Omnibar.IsVisible() {
+	if m.GlobalSearch.IsVisible() {
 		view = lipgloss.Place(m.Width, m.Height,
 			lipgloss.Center, lipgloss.Center,
-			m.Omnibar.View())
+			m.GlobalSearch.View())
 	}
 
 	// Overlay sort modal if visible

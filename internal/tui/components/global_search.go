@@ -13,22 +13,20 @@ import (
 	"github.com/mmcdole/kino/internal/tui/styles"
 )
 
-// Omnibar is the fuzzy search modal component
-type Omnibar struct {
-	input         textinput.Model
-	results       []domain.MediaItem
-	filterResults []service.FilterResult // Changed to FilterResult for match highlighting
-	filterMode    bool
-	cursor        int
-	visible       bool
-	width         int
-	height        int
-	loading       bool
-	prevQuery     string // Track query changes for real-time filtering
+// GlobalSearch is the fuzzy search modal component
+type GlobalSearch struct {
+	input     textinput.Model
+	results   []service.FilterResult
+	cursor    int
+	visible   bool
+	width     int
+	height    int
+	loading   bool
+	prevQuery string
 }
 
-// NewOmnibar creates a new omnibar component
-func NewOmnibar() Omnibar {
+// NewGlobalSearch creates a new global search component
+func NewGlobalSearch() GlobalSearch {
 	ti := textinput.New()
 	ti.Placeholder = "Search..."
 	ti.CharLimit = 100
@@ -38,90 +36,61 @@ func NewOmnibar() Omnibar {
 	ti.TextStyle = lipgloss.NewStyle().Foreground(styles.White)
 	ti.PlaceholderStyle = styles.DimStyle
 
-	return Omnibar{
+	return GlobalSearch{
 		input: ti,
 	}
 }
 
-// Show makes the omnibar visible and focuses the input
-func (o *Omnibar) Show() {
+// Show makes the global search visible and focuses the input
+func (o *GlobalSearch) Show() {
 	o.visible = true
-	o.filterMode = false
-	o.input.Focus()
-	o.input.SetValue("")
-	o.input.Placeholder = "Search..."
-	o.results = nil
-	o.filterResults = nil
-	o.cursor = 0
-	o.loading = false
-	o.prevQuery = ""
-}
-
-// ShowFilterMode makes the omnibar visible in filter mode
-func (o *Omnibar) ShowFilterMode() {
-	o.visible = true
-	o.filterMode = true
 	o.input.Focus()
 	o.input.SetValue("")
 	o.input.Placeholder = "Type to search..."
 	o.input.Prompt = "🔍 "
 	o.results = nil
-	o.filterResults = nil
 	o.cursor = 0
 	o.loading = false
 	o.prevQuery = ""
 }
 
-// Hide hides the omnibar
-func (o *Omnibar) Hide() {
+// Hide hides the global search
+func (o *GlobalSearch) Hide() {
 	o.visible = false
-	o.filterMode = false
 	o.input.Blur()
 }
 
-// IsVisible returns true if the omnibar is visible
-func (o Omnibar) IsVisible() bool {
+// IsVisible returns true if the global search is visible
+func (o GlobalSearch) IsVisible() bool {
 	return o.visible
 }
 
-// IsFilterMode returns true if the omnibar is in filter mode
-func (o Omnibar) IsFilterMode() bool {
-	return o.filterMode
-}
-
-// SetResults sets the search results
-func (o *Omnibar) SetResults(results []domain.MediaItem) {
+// SetResults sets the search results with match highlighting data
+func (o *GlobalSearch) SetResults(results []service.FilterResult) {
 	o.results = results
 	o.cursor = 0
 	o.loading = false
 }
 
-// SetFilterResults sets the filter results with match highlighting data
-func (o *Omnibar) SetFilterResults(results []service.FilterResult) {
-	o.filterResults = results
-	o.cursor = 0
-	o.loading = false
-}
-
 // SetLoading sets the loading state
-func (o *Omnibar) SetLoading(loading bool) {
+func (o *GlobalSearch) SetLoading(loading bool) {
 	o.loading = loading
 }
 
 // SetSize updates the component dimensions
-func (o *Omnibar) SetSize(width, height int) {
+func (o *GlobalSearch) SetSize(width, height int) {
 	o.width = width
 	o.height = height
 	o.input.Width = width - 10
 }
 
 // Query returns the current search query
-func (o Omnibar) Query() string {
+func (o GlobalSearch) Query() string {
 	return o.input.Value()
 }
 
 // QueryChanged returns true if the query changed since last check and updates prevQuery
-func (o *Omnibar) QueryChanged() bool {
+func (o *GlobalSearch) QueryChanged() bool {
 	current := o.input.Value()
 	if current != o.prevQuery {
 		o.prevQuery = current
@@ -130,37 +99,26 @@ func (o *Omnibar) QueryChanged() bool {
 	return false
 }
 
-// SelectedResult returns the selected search result
-func (o Omnibar) SelectedResult() *domain.MediaItem {
+// Selected returns the selected result's FilterItem
+func (o GlobalSearch) Selected() *service.FilterItem {
 	if len(o.results) == 0 || o.cursor >= len(o.results) {
 		return nil
 	}
-	return &o.results[o.cursor]
+	return &o.results[o.cursor].FilterItem
 }
 
-// SelectedFilterResult returns the selected filter result's FilterItem
-func (o Omnibar) SelectedFilterResult() *service.FilterItem {
-	if len(o.filterResults) == 0 || o.cursor >= len(o.filterResults) {
-		return nil
-	}
-	return &o.filterResults[o.cursor].FilterItem
-}
-
-// ResultCount returns the number of results (filter or search mode)
-func (o Omnibar) ResultCount() int {
-	if o.filterMode {
-		return len(o.filterResults)
-	}
+// ResultCount returns the number of results
+func (o GlobalSearch) ResultCount() int {
 	return len(o.results)
 }
 
 // Init initializes the component
-func (o Omnibar) Init() tea.Cmd {
+func (o GlobalSearch) Init() tea.Cmd {
 	return textinput.Blink
 }
 
 // Update handles messages
-func (o Omnibar) Update(msg tea.Msg) (Omnibar, tea.Cmd, bool) {
+func (o GlobalSearch) Update(msg tea.Msg) (GlobalSearch, tea.Cmd, bool) {
 	if !o.visible {
 		return o, nil, false
 	}
@@ -171,23 +129,23 @@ func (o Omnibar) Update(msg tea.Msg) (Omnibar, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
-		case key.Matches(msg, OmnibarKeys.Escape):
+		case key.Matches(msg, GlobalSearchKeys.Escape):
 			o.Hide()
 			return o, nil, false
 
-		case key.Matches(msg, OmnibarKeys.Enter):
+		case key.Matches(msg, GlobalSearchKeys.Enter):
 			if resultCount > 0 {
 				return o, nil, true // Selected
 			}
 			return o, nil, false
 
-		case key.Matches(msg, OmnibarKeys.Down):
+		case key.Matches(msg, GlobalSearchKeys.Down):
 			if o.cursor < resultCount-1 {
 				o.cursor++
 			}
 			return o, nil, false
 
-		case key.Matches(msg, OmnibarKeys.Up):
+		case key.Matches(msg, GlobalSearchKeys.Up):
 			if o.cursor > 0 {
 				o.cursor--
 			}
@@ -206,7 +164,7 @@ func (o Omnibar) Update(msg tea.Msg) (Omnibar, tea.Cmd, bool) {
 }
 
 // View renders the component
-func (o Omnibar) View() string {
+func (o GlobalSearch) View() string {
 	if !o.visible {
 		return ""
 	}
@@ -223,23 +181,19 @@ func (o Omnibar) View() string {
 
 	var b strings.Builder
 
-	// Title (no background styling - let the modal handle it)
-	if o.filterMode {
-		b.WriteString("Global Search")
-		b.WriteString("\n\n")
-	}
+	// Title
+	b.WriteString("Global Search")
+	b.WriteString("\n\n")
 
 	// Input field
 	b.WriteString(o.input.View())
 	b.WriteString("\n\n")
 
-	// Results - handle both filter mode and search mode
+	// Results
 	if o.loading {
 		b.WriteString(styles.SpinnerStyle.Render("Searching..."))
-	} else if o.filterMode {
-		o.renderFilterResults(&b, modalWidth, maxResults)
 	} else {
-		o.renderSearchResults(&b, modalWidth, maxResults)
+		o.renderResults(&b, modalWidth, maxResults)
 	}
 
 	// Center the modal
@@ -280,12 +234,12 @@ func highlightMatches(text string, matchedIndexes []int, selected bool) string {
 	// ANSI escape codes for inline styling (no padding)
 	// Orange/bold for matches, gray for normal text
 	const (
-		reset     = "\033[0m"
-		orange    = "\033[38;5;208m" // PlexOrange approximate
+		reset      = "\033[0m"
+		orange     = "\033[38;5;208m" // PlexOrange approximate
 		orangeBold = "\033[38;5;208;1m"
-		gray      = "\033[38;5;250m" // LightGray approximate
-		white     = "\033[38;5;255m"
-		bgSlate   = "\033[48;5;238m" // SlateLight approximate
+		gray       = "\033[38;5;250m" // LightGray approximate
+		white      = "\033[38;5;255m"
+		bgSlate    = "\033[48;5;238m" // SlateLight approximate
 	)
 
 	var matchStart, matchEnd, normalStart, normalEnd string
@@ -332,24 +286,24 @@ func highlightMatches(text string, matchedIndexes []int, selected bool) string {
 	return result.String()
 }
 
-// renderFilterResults renders the filter mode results
-func (o Omnibar) renderFilterResults(b *strings.Builder, modalWidth, maxResults int) {
-	if len(o.filterResults) == 0 && o.input.Value() != "" {
+// renderResults renders the search results
+func (o GlobalSearch) renderResults(b *strings.Builder, modalWidth, maxResults int) {
+	if len(o.results) == 0 && o.input.Value() != "" {
 		b.WriteString(styles.DimStyle.Render("No matches found"))
 		return
 	}
-	if len(o.filterResults) == 0 {
+	if len(o.results) == 0 {
 		// Don't show anything when empty - placeholder already guides the user
 		return
 	}
 
-	displayCount := len(o.filterResults)
+	displayCount := len(o.results)
 	if displayCount > maxResults {
 		displayCount = maxResults
 	}
 
 	for i := 0; i < displayCount; i++ {
-		result := o.filterResults[i]
+		result := o.results[i]
 		selected := i == o.cursor
 
 		var line strings.Builder
@@ -364,9 +318,6 @@ func (o Omnibar) renderFilterResults(b *strings.Builder, modalWidth, maxResults 
 			line.WriteString(styles.DimBadgeStyle.Render("EP"))
 		}
 		line.WriteString(" ")
-
-		// Note: Library name display removed in refactor
-		// FilterItem now contains only LibraryID, navigation context is built in TUI layer
 
 		// Build display title
 		title := result.Title
@@ -395,89 +346,7 @@ func (o Omnibar) renderFilterResults(b *strings.Builder, modalWidth, maxResults 
 		b.WriteString("\n")
 	}
 
-	if len(o.filterResults) > maxResults {
-		b.WriteString(styles.DimStyle.Render(fmt.Sprintf("... and %d more", len(o.filterResults)-maxResults)))
-	}
-}
-
-// renderSearchResults renders the search mode results (original behavior)
-func (o Omnibar) renderSearchResults(b *strings.Builder, modalWidth, maxResults int) {
-	if len(o.results) == 0 && o.input.Value() != "" {
-		b.WriteString(styles.DimStyle.Render("No results"))
-		return
-	}
-
-	displayCount := len(o.results)
-	if displayCount > maxResults {
-		displayCount = maxResults
-	}
-
-	for i := 0; i < displayCount; i++ {
-		result := o.results[i]
-		selected := i == o.cursor
-
-		// Build result line
-		var line strings.Builder
-
-		// Watch status indicator
-		indicator := styles.RenderWatchStatus(result.IsPlayed, int64(result.ViewOffset.Milliseconds()))
-		line.WriteString(indicator)
-		line.WriteString(" ")
-
-		// Type badge
-		switch result.Type {
-		case domain.MediaTypeMovie:
-			line.WriteString(styles.DimBadgeStyle.Render("MOV"))
-		case domain.MediaTypeEpisode:
-			line.WriteString(styles.DimBadgeStyle.Render("EP"))
-		}
-		line.WriteString(" ")
-
-		// Title
-		title := result.Title
-		if result.Type == domain.MediaTypeEpisode {
-			title = result.ShowTitle + " - " + result.EpisodeCode() + " " + result.Title
-		}
-		if result.Year > 0 && result.Type == domain.MediaTypeMovie {
-			title = title + " (" + intToString(result.Year) + ")"
-		}
-		title = styles.Truncate(title, modalWidth-15)
-
-		style := styles.NormalItemStyle
-		if selected {
-			style = styles.SelectedItemStyle
-		}
-		line.WriteString(style.Render(title))
-
-		b.WriteString(line.String())
-		b.WriteString("\n")
-	}
-
 	if len(o.results) > maxResults {
-		b.WriteString(styles.DimStyle.Render("... and " + intToString(len(o.results)-maxResults) + " more"))
+		b.WriteString(styles.DimStyle.Render(fmt.Sprintf("... and %d more", len(o.results)-maxResults)))
 	}
-}
-
-// intToString converts int to string without importing strconv
-func intToString(n int) string {
-	if n == 0 {
-		return "0"
-	}
-
-	negative := n < 0
-	if negative {
-		n = -n
-	}
-
-	var digits []byte
-	for n > 0 {
-		digits = append([]byte{byte('0' + n%10)}, digits...)
-		n /= 10
-	}
-
-	if negative {
-		digits = append([]byte{'-'}, digits...)
-	}
-
-	return string(digits)
 }

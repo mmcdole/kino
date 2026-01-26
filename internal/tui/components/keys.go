@@ -67,17 +67,17 @@ func DefaultListColumnKeyMap() ListColumnKeyMap {
 	}
 }
 
-// OmnibarKeyMap defines key bindings for the omnibar component
-type OmnibarKeyMap struct {
+// GlobalSearchKeyMap defines key bindings for the global search component
+type GlobalSearchKeyMap struct {
 	Escape key.Binding
 	Enter  key.Binding
 	Up     key.Binding
 	Down   key.Binding
 }
 
-// DefaultOmnibarKeyMap returns the default omnibar key bindings
-func DefaultOmnibarKeyMap() OmnibarKeyMap {
-	return OmnibarKeyMap{
+// DefaultGlobalSearchKeyMap returns the default global search key bindings
+func DefaultGlobalSearchKeyMap() GlobalSearchKeyMap {
+	return GlobalSearchKeyMap{
 		Escape: key.NewBinding(
 			key.WithKeys("esc"),
 			key.WithHelp("esc", "close"),
@@ -139,7 +139,7 @@ func DefaultPlaylistModalKeyMap() PlaylistModalKeyMap {
 
 // Package-level key map instances
 var (
-	ListColumnKeys   = DefaultListColumnKeyMap()
-	OmnibarKeys      = DefaultOmnibarKeyMap()
+	ListColumnKeys    = DefaultListColumnKeyMap()
+	GlobalSearchKeys  = DefaultGlobalSearchKeyMap()
 	PlaylistModalKeys = DefaultPlaylistModalKeyMap()
 )

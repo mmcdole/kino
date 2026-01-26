@@ -56,12 +56,6 @@ type EpisodesLoadedMsg struct {
 	SeasonID string
 }
 
-// SearchResultsMsg signals that search results are ready
-type SearchResultsMsg struct {
-	Results []domain.MediaItem
-	Query   string
-}
-
 // PlaybackStartedMsg signals that playback has started (player launched)
 type PlaybackStartedMsg struct {
 	Item domain.MediaItem
