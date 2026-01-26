@@ -37,7 +37,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           mkdir -p dist
-          go build -ldflags="-s -w" -o dist/kino-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/kino
+          go build -ldflags="-s -w -X main.Version=${{ github.ref_name }}" -o dist/kino-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/kino
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

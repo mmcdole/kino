@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -17,7 +18,20 @@ import (
 	"github.com/mmcdole/kino/internal/tui/styles"
 )
 
+// Version is set at build time via -ldflags
+var Version = "dev"
+
 func main() {
+	// Handle version flag
+	versionFlag := flag.Bool("v", false, "print version")
+	versionLongFlag := flag.Bool("version", false, "print version")
+	flag.Parse()
+
+	if *versionFlag || *versionLongFlag {
+		fmt.Printf("kino %s\n", Version)
+		return
+	}
+
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -39,7 +53,7 @@ func run() error {
 	}
 	slog.SetDefault(logger)
 
-	logger.Info("starting kino", "version", "1.0.0")
+	logger.Info("starting kino", "version", Version)
 
 	// Check if configured
 	if !cfg.IsConfigured() {
