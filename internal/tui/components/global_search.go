@@ -72,11 +72,6 @@ func (o *GlobalSearch) SetResults(results []service.FilterResult) {
 	o.loading = false
 }
 
-// SetLoading sets the loading state
-func (o *GlobalSearch) SetLoading(loading bool) {
-	o.loading = loading
-}
-
 // SetSize updates the component dimensions
 func (o *GlobalSearch) SetSize(width, height int) {
 	o.width = width

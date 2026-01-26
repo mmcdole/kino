@@ -77,18 +77,6 @@ var (
 	PlayedCheck   = PlayedStyle.Render(PlayedChar)
 )
 
-// Panel styles
-var (
-	SidebarStyle = lipgloss.NewStyle().
-			Padding(1, 2)
-
-	BrowserStyle = lipgloss.NewStyle().
-			Padding(1, 2)
-
-	InspectorStyle = lipgloss.NewStyle().
-			Padding(1, 2)
-)
-
 // List item styles
 var (
 	SelectedItemStyle = lipgloss.NewStyle().
@@ -151,25 +139,10 @@ var (
 			Padding(0, 1)
 )
 
-// Grid cell style
-var (
-	GridCellStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(DimGray).
-			Padding(0, 1).
-			Width(20)
-
-	GridCellSelectedStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(PlexOrange).
-				Padding(0, 1).
-				Width(20)
-)
-
 // Spinner style
 var (
 	SpinnerStyle = lipgloss.NewStyle().
-			Foreground(PlexOrange)
+		Foreground(PlexOrange)
 )
 
 // SpinnerFrames contains the animation frames for the loading spinner
@@ -255,17 +228,6 @@ func RenderProgressBar(percent float64, width int) string {
 	}
 
 	return bar
-}
-
-// RenderWatchStatus renders the watch status indicator
-func RenderWatchStatus(isPlayed bool, viewOffset int64) string {
-	if isPlayed {
-		return PlayedCheck
-	}
-	if viewOffset > 0 {
-		return InProgressDot
-	}
-	return UnplayedDot
 }
 
 // RenderListRow renders a complete list row with uniform background when selected.

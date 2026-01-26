@@ -14,7 +14,6 @@ import (
 	"github.com/sahilm/fuzzy"
 )
 
-
 // Layout constants for list columns
 const (
 	// Border adds 1 char on each side (left+right for width, top+bottom for height)
@@ -751,18 +750,7 @@ func (c *ListColumn) renderLibraryItem(lib domain.Library, selected bool, width 
 }
 
 func (c *ListColumn) renderMovieItem(item domain.MediaItem, selected bool, width int) string {
-	var indicatorChar string
-	var indicatorFg lipgloss.Color
-	if item.IsPlayed {
-		indicatorChar = styles.PlayedChar
-		indicatorFg = styles.Green
-	} else if item.ViewOffset.Milliseconds() > 0 {
-		indicatorChar = styles.InProgressChar
-		indicatorFg = styles.PlexOrange
-	} else {
-		indicatorChar = styles.UnplayedChar
-		indicatorFg = styles.PlexOrange
-	}
+	indicatorChar, indicatorFg := mediaItemWatchIndicator(item)
 
 	title := item.Title
 	if item.Year > 0 {
@@ -785,19 +773,7 @@ func (c *ListColumn) renderMovieItem(item domain.MediaItem, selected bool, width
 }
 
 func (c *ListColumn) renderShowItem(show domain.Show, selected bool, width int) string {
-	var indicatorChar string
-	var indicatorFg lipgloss.Color
-	switch show.WatchStatus() {
-	case domain.WatchStatusWatched:
-		indicatorChar = styles.PlayedChar
-		indicatorFg = styles.Green
-	case domain.WatchStatusInProgress:
-		indicatorChar = styles.InProgressChar
-		indicatorFg = styles.PlexOrange
-	default:
-		indicatorChar = styles.UnplayedChar
-		indicatorFg = styles.PlexOrange
-	}
+	indicatorChar, indicatorFg := watchIndicator(show.WatchStatus())
 
 	title := show.Title
 	if show.Year > 0 {
@@ -820,19 +796,7 @@ func (c *ListColumn) renderShowItem(show domain.Show, selected bool, width int) 
 }
 
 func (c *ListColumn) renderSeasonItem(season domain.Season, selected bool, width int) string {
-	var indicatorChar string
-	var indicatorFg lipgloss.Color
-	switch season.WatchStatus() {
-	case domain.WatchStatusWatched:
-		indicatorChar = styles.PlayedChar
-		indicatorFg = styles.Green
-	case domain.WatchStatusInProgress:
-		indicatorChar = styles.InProgressChar
-		indicatorFg = styles.PlexOrange
-	default:
-		indicatorChar = styles.UnplayedChar
-		indicatorFg = styles.PlexOrange
-	}
+	indicatorChar, indicatorFg := watchIndicator(season.WatchStatus())
 
 	title := season.DisplayTitle()
 
@@ -852,18 +816,7 @@ func (c *ListColumn) renderSeasonItem(season domain.Season, selected bool, width
 }
 
 func (c *ListColumn) renderEpisodeItem(item domain.MediaItem, selected bool, width int) string {
-	var indicatorChar string
-	var indicatorFg lipgloss.Color
-	if item.IsPlayed {
-		indicatorChar = styles.PlayedChar
-		indicatorFg = styles.Green
-	} else if item.ViewOffset.Milliseconds() > 0 {
-		indicatorChar = styles.InProgressChar
-		indicatorFg = styles.PlexOrange
-	} else {
-		indicatorChar = styles.UnplayedChar
-		indicatorFg = styles.PlexOrange
-	}
+	indicatorChar, indicatorFg := mediaItemWatchIndicator(item)
 
 	code := item.EpisodeCode()
 	plexOrange := styles.PlexOrange
@@ -884,7 +837,7 @@ func (c *ListColumn) renderEpisodeItem(item domain.MediaItem, selected bool, wid
 	return styles.RenderListRow(parts, selected, width)
 }
 
-func (c *ListColumn) renderFilterBar(width int) string {
+func (c *ListColumn) renderFilterBar(_ int) string {
 	input := c.filterInput.View()
 	count := c.ItemCount()
 	total := len(c.items)
@@ -896,6 +849,29 @@ func (c *ListColumn) renderFilterBar(width int) string {
 	}
 
 	return input + countStr
+}
+
+// watchIndicator returns the character and color for a watch status
+func watchIndicator(status domain.WatchStatus) (string, lipgloss.Color) {
+	switch status {
+	case domain.WatchStatusWatched:
+		return styles.PlayedChar, styles.Green
+	case domain.WatchStatusInProgress:
+		return styles.InProgressChar, styles.PlexOrange
+	default:
+		return styles.UnplayedChar, styles.PlexOrange
+	}
+}
+
+// mediaItemWatchIndicator returns the character and color for a media item's watch status
+func mediaItemWatchIndicator(item domain.MediaItem) (string, lipgloss.Color) {
+	if item.IsPlayed {
+		return styles.PlayedChar, styles.Green
+	}
+	if item.ViewOffset.Milliseconds() > 0 {
+		return styles.InProgressChar, styles.PlexOrange
+	}
+	return styles.UnplayedChar, styles.PlexOrange
 }
 
 func (c *ListColumn) renderPlaylistItem(playlist domain.Playlist, selected bool, width int) string {
@@ -924,18 +900,7 @@ func (c *ListColumn) renderPlaylistItem(playlist domain.Playlist, selected bool,
 }
 
 func (c *ListColumn) renderPlaylistMediaItem(item domain.MediaItem, selected bool, width int) string {
-	var indicatorChar string
-	var indicatorFg lipgloss.Color
-	if item.IsPlayed {
-		indicatorChar = styles.PlayedChar
-		indicatorFg = styles.Green
-	} else if item.ViewOffset.Milliseconds() > 0 {
-		indicatorChar = styles.InProgressChar
-		indicatorFg = styles.PlexOrange
-	} else {
-		indicatorChar = styles.UnplayedChar
-		indicatorFg = styles.PlexOrange
-	}
+	indicatorChar, indicatorFg := mediaItemWatchIndicator(item)
 
 	title := item.Title
 	if item.Type == domain.MediaTypeEpisode && item.ShowTitle != "" {
@@ -961,20 +926,7 @@ func (c *ListColumn) renderPlaylistMediaItem(item domain.MediaItem, selected boo
 }
 
 func (c *ListColumn) renderMixedItem(item domain.ListItem, selected bool, width int) string {
-	// Get watch status indicator
-	var indicatorChar string
-	var indicatorFg lipgloss.Color
-	switch item.GetWatchStatus() {
-	case domain.WatchStatusWatched:
-		indicatorChar = styles.PlayedChar
-		indicatorFg = styles.Green
-	case domain.WatchStatusInProgress:
-		indicatorChar = styles.InProgressChar
-		indicatorFg = styles.PlexOrange
-	default:
-		indicatorChar = styles.UnplayedChar
-		indicatorFg = styles.PlexOrange
-	}
+	indicatorChar, indicatorFg := watchIndicator(item.GetWatchStatus())
 
 	// Build title with year
 	title := item.GetTitle()

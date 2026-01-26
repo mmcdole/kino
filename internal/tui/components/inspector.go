@@ -11,7 +11,7 @@ import (
 
 // Layout constants for inspector
 const (
-	InspectorBorderHeight    = 2
+	InspectorBorderHeight     = 2
 	InspectorScrollIndicators = 2
 )
 
@@ -55,61 +55,14 @@ func (i *Inspector) SetSize(width, height int) {
 	}
 }
 
-// SetFocused sets the focus state
-func (i *Inspector) SetFocused(focused bool) {
-	i.focused = focused
-}
-
-// IsFocused returns the focus state
-func (i Inspector) IsFocused() bool {
-	return i.focused
-}
-
 // HasItem returns true if there is an item to display
 func (i Inspector) HasItem() bool {
 	return i.item != nil
 }
 
-// Update handles messages
-func (i Inspector) Update(msg tea.Msg) (Inspector, tea.Cmd) {
-	if !i.focused {
-		return i, nil
-	}
-
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "j", "down":
-			i.offset++
-		case "k", "up":
-			if i.offset > 0 {
-				i.offset--
-			}
-		case "g":
-			i.offset = 0
-		case "G":
-			i.offset = i.contentLineCount() // Will be clamped in View
-		case "ctrl+d":
-			i.offset += i.maxVisible / 2
-		case "ctrl+u":
-			i.offset -= i.maxVisible / 2
-			if i.offset < 0 {
-				i.offset = 0
-			}
-		}
-	}
-
+// Update handles messages (currently no-op, inspector is not focusable)
+func (i Inspector) Update(_ tea.Msg) (Inspector, tea.Cmd) {
 	return i, nil
-}
-
-// contentLineCount returns the total number of lines in the current content
-func (i Inspector) contentLineCount() int {
-	contentWidth := i.width - 3
-	if contentWidth < 10 {
-		contentWidth = 10
-	}
-	content := i.renderInspector(contentWidth)
-	return len(strings.Split(content, "\n"))
 }
 
 // View renders the component

@@ -8,10 +8,11 @@ import (
 // The stack contains list columns only - the Inspector is a separate view projection.
 //
 // Visual representation:
-//   Root:     [Empty | Libraries | Inspector]
-//   Library:  [Libraries | Movies | Inspector]
-//   Show:     [TV Shows | Breaking Bad | Inspector]
-//   Season:   [Breaking Bad | Season 1 | Inspector]
+//
+//	Root:     [Empty | Libraries | Inspector]
+//	Library:  [Libraries | Movies | Inspector]
+//	Show:     [TV Shows | Breaking Bad | Inspector]
+//	Season:   [Breaking Bad | Season 1 | Inspector]
 //
 // The "middle" column (top of stack) is always focused.
 // The "left" column shows parent context.
@@ -93,28 +94,16 @@ func (cs *ColumnStack) Pop() (*components.ListColumn, int) {
 	return popped, savedCursor
 }
 
-// Clear removes all columns from the stack
-func (cs *ColumnStack) Clear() {
-	for _, col := range cs.columns {
-		col.SetFocused(false)
+// Reset resets the stack to a single column (used when switching libraries)
+func (cs *ColumnStack) Reset(col *components.ListColumn) {
+	for _, c := range cs.columns {
+		c.SetFocused(false)
 	}
 	cs.columns = nil
 	cs.cursorStack = nil
-}
-
-// Reset resets the stack to a single column (used when switching libraries)
-func (cs *ColumnStack) Reset(col *components.ListColumn) {
-	cs.Clear()
 	col.SetFocused(true)
 	cs.columns = append(cs.columns, col)
 	cs.cursorStack = nil
-}
-
-// SetSizes updates the size of all columns
-func (cs *ColumnStack) SetSizes(width, height int) {
-	for _, col := range cs.columns {
-		col.SetSize(width, height)
-	}
 }
 
 // Parent returns the parent column (second from top), or nil if at root

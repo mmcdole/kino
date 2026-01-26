@@ -7,7 +7,6 @@ type KeyMap struct {
 	// Navigation
 	Up       key.Binding
 	Down     key.Binding
-	Left     key.Binding
 	Right    key.Binding
 	Enter    key.Binding
 	Back     key.Binding
@@ -19,22 +18,22 @@ type KeyMap struct {
 	End      key.Binding
 
 	// Actions
-	Quit           key.Binding
-	Help           key.Binding
-	Escape         key.Binding
-	Filter         key.Binding
-	GlobalSearch   key.Binding
-	Sort           key.Binding
-	Refresh        key.Binding
-	RefreshAll     key.Binding
-	MarkWatched    key.Binding
-	MarkUnwatched  key.Binding
-	Play           key.Binding
+	Quit            key.Binding
+	Help            key.Binding
+	Escape          key.Binding
+	Filter          key.Binding
+	GlobalSearch    key.Binding
+	Sort            key.Binding
+	Refresh         key.Binding
+	RefreshAll      key.Binding
+	MarkWatched     key.Binding
+	MarkUnwatched   key.Binding
+	Play            key.Binding
 	ToggleInspector key.Binding
-	Logout         key.Binding
-	PlaylistModal  key.Binding
-	Delete         key.Binding
-	NewPlaylist    key.Binding
+	Logout          key.Binding
+	PlaylistModal   key.Binding
+	Delete          key.Binding
+	NewPlaylist     key.Binding
 
 	// Confirmations
 	Confirm key.Binding
@@ -52,10 +51,6 @@ func DefaultKeyMap() KeyMap {
 		Down: key.NewBinding(
 			key.WithKeys("j", "down"),
 			key.WithHelp("j/↓", "down"),
-		),
-		Left: key.NewBinding(
-			key.WithKeys("h", "left", "backspace"),
-			key.WithHelp("h/←", "back"),
 		),
 		Right: key.NewBinding(
 			key.WithKeys("l", "right"),

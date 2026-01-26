@@ -184,7 +184,7 @@ func (m *Model) drillSelected() *drillResult {
 	switch v := item.(type) {
 	case domain.Library:
 		// Handle synthetic "Playlists" entry
-		if v.ID == "__playlists__" {
+		if v.ID == playlistsLibraryID {
 			col := components.NewListColumn(components.ColumnTypePlaylists, "Playlists")
 			col.SetLoading(true)
 			m.ColumnStack.Push(col, cursor)
@@ -399,8 +399,7 @@ func (m *Model) navigateToSearchResult(item service.FilterItem) tea.Cmd {
 	navCtx := m.buildNavContext(item)
 
 	// Reset stack to library level first
-	playlistsEntry := domain.Library{ID: "__playlists__", Name: "Playlists", Type: "playlist"}
-	libCol := components.NewLibraryColumn(append(m.Libraries, playlistsEntry))
+	libCol := components.NewLibraryColumn(append(m.Libraries, playlistsLibraryEntry()))
 	libCol.SetLibraryStates(m.LibraryStates)
 	m.Inspector.SetLibraryStates(m.LibraryStates)
 
