@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -134,9 +133,6 @@ func (c *Client) doRequest(ctx context.Context, method, path string, query url.V
 func (c *Client) parseResponse(body []byte) (*MediaContainer, error) {
 	var resp APIResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
-		// Log raw body and full error to file for debugging
-		errMsg := fmt.Sprintf("ERROR: %v\n\nBODY:\n%s", err, string(body))
-		_ = os.WriteFile("/tmp/plex_parse_error.txt", []byte(errMsg), 0644)
 		c.logger.Error("JSON parse error", "error", err, "bodyLen", len(body))
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}

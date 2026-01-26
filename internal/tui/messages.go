@@ -1,6 +1,7 @@
 package tui
 
 import (
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/domain"
 )
 
@@ -176,7 +177,7 @@ type LibrarySyncProgressMsg struct {
 	Done        bool
 	FromDisk    bool
 	Error       error
-	NextCmd     interface{} // Continuation command (tea.Cmd) for streaming
+	NextCmd     tea.Cmd // Continuation command for streaming
 }
 
 // ClearLibraryStatusMsg signals that the success indicator should be removed
