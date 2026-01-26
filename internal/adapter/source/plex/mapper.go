@@ -323,3 +323,21 @@ func getPlaylistType(metadataType string) string {
 	// This would need to be determined from the playlistType field when available
 	return "video"
 }
+
+// MapLibraryContent converts Plex metadata to domain.ListItem for mixed libraries.
+// This handles both movies and shows in a single response, returning them as
+// a polymorphic slice that the UI can display uniformly.
+func MapLibraryContent(metadata []Metadata, serverURL string) []domain.ListItem {
+	result := make([]domain.ListItem, 0, len(metadata))
+	for _, m := range metadata {
+		switch m.Type {
+		case "movie":
+			item := mapMovie(m, serverURL)
+			result = append(result, &item)
+		case "show":
+			show := mapShow(m, serverURL)
+			result = append(result, &show)
+		}
+	}
+	return result
+}

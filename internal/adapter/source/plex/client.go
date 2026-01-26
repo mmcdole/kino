@@ -290,6 +290,81 @@ func (c *Client) GetAllShows(ctx context.Context, libID string) ([]*domain.Show,
 	return allShows, nil
 }
 
+// GetLibraryContent returns paginated content (movies AND shows) from a library.
+// Note: Plex doesn't truly support "mixed" libraries at the API level like Jellyfin,
+// so this method fetches all items and returns both types. For pure movie or show
+// libraries, this still works but is less efficient than GetMovies/GetShows.
+func (c *Client) GetLibraryContent(ctx context.Context, libID string, offset, limit int) ([]domain.ListItem, int, error) {
+	query := url.Values{}
+	query.Set("X-Plex-Container-Start", strconv.Itoa(offset))
+	if limit > 0 {
+		query.Set("X-Plex-Container-Size", strconv.Itoa(limit))
+	}
+
+	path := fmt.Sprintf("/library/sections/%s/all", libID)
+	body, err := c.doRequest(ctx, http.MethodGet, path, query)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	container, err := c.parseResponse(body)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	totalSize := container.TotalSize
+	if totalSize == 0 {
+		totalSize = container.Size
+	}
+
+	return MapLibraryContent(container.Metadata, c.baseURL), totalSize, nil
+}
+
+// GetAllLibraryContent returns all content from a library (handles pagination internally)
+func (c *Client) GetAllLibraryContent(ctx context.Context, libID string) ([]domain.ListItem, error) {
+	var allItems []domain.ListItem
+	offset := 0
+
+	for {
+		items, total, err := c.GetLibraryContent(ctx, libID, offset, defaultBatchSize)
+		if err != nil {
+			return nil, err
+		}
+
+		allItems = append(allItems, items...)
+
+		if len(allItems) >= total || len(items) == 0 {
+			break
+		}
+		offset += defaultBatchSize
+	}
+
+	return allItems, nil
+}
+
+// GetLibraryContentWithProgress fetches library content with progress callback
+func (c *Client) GetLibraryContentWithProgress(ctx context.Context, libID string, progress func([]domain.ListItem, int, int)) error {
+	offset := 0
+	loaded := 0
+
+	for {
+		items, total, err := c.GetLibraryContent(ctx, libID, offset, defaultBatchSize)
+		if err != nil {
+			return err
+		}
+
+		loaded += len(items)
+		progress(items, loaded, total)
+
+		if loaded >= total || len(items) == 0 {
+			break
+		}
+		offset += defaultBatchSize
+	}
+
+	return nil
+}
+
 // GetMoviesWithProgress fetches movies with progress callback for UI updates
 func (c *Client) GetMoviesWithProgress(ctx context.Context, libID string, progress func([]*domain.MediaItem, int, int)) error {
 	offset := 0

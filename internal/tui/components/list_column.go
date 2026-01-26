@@ -386,6 +386,9 @@ func (c *ListColumn) SetItems(rawItems interface{}) {
 	case []*domain.Playlist:
 		c.items = WrapPlaylists(v)
 		c.columnType = ColumnTypePlaylists
+	case []domain.ListItem:
+		c.items = WrapMixedContent(v)
+		c.columnType = ColumnTypeMixed
 	case []ListItem:
 		c.items = v
 		// columnType should already be set
@@ -451,7 +454,7 @@ func (c *ListColumn) SelectedSeason() *domain.Season {
 	return item.(*domain.Season)
 }
 
-// SelectedMediaItem returns the selected media item (if in movies/episodes/playlist items column)
+// SelectedMediaItem returns the selected media item (if in movies/episodes/playlist items/mixed column)
 func (c *ListColumn) SelectedMediaItem() *domain.MediaItem {
 	switch c.columnType {
 	case ColumnTypeMovies, ColumnTypeEpisodes, ColumnTypePlaylistItems:
@@ -460,6 +463,17 @@ func (c *ListColumn) SelectedMediaItem() *domain.MediaItem {
 			return nil
 		}
 		return item.(*domain.MediaItem)
+	case ColumnTypeMixed:
+		// Mixed content can be either MediaItem (movie) or Show
+		item := c.SelectedItem()
+		if item == nil {
+			return nil
+		}
+		// Type assert to *domain.MediaItem - returns nil if it's a Show
+		if mediaItem, ok := item.(*domain.MediaItem); ok {
+			return mediaItem
+		}
+		return nil
 	default:
 		return nil
 	}
@@ -726,6 +740,8 @@ func (c *ListColumn) renderItem(idx int, selected bool, width int) string {
 		return c.renderPlaylistItem(*item.(PlaylistListItem).Playlist, selected, width)
 	case ColumnTypePlaylistItems:
 		return c.renderPlaylistMediaItem(*item.(PlaylistMediaListItem).Item, selected, width)
+	case ColumnTypeMixed:
+		return c.renderMixedItem(item.(MixedListItem), selected, width)
 	default:
 		return ""
 	}
@@ -979,6 +995,40 @@ func (c *ListColumn) renderPlaylistMediaItem(item domain.MediaItem, selected boo
 	} else if item.Year > 0 {
 		title = fmt.Sprintf("%s (%d)", item.Title, item.Year)
 	}
+
+	// Available space: width - indicator(1) - space(1) - margins(2)
+	availableForTitle := width - 4
+	if availableForTitle < 5 {
+		availableForTitle = 5
+	}
+	title = styles.Truncate(title, availableForTitle)
+
+	parts := []styles.RowPart{
+		{Text: indicatorChar, Foreground: &indicatorFg},
+		{Text: " " + title, Foreground: nil},
+	}
+
+	return styles.RenderListRow(parts, selected, width)
+}
+
+func (c *ListColumn) renderMixedItem(item MixedListItem, selected bool, width int) string {
+	// Get watch status indicator
+	var indicatorChar string
+	var indicatorFg lipgloss.Color
+	switch item.WatchStatus() {
+	case domain.WatchStatusWatched:
+		indicatorChar = styles.PlayedChar
+		indicatorFg = styles.Green
+	case domain.WatchStatusInProgress:
+		indicatorChar = styles.InProgressChar
+		indicatorFg = styles.PlexOrange
+	default:
+		indicatorChar = styles.UnplayedChar
+		indicatorFg = styles.PlexOrange
+	}
+
+	// Build title with year
+	title := item.ItemTitle()
 
 	// Available space: width - indicator(1) - space(1) - margins(2)
 	availableForTitle := width - 4

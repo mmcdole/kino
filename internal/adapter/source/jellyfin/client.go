@@ -288,6 +288,91 @@ func (c *Client) GetAllShows(ctx context.Context, libID string) ([]*domain.Show,
 	return allShows, nil
 }
 
+// GetLibraryContent returns paginated content (movies AND shows) from a mixed library.
+// This fetches both types in a single API call with server-side sorting.
+func (c *Client) GetLibraryContent(ctx context.Context, libID string, offset, limit int) ([]domain.ListItem, int, error) {
+	query := url.Values{}
+	query.Set("ParentId", libID)
+	query.Set("IncludeItemTypes", "Movie,Series")
+	query.Set("Recursive", "true")
+	query.Set("Fields", "Overview,ChildCount,RecursiveItemCount,DateCreated,DateLastMediaAdded")
+	query.Set("StartIndex", strconv.Itoa(offset))
+	if limit > 0 {
+		query.Set("Limit", strconv.Itoa(limit))
+	}
+	query.Set("SortBy", "SortName")
+	query.Set("SortOrder", "Ascending")
+
+	path := fmt.Sprintf("/Users/%s/Items", c.userID)
+	body, err := c.doRequest(ctx, http.MethodGet, path, query)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var resp ItemsResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, 0, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	items := MapLibraryContent(resp.Items, c.baseURL)
+	// Set library ID for all items
+	for _, item := range items {
+		switch v := item.(type) {
+		case *domain.MediaItem:
+			v.LibraryID = libID
+		case *domain.Show:
+			v.LibraryID = libID
+		}
+	}
+
+	return items, resp.TotalRecordCount, nil
+}
+
+// GetAllLibraryContent returns all content from a mixed library (handles pagination internally)
+func (c *Client) GetAllLibraryContent(ctx context.Context, libID string) ([]domain.ListItem, error) {
+	var allItems []domain.ListItem
+	offset := 0
+
+	for {
+		items, total, err := c.GetLibraryContent(ctx, libID, offset, defaultBatchSize)
+		if err != nil {
+			return nil, err
+		}
+
+		allItems = append(allItems, items...)
+
+		if len(allItems) >= total || len(items) == 0 {
+			break
+		}
+		offset += defaultBatchSize
+	}
+
+	return allItems, nil
+}
+
+// GetLibraryContentWithProgress fetches mixed library content with progress callback
+func (c *Client) GetLibraryContentWithProgress(ctx context.Context, libID string, progress func([]domain.ListItem, int, int)) error {
+	offset := 0
+	loaded := 0
+
+	for {
+		items, total, err := c.GetLibraryContent(ctx, libID, offset, defaultBatchSize)
+		if err != nil {
+			return err
+		}
+
+		loaded += len(items)
+		progress(items, loaded, total)
+
+		if loaded >= total || len(items) == 0 {
+			break
+		}
+		offset += defaultBatchSize
+	}
+
+	return nil
+}
+
 // GetMoviesWithProgress fetches movies with progress callback for UI updates
 func (c *Client) GetMoviesWithProgress(ctx context.Context, libID string, progress func([]*domain.MediaItem, int, int)) error {
 	offset := 0

@@ -33,6 +33,7 @@ const (
 	AwaitNone NavAwaitKind = iota
 	AwaitMovies   // AwaitID = LibraryID
 	AwaitShows    // AwaitID = LibraryID
+	AwaitMixed    // AwaitID = LibraryID (mixed content library)
 	AwaitSeasons  // AwaitID = ShowID
 	AwaitEpisodes // AwaitID = SeasonID
 )
@@ -272,6 +273,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Advance nav plan if waiting for this load
 		if cmd := m.advanceNavPlanAfterLoad(AwaitShows, msg.LibraryID); cmd != nil {
+			return m, cmd
+		}
+		return m, nil
+
+	case LibraryContentLoadedMsg:
+		m.Loading = false
+
+		// If manual load succeeded and library was in error state, clear it
+		if state, ok := m.LibraryStates[msg.LibraryID]; ok && state.Status == components.StatusError {
+			state.Status = components.StatusIdle
+			state.Error = nil
+			m.LibraryStates[msg.LibraryID] = state
+			m.updateLibraryStates()
+		}
+
+		// Update top column with mixed content
+		if top := m.ColumnStack.Top(); top != nil {
+			top.SetItems(msg.Items)
+		}
+
+		m.updateInspector()
+		// Index items for global filter
+		m.indexMixedContentForFilter(msg.Items, msg.LibraryID)
+
+		// Advance nav plan if waiting for this load
+		if cmd := m.advanceNavPlanAfterLoad(AwaitMixed, msg.LibraryID); cmd != nil {
 			return m, cmd
 		}
 		return m, nil
@@ -1002,7 +1029,8 @@ func (m *Model) drillSelected() *drillResult {
 			}
 		}
 
-		if v.Type == "movie" {
+		switch v.Type {
+		case "movie":
 			col := components.NewListColumn(components.ColumnTypeMovies, v.Name)
 			m.ColumnStack.Push(col, cursor)
 			m.updateLayout()
@@ -1030,34 +1058,76 @@ func (m *Model) drillSelected() *drillResult {
 				AwaitID:   v.ID,
 				Cmd:       LoadMoviesCmd(m.LibrarySvc, v.ID),
 			}
-		}
-		// v.Type == "show"
-		col := components.NewListColumn(components.ColumnTypeShows, v.Name)
-		m.ColumnStack.Push(col, cursor)
-		m.updateLayout()
 
-		// Use cached data if available for instant display
-		if cached := m.LibrarySvc.GetCachedShows(v.ID); cached != nil {
-			col.SetItems(cached)
-			m.updateInspector()
-			// If NavPlan active, advance it immediately
-			if m.navPlan != nil {
-				return &drillResult{
-					AwaitKind: AwaitShows,
-					AwaitID:   v.ID,
-					Cmd:       m.advanceNavPlanAfterLoad(AwaitShows, v.ID),
+		case "show":
+			col := components.NewListColumn(components.ColumnTypeShows, v.Name)
+			m.ColumnStack.Push(col, cursor)
+			m.updateLayout()
+
+			// Use cached data if available for instant display
+			if cached := m.LibrarySvc.GetCachedShows(v.ID); cached != nil {
+				col.SetItems(cached)
+				m.updateInspector()
+				// If NavPlan active, advance it immediately
+				if m.navPlan != nil {
+					return &drillResult{
+						AwaitKind: AwaitShows,
+						AwaitID:   v.ID,
+						Cmd:       m.advanceNavPlanAfterLoad(AwaitShows, v.ID),
+					}
 				}
+				return &drillResult{AwaitKind: AwaitNone}
 			}
-			return &drillResult{AwaitKind: AwaitNone}
-		}
 
-		// Not cached - show loading and fetch async
-		col.SetLoading(true)
-		m.Loading = true
-		return &drillResult{
-			AwaitKind: AwaitShows,
-			AwaitID:   v.ID,
-			Cmd:       LoadShowsCmd(m.LibrarySvc, v.ID),
+			// Not cached - show loading and fetch async
+			col.SetLoading(true)
+			m.Loading = true
+			return &drillResult{
+				AwaitKind: AwaitShows,
+				AwaitID:   v.ID,
+				Cmd:       LoadShowsCmd(m.LibrarySvc, v.ID),
+			}
+
+		case "mixed":
+			col := components.NewListColumn(components.ColumnTypeMixed, v.Name)
+			m.ColumnStack.Push(col, cursor)
+			m.updateLayout()
+
+			// Use cached data if available for instant display
+			if cached := m.LibrarySvc.GetCachedLibraryContent(v.ID); cached != nil {
+				col.SetItems(cached)
+				m.updateInspector()
+				if m.navPlan != nil {
+					return &drillResult{
+						AwaitKind: AwaitMixed,
+						AwaitID:   v.ID,
+						Cmd:       m.advanceNavPlanAfterLoad(AwaitMixed, v.ID),
+					}
+				}
+				return &drillResult{AwaitKind: AwaitNone}
+			}
+
+			// Not cached - show loading and fetch async
+			col.SetLoading(true)
+			m.Loading = true
+			return &drillResult{
+				AwaitKind: AwaitMixed,
+				AwaitID:   v.ID,
+				Cmd:       LoadLibraryContentCmd(m.LibrarySvc, v.ID),
+			}
+
+		default:
+			// Unknown library type - treat as mixed
+			col := components.NewListColumn(components.ColumnTypeMixed, v.Name)
+			col.SetLoading(true)
+			m.ColumnStack.Push(col, cursor)
+			m.Loading = true
+			m.updateLayout()
+			return &drillResult{
+				AwaitKind: AwaitMixed,
+				AwaitID:   v.ID,
+				Cmd:       LoadLibraryContentCmd(m.LibrarySvc, v.ID),
+			}
 		}
 
 	case *domain.Show:
@@ -1202,6 +1272,15 @@ func (m *Model) refreshCurrentView() tea.Cmd {
 				if seasonCol, ok := m.ColumnStack.Get(m.ColumnStack.Len()-2).(*components.ListColumn); ok {
 					if season := seasonCol.SelectedSeason(); season != nil {
 						return LoadEpisodesCmd(m.LibrarySvc, season.ID)
+					}
+				}
+			}
+		case components.ColumnTypeMixed:
+			// Get library from the library column
+			if m.ColumnStack.Len() > 0 {
+				if libCol, ok := m.ColumnStack.Get(0).(*components.ListColumn); ok {
+					if lib := libCol.SelectedLibrary(); lib != nil {
+						return LoadLibraryContentCmd(m.LibrarySvc, lib.ID)
 					}
 				}
 			}
@@ -1702,6 +1781,42 @@ func (m *Model) indexShowsForFilter(shows []*domain.Show, libID string) {
 				ShowID:      show.ID,
 				ShowTitle:   show.Title,
 			},
+		}
+	}
+
+	m.SearchSvc.IndexForFilter(items)
+}
+
+// indexMixedContentForFilter indexes mixed library content (movies + shows) for the global filter
+func (m *Model) indexMixedContentForFilter(content []domain.ListItem, libID string) {
+	libName := m.findLibraryName(libID)
+	items := make([]service.FilterItem, 0, len(content))
+
+	for _, item := range content {
+		switch v := item.(type) {
+		case *domain.MediaItem:
+			items = append(items, service.FilterItem{
+				Item:  v,
+				Title: v.Title,
+				Type:  domain.MediaTypeMovie,
+				NavContext: service.NavigationContext{
+					LibraryID:   libID,
+					LibraryName: libName,
+					MovieID:     v.ID,
+				},
+			})
+		case *domain.Show:
+			items = append(items, service.FilterItem{
+				Item:  v,
+				Title: v.Title,
+				Type:  domain.MediaTypeShow,
+				NavContext: service.NavigationContext{
+					LibraryID:   libID,
+					LibraryName: libName,
+					ShowID:      v.ID,
+					ShowTitle:   v.Title,
+				},
+			})
 		}
 	}
 

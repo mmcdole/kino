@@ -263,3 +263,46 @@ func WrapPlaylistItems(items []*domain.MediaItem) []ListItem {
 	}
 	return result
 }
+
+// MixedListItem wraps domain.ListItem (from mixed libraries) to implement our ListItem interface.
+// This bridges the domain-level interface to the UI-level interface.
+type MixedListItem struct {
+	Item domain.ListItem
+}
+
+func (i MixedListItem) ItemID() string { return i.Item.GetID() }
+func (i MixedListItem) ItemTitle() string {
+	year := i.Item.GetYear()
+	if year > 0 {
+		return fmt.Sprintf("%s (%d)", i.Item.GetTitle(), year)
+	}
+	return i.Item.GetTitle()
+}
+func (i MixedListItem) ItemSubtitle() string { return i.Item.GetDescription() }
+func (i MixedListItem) FilterValue() string  { return i.Item.GetFilterValue() }
+func (i MixedListItem) SortTitle() string    { return strings.ToLower(i.Item.GetSortTitle()) }
+func (i MixedListItem) SortableYear() int    { return i.Item.GetYear() }
+func (i MixedListItem) SortableAddedAt() int64   { return i.Item.GetAddedAt() }
+func (i MixedListItem) SortableUpdatedAt() int64 { return i.Item.GetUpdatedAt() }
+func (i MixedListItem) WatchStatus() domain.WatchStatus { return i.Item.GetWatchStatus() }
+func (i MixedListItem) CanDrillInto() bool { return i.Item.CanDrillDown() }
+func (i MixedListItem) Unwrap() interface{} {
+	// Return the concrete type for type-switching in app.go
+	switch v := i.Item.(type) {
+	case *domain.MediaItem:
+		return v
+	case *domain.Show:
+		return v
+	default:
+		return i.Item
+	}
+}
+
+// WrapMixedContent converts a slice of domain.ListItem (mixed movies/shows) to []ListItem
+func WrapMixedContent(items []domain.ListItem) []ListItem {
+	result := make([]ListItem, len(items))
+	for i, item := range items {
+		result[i] = MixedListItem{Item: item}
+	}
+	return result
+}

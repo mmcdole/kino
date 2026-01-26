@@ -55,6 +55,20 @@ func LoadShowsCmd(svc *service.LibraryService, libID string) tea.Cmd {
 	}
 }
 
+// LoadLibraryContentCmd loads content (movies AND shows) from a mixed library
+func LoadLibraryContentCmd(svc *service.LibraryService, libID string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		items, err := svc.GetLibraryContent(ctx, libID)
+		if err != nil {
+			return ErrMsg{Err: err, Context: "loading library content"}
+		}
+		return LibraryContentLoadedMsg{Items: items, LibraryID: libID}
+	}
+}
+
 // LoadSeasonsCmd loads seasons for a show
 func LoadSeasonsCmd(svc *service.LibraryService, showID string) tea.Cmd {
 	return func() tea.Msg {
@@ -176,7 +190,8 @@ func LoadAllForGlobalSearchCmd(libSvc *service.LibraryService, searchSvc *servic
 		var skippedLibraries int
 
 		for _, lib := range libraries {
-			if lib.Type == "movie" {
+			switch lib.Type {
+			case "movie":
 				movies := libSvc.GetCachedMovies(lib.ID)
 				if movies == nil {
 					skippedLibraries++
@@ -199,7 +214,7 @@ func LoadAllForGlobalSearchCmd(libSvc *service.LibraryService, searchSvc *servic
 				searchSvc.IndexForFilter(items)
 				movieCount += len(movies)
 
-			} else if lib.Type == "show" {
+			case "show":
 				shows := libSvc.GetCachedShows(lib.ID)
 				if shows == nil {
 					skippedLibraries++
@@ -222,6 +237,45 @@ func LoadAllForGlobalSearchCmd(libSvc *service.LibraryService, searchSvc *servic
 				}
 				searchSvc.IndexForFilter(items)
 				showCount += len(shows)
+
+			case "mixed":
+				content := libSvc.GetCachedLibraryContent(lib.ID)
+				if content == nil {
+					skippedLibraries++
+					continue // Skip - not cached yet
+				}
+				// Index mixed content
+				items := make([]service.FilterItem, 0, len(content))
+				for _, item := range content {
+					switch v := item.(type) {
+					case *domain.MediaItem:
+						items = append(items, service.FilterItem{
+							Item:  v,
+							Title: v.Title,
+							Type:  domain.MediaTypeMovie,
+							NavContext: service.NavigationContext{
+								LibraryID:   lib.ID,
+								LibraryName: lib.Name,
+								MovieID:     v.ID,
+							},
+						})
+						movieCount++
+					case *domain.Show:
+						items = append(items, service.FilterItem{
+							Item:  v,
+							Title: v.Title,
+							Type:  domain.MediaTypeShow,
+							NavContext: service.NavigationContext{
+								LibraryID:   lib.ID,
+								LibraryName: lib.Name,
+								ShowID:      v.ID,
+								ShowTitle:   v.Title,
+							},
+						})
+						showCount++
+					}
+				}
+				searchSvc.IndexForFilter(items)
 			}
 		}
 
@@ -369,6 +423,37 @@ func indexChunkForSearch(searchSvc *service.SearchService, items interface{}, li
 					ShowID:      show.ID,
 					ShowTitle:   show.Title,
 				},
+			}
+		}
+		searchSvc.IndexForFilter(filterItems)
+
+	case []domain.ListItem:
+		filterItems := make([]service.FilterItem, 0, len(v))
+		for _, item := range v {
+			switch t := item.(type) {
+			case *domain.MediaItem:
+				filterItems = append(filterItems, service.FilterItem{
+					Item:  t,
+					Title: t.Title,
+					Type:  domain.MediaTypeMovie,
+					NavContext: service.NavigationContext{
+						LibraryID:   lib.ID,
+						LibraryName: lib.Name,
+						MovieID:     t.ID,
+					},
+				})
+			case *domain.Show:
+				filterItems = append(filterItems, service.FilterItem{
+					Item:  t,
+					Title: t.Title,
+					Type:  domain.MediaTypeShow,
+					NavContext: service.NavigationContext{
+						LibraryID:   lib.ID,
+						LibraryName: lib.Name,
+						ShowID:      t.ID,
+						ShowTitle:   t.Title,
+					},
+				})
 			}
 		}
 		searchSvc.IndexForFilter(filterItems)
