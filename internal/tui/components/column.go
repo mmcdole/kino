@@ -49,6 +49,7 @@ const (
 	ColumnTypeLibraries ColumnType = iota
 	ColumnTypeMovies
 	ColumnTypeShows
+	ColumnTypeMixed // Mixed content (movies + shows)
 	ColumnTypeSeasons
 	ColumnTypeEpisodes
 	ColumnTypePlaylists

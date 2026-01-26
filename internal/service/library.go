@@ -154,7 +154,8 @@ func (s *LibraryService) SmartSync(
 			// Cache is still valid - use cached data
 			s.logger.Debug("disk cache valid", "key", cacheKey, "cacheTS", entry.ServerUpdatedAt, "serverTS", lib.UpdatedAt)
 
-			if lib.Type == "movie" {
+			switch lib.Type {
+			case "movie":
 				var movies []*domain.MediaItem
 				if err := json.Unmarshal(entry.Items, &movies); err == nil {
 					s.setCache(cacheKey, movies)
@@ -169,7 +170,7 @@ func (s *LibraryService) SmartSync(
 					}
 					return
 				}
-			} else if lib.Type == "show" {
+			case "show":
 				var shows []*domain.Show
 				if err := json.Unmarshal(entry.Items, &shows); err == nil {
 					s.setCache(cacheKey, shows)
@@ -184,15 +185,36 @@ func (s *LibraryService) SmartSync(
 					}
 					return
 				}
+			case "mixed":
+				var items []domain.ListItem
+				if err := json.Unmarshal(entry.Items, &items); err == nil {
+					s.setCache(cacheKey, items)
+					progressCh <- SyncProgress{
+						LibraryID:   lib.ID,
+						LibraryType: lib.Type,
+						Loaded:      len(items),
+						Total:       len(items),
+						Items:       items,
+						Done:        true,
+						FromDisk:    true,
+					}
+					return
+				}
 			}
 		}
 	}
 
 	// Cache is stale or forced refresh - fetch from server with chunked streaming
-	if lib.Type == "movie" {
+	switch lib.Type {
+	case "movie":
 		s.syncMovies(ctx, lib, lib.UpdatedAt, progressCh)
-	} else {
+	case "show":
 		s.syncShows(ctx, lib, lib.UpdatedAt, progressCh)
+	case "mixed":
+		s.syncMixed(ctx, lib, lib.UpdatedAt, progressCh)
+	default:
+		// Unknown type - treat as mixed
+		s.syncMixed(ctx, lib, lib.UpdatedAt, progressCh)
 	}
 }
 
@@ -323,12 +345,70 @@ func (s *LibraryService) syncShows(ctx context.Context, lib domain.Library, serv
 	s.logger.Info("synced shows", "count", len(allShows), "libID", lib.ID)
 }
 
+// syncMixed fetches mixed library content (movies AND shows) and sends progress to channel
+func (s *LibraryService) syncMixed(ctx context.Context, lib domain.Library, serverTS int64, progressCh chan<- SyncProgress) {
+	cacheKey := PrefixMixed + lib.ID
+	offset := 0
+	var allItems []domain.ListItem
+
+	for {
+		// Check for cancellation before fetching
+		select {
+		case <-ctx.Done():
+			s.logger.Info("sync cancelled", "libID", lib.ID)
+			return
+		default:
+		}
+
+		items, total, err := s.repo.GetLibraryContent(ctx, lib.ID, offset, syncChunkSize)
+		if err != nil {
+			s.logger.Error("failed to get mixed content chunk", "error", err, "offset", offset)
+			progressCh <- SyncProgress{LibraryID: lib.ID, LibraryType: lib.Type, Error: err}
+			return
+		}
+
+		allItems = append(allItems, items...)
+		done := len(allItems) >= total || len(items) == 0
+
+		// Send progress, but check for cancellation
+		select {
+		case progressCh <- SyncProgress{
+			LibraryID:   lib.ID,
+			LibraryType: lib.Type,
+			Loaded:      len(allItems),
+			Total:       total,
+			Items:       items, // Just this chunk
+			Done:        done,
+		}:
+		case <-ctx.Done():
+			s.logger.Info("sync cancelled during progress send", "libID", lib.ID)
+			return
+		}
+
+		if done {
+			break
+		}
+		offset += syncChunkSize
+	}
+
+	// Store in both caches
+	s.setCache(cacheKey, allItems)
+	s.saveDiskCacheEntry(cacheKey, allItems, serverTS)
+	s.logger.Info("synced mixed content", "count", len(allItems), "libID", lib.ID)
+}
+
 // getCacheKeyForLib returns the cache key for a library's content
 func (s *LibraryService) getCacheKeyForLib(lib domain.Library) string {
-	if lib.Type == "movie" {
+	switch lib.Type {
+	case "movie":
 		return PrefixMovies + lib.ID
+	case "show":
+		return PrefixShows + lib.ID
+	case "mixed":
+		return PrefixMixed + lib.ID
+	default:
+		return PrefixMixed + lib.ID // Fallback for unknown types
 	}
-	return PrefixShows + lib.ID
 }
 
 // GetMovies returns all movies from a library
@@ -411,6 +491,48 @@ func (s *LibraryService) GetCachedShows(libID string) []*domain.Show {
 	cacheKey := PrefixShows + libID
 	if cached, ok := s.getFromCache(cacheKey); ok {
 		return cached.([]*domain.Show)
+	}
+	return nil
+}
+
+// GetLibraryContent returns all content (movies AND shows) from a mixed library
+func (s *LibraryService) GetLibraryContent(ctx context.Context, libID string) ([]domain.ListItem, error) {
+	cacheKey := PrefixMixed + libID
+
+	// 1. Check memory cache
+	if cached, ok := s.getFromCache(cacheKey); ok {
+		s.logger.Debug("memory cache hit", "key", cacheKey)
+		return cached.([]domain.ListItem), nil
+	}
+
+	// 2. Check disk cache (with legacy format support)
+	var items []domain.ListItem
+	if s.loadFromDiskLegacy(cacheKey, &items) {
+		s.logger.Debug("disk cache hit", "key", cacheKey, "count", len(items))
+		s.setCache(cacheKey, items) // Populate memory cache
+		return items, nil
+	}
+
+	// 3. Fetch from API (adapter handles pagination)
+	allItems, err := s.repo.GetAllLibraryContent(ctx, libID)
+	if err != nil {
+		s.logger.Error("failed to get library content", "error", err, "libID", libID)
+		return nil, err
+	}
+
+	// 4. Store in both caches
+	s.setCache(cacheKey, allItems)
+	s.saveToDisk(cacheKey, allItems)
+	s.logger.Info("loaded all library content", "count", len(allItems), "libID", libID)
+
+	return allItems, nil
+}
+
+// GetCachedLibraryContent returns mixed library content only if cached in memory, nil otherwise (non-blocking)
+func (s *LibraryService) GetCachedLibraryContent(libID string) []domain.ListItem {
+	cacheKey := PrefixMixed + libID
+	if cached, ok := s.getFromCache(cacheKey); ok {
+		return cached.([]domain.ListItem)
 	}
 	return nil
 }

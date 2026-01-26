@@ -94,6 +94,49 @@ func (m MediaItem) EpisodeCode() string {
 	return fmt.Sprintf("S%02dE%02d", m.SeasonNum, m.EpisodeNum)
 }
 
+// ListItem interface implementation for MediaItem
+
+func (m *MediaItem) GetID() string    { return m.ID }
+func (m *MediaItem) GetTitle() string { return m.Title }
+func (m *MediaItem) GetSortTitle() string {
+	if m.SortTitle != "" {
+		return m.SortTitle
+	}
+	return m.Title
+}
+func (m *MediaItem) GetYear() int         { return m.Year }
+func (m *MediaItem) GetFilterValue() string { return m.Title }
+func (m *MediaItem) GetAddedAt() int64    { return m.AddedAt }
+func (m *MediaItem) GetUpdatedAt() int64  { return m.UpdatedAt }
+func (m *MediaItem) GetWatchStatus() WatchStatus { return m.WatchStatus() }
+
+func (m *MediaItem) GetItemType() string {
+	switch m.Type {
+	case MediaTypeMovie:
+		return "movie"
+	case MediaTypeEpisode:
+		return "episode"
+	default:
+		return "unknown"
+	}
+}
+
+func (m *MediaItem) GetDescription() string {
+	if m.Type == MediaTypeEpisode {
+		return m.FormattedDuration()
+	}
+	// For movies, show year if available
+	if m.Year > 0 {
+		return fmt.Sprintf("%d", m.Year)
+	}
+	return m.FormattedDuration()
+}
+
+func (m *MediaItem) CanDrillDown() bool {
+	// Movies and episodes are leaf items - can't drill further
+	return false
+}
+
 // Show represents a TV series container
 type Show struct {
 	ID             string // Plex RatingKey
@@ -128,6 +171,35 @@ func (s Show) ProgressPercent() float64 {
 	}
 	watched := s.EpisodeCount - s.UnwatchedCount
 	return float64(watched) / float64(s.EpisodeCount) * 100
+}
+
+// ListItem interface implementation for Show
+
+func (s *Show) GetID() string    { return s.ID }
+func (s *Show) GetTitle() string { return s.Title }
+func (s *Show) GetSortTitle() string {
+	if s.SortTitle != "" {
+		return s.SortTitle
+	}
+	return s.Title
+}
+func (s *Show) GetYear() int           { return s.Year }
+func (s *Show) GetFilterValue() string { return s.Title }
+func (s *Show) GetAddedAt() int64      { return s.AddedAt }
+func (s *Show) GetUpdatedAt() int64    { return s.UpdatedAt }
+func (s *Show) GetItemType() string    { return "show" }
+func (s *Show) GetWatchStatus() WatchStatus { return s.WatchStatus() }
+
+func (s *Show) GetDescription() string {
+	if s.SeasonCount == 1 {
+		return fmt.Sprintf("%d Season", s.SeasonCount)
+	}
+	return fmt.Sprintf("%d Seasons", s.SeasonCount)
+}
+
+func (s *Show) CanDrillDown() bool {
+	// Shows can be drilled into to see seasons
+	return true
 }
 
 // Season represents a season container
@@ -173,6 +245,30 @@ func (s Season) DisplayTitle() string {
 	return fmt.Sprintf("Season %d", s.SeasonNum)
 }
 
+// ListItem interface implementation for Season
+
+func (s *Season) GetID() string           { return s.ID }
+func (s *Season) GetTitle() string        { return s.DisplayTitle() }
+func (s *Season) GetSortTitle() string    { return fmt.Sprintf("%03d", s.SeasonNum) }
+func (s *Season) GetYear() int            { return 0 } // Seasons don't have a year
+func (s *Season) GetFilterValue() string  { return s.DisplayTitle() }
+func (s *Season) GetAddedAt() int64       { return 0 }
+func (s *Season) GetUpdatedAt() int64     { return 0 }
+func (s *Season) GetItemType() string     { return "season" }
+func (s *Season) GetWatchStatus() WatchStatus { return s.WatchStatus() }
+
+func (s *Season) GetDescription() string {
+	if s.EpisodeCount == 1 {
+		return "1 Episode"
+	}
+	return fmt.Sprintf("%d Episodes", s.EpisodeCount)
+}
+
+func (s *Season) CanDrillDown() bool {
+	// Seasons can be drilled into to see episodes
+	return true
+}
+
 // Library represents a Plex library section
 type Library struct {
 	ID        string // Plex section key
@@ -190,6 +286,25 @@ func (l Library) IsMovieLibrary() bool {
 func (l Library) IsShowLibrary() bool {
 	return l.Type == "show"
 }
+
+// IsMixedLibrary returns true if this is a mixed library (movies and shows)
+func (l Library) IsMixedLibrary() bool {
+	return l.Type == "mixed"
+}
+
+// ListItem interface implementation for Library
+
+func (l *Library) GetID() string           { return l.ID }
+func (l *Library) GetTitle() string        { return l.Name }
+func (l *Library) GetSortTitle() string    { return l.Name }
+func (l *Library) GetYear() int            { return 0 }
+func (l *Library) GetFilterValue() string  { return l.Name }
+func (l *Library) GetAddedAt() int64       { return 0 }
+func (l *Library) GetUpdatedAt() int64     { return l.UpdatedAt }
+func (l *Library) GetItemType() string     { return "library" }
+func (l *Library) GetWatchStatus() WatchStatus { return WatchStatusUnwatched }
+func (l *Library) GetDescription() string  { return l.Type }
+func (l *Library) CanDrillDown() bool      { return true }
 
 // PlayerStatus represents the current state of the media player
 type PlayerStatus struct {
@@ -228,6 +343,27 @@ type Playlist struct {
 	ThumbURL     string        // Thumbnail image URL
 	UpdatedAt    int64         // Unix timestamp when last updated
 }
+
+// ListItem interface implementation for Playlist
+
+func (p *Playlist) GetID() string           { return p.ID }
+func (p *Playlist) GetTitle() string        { return p.Title }
+func (p *Playlist) GetSortTitle() string    { return p.Title }
+func (p *Playlist) GetYear() int            { return 0 }
+func (p *Playlist) GetFilterValue() string  { return p.Title }
+func (p *Playlist) GetAddedAt() int64       { return 0 }
+func (p *Playlist) GetUpdatedAt() int64     { return p.UpdatedAt }
+func (p *Playlist) GetItemType() string     { return "playlist" }
+func (p *Playlist) GetWatchStatus() WatchStatus { return WatchStatusUnwatched }
+
+func (p *Playlist) GetDescription() string {
+	if p.ItemCount == 1 {
+		return "1 item"
+	}
+	return fmt.Sprintf("%d items", p.ItemCount)
+}
+
+func (p *Playlist) CanDrillDown() bool { return true }
 
 // WatchStatus represents the viewing state of media
 type WatchStatus int

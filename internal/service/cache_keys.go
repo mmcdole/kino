@@ -11,6 +11,9 @@ const (
 	// PrefixShows is the prefix for TV show library caches (shows:{libID})
 	PrefixShows = "shows:"
 
+	// PrefixMixed is the prefix for mixed library caches (mixed:{libID})
+	PrefixMixed = "mixed:"
+
 	// PrefixSeasons is the prefix for show season caches (seasons:{showID})
 	PrefixSeasons = "seasons:"
 
@@ -25,11 +28,11 @@ const (
 // when refreshing a library. This includes top-level library content but not
 // nested content like seasons/episodes which are keyed by parent ID, not library ID.
 func LibraryCachePrefixes() []string {
-	return []string{PrefixMovies, PrefixShows, PrefixRecent}
+	return []string{PrefixMovies, PrefixShows, PrefixMixed, PrefixRecent}
 }
 
 // AllContentPrefixes returns all cache key prefixes for content data.
 // Use this for complete cache invalidation.
 func AllContentPrefixes() []string {
-	return []string{PrefixMovies, PrefixShows, PrefixSeasons, PrefixEpisodes, PrefixRecent}
+	return []string{PrefixMovies, PrefixShows, PrefixMixed, PrefixSeasons, PrefixEpisodes, PrefixRecent}
 }

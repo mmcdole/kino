@@ -35,6 +35,9 @@ func mapLibrary(item Item) *domain.Library {
 		libType = "movie"
 	case "tvshows":
 		libType = "show"
+	case "mixed", "":
+		// Mixed libraries contain both movies and shows
+		libType = "mixed"
 	default:
 		// Skip other library types (music, etc.)
 		return nil
@@ -381,4 +384,22 @@ func mapPlaylist(item Item, serverURL string) domain.Playlist {
 	}
 
 	return p
+}
+
+// MapLibraryContent converts Jellyfin items to domain.ListItem for mixed libraries.
+// This handles both Movies and Series in a single response, returning them as
+// a polymorphic slice that the UI can display uniformly.
+func MapLibraryContent(items []Item, serverURL string) []domain.ListItem {
+	result := make([]domain.ListItem, 0, len(items))
+	for _, item := range items {
+		switch item.Type {
+		case "Movie":
+			movie := mapMovie(item, serverURL)
+			result = append(result, &movie)
+		case "Series":
+			show := mapShow(item, serverURL)
+			result = append(result, &show)
+		}
+	}
+	return result
 }

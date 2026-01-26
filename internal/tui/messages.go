@@ -37,6 +37,12 @@ type ShowsLoadedMsg struct {
 	LibraryID string
 }
 
+// LibraryContentLoadedMsg signals that mixed library content has been loaded
+type LibraryContentLoadedMsg struct {
+	Items     []domain.ListItem
+	LibraryID string
+}
+
 // SeasonsLoadedMsg signals that seasons have been loaded
 type SeasonsLoadedMsg struct {
 	Seasons []*domain.Season

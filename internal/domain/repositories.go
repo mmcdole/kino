@@ -20,11 +20,18 @@ type LibraryRepository interface {
 	// Returns (items, totalSize, error) for pagination support
 	GetShows(ctx context.Context, libID string, offset, limit int) ([]*Show, int, error)
 
+	// GetLibraryContent returns paginated content (movies AND shows) from a mixed library
+	// Returns (items, totalSize, error) for pagination support
+	GetLibraryContent(ctx context.Context, libID string, offset, limit int) ([]ListItem, int, error)
+
 	// GetAllMovies returns all movies in a library (handles pagination internally)
 	GetAllMovies(ctx context.Context, libID string) ([]*MediaItem, error)
 
 	// GetAllShows returns all TV shows in a library (handles pagination internally)
 	GetAllShows(ctx context.Context, libID string) ([]*Show, error)
+
+	// GetAllLibraryContent returns all content from a mixed library (handles pagination internally)
+	GetAllLibraryContent(ctx context.Context, libID string) ([]ListItem, error)
 
 	// GetMoviesWithProgress fetches movies and reports progress via callback
 	// The callback receives each batch as it's fetched: (batch, loadedSoFar, total)
@@ -32,6 +39,9 @@ type LibraryRepository interface {
 
 	// GetShowsWithProgress fetches shows and reports progress via callback
 	GetShowsWithProgress(ctx context.Context, libID string, progress func([]*Show, int, int)) error
+
+	// GetLibraryContentWithProgress fetches mixed library content and reports progress via callback
+	GetLibraryContentWithProgress(ctx context.Context, libID string, progress func([]ListItem, int, int)) error
 
 	// GetSeasons returns all seasons for a TV show
 	GetSeasons(ctx context.Context, showID string) ([]*Season, error)
