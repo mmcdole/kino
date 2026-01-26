@@ -28,12 +28,12 @@ const (
 type NavAwaitKind int
 
 const (
-	AwaitNone NavAwaitKind = iota
-	AwaitMovies   // AwaitID = LibraryID
-	AwaitShows    // AwaitID = LibraryID
-	AwaitMixed    // AwaitID = LibraryID (mixed content library)
-	AwaitSeasons  // AwaitID = ShowID
-	AwaitEpisodes // AwaitID = SeasonID
+	AwaitNone     NavAwaitKind = iota
+	AwaitMovies                // AwaitID = LibraryID
+	AwaitShows                 // AwaitID = LibraryID
+	AwaitMixed                 // AwaitID = LibraryID (mixed content library)
+	AwaitSeasons               // AwaitID = ShowID
+	AwaitEpisodes              // AwaitID = SeasonID
 )
 
 // NavTarget represents a single navigation step
@@ -86,7 +86,7 @@ const (
 	ActiveColumnPercent2     = 45 // Active/focused
 
 	// Root level (single column + inspector)
-	RootColumnPercent   = 40
+	RootColumnPercent    = 40
 	RootInspectorPercent = 60
 
 	MinColumnWidth = 15
@@ -108,12 +108,12 @@ type Model struct {
 	PlaylistSvc *service.PlaylistService
 
 	// UI Components - Miller Columns
-	ColumnStack   *ColumnStack              // Stack of navigable list columns
-	Inspector     components.Inspector      // View projection (always shows details for middle column selection)
-	Omnibar       components.Omnibar        // Search modal
-	SortModal     components.SortModal      // Sort field selector
+	ColumnStack   *ColumnStack             // Stack of navigable list columns
+	Inspector     components.Inspector     // View projection (always shows details for middle column selection)
+	Omnibar       components.Omnibar       // Search modal
+	SortModal     components.SortModal     // Sort field selector
 	PlaylistModal components.PlaylistModal // Playlist management modal
-	InputModal    components.InputModal     // Simple text input modal
+	InputModal    components.InputModal    // Simple text input modal
 
 	// Data
 	Libraries []domain.Library
@@ -131,8 +131,8 @@ type Model struct {
 
 	// Sync state
 	LibraryStates map[string]components.LibrarySyncState // Tracks progress per library
-	SyncingCount int  // Libraries still syncing
-	MultiLibSync bool // True when syncing multiple libraries (R / startup)
+	SyncingCount  int                                    // Libraries still syncing
+	MultiLibSync  bool                                   // True when syncing multiple libraries (R / startup)
 
 	// Navigation plan for deep linking
 	navPlan *NavPlan
@@ -221,7 +221,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Start parallel sync of ALL libraries
 		m.Loading = true
-		return m, SyncAllLibrariesCmd(m.LibrarySvc, m.SearchSvc, msg.Libraries, false)
+		return m, SyncAllLibrariesCmd(m.LibrarySvc, msg.Libraries, false)
 
 	case MoviesLoadedMsg:
 		m.Loading = false
@@ -240,8 +240,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.updateInspector()
-		// Index movies for global filter
-		m.indexMoviesForFilter(msg.Movies, msg.LibraryID)
 
 		// Advance nav plan if waiting for this load
 		if cmd := m.advanceNavPlanAfterLoad(AwaitMovies, msg.LibraryID); cmd != nil {
@@ -266,8 +264,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.updateInspector()
-		// Index shows for global filter
-		m.indexShowsForFilter(msg.Shows, msg.LibraryID)
 
 		// Advance nav plan if waiting for this load
 		if cmd := m.advanceNavPlanAfterLoad(AwaitShows, msg.LibraryID); cmd != nil {
@@ -275,7 +271,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case LibraryContentLoadedMsg:
+	case MixedLibraryLoadedMsg:
 		m.Loading = false
 
 		// If manual load succeeded and library was in error state, clear it
@@ -292,8 +288,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.updateInspector()
-		// Index items for global filter
-		m.indexMixedContentForFilter(msg.Items, msg.LibraryID)
 
 		// Advance nav plan if waiting for this load
 		if cmd := m.advanceNavPlanAfterLoad(AwaitMixed, msg.LibraryID); cmd != nil {
@@ -374,13 +368,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.StatusIsErr = false
 		return m, nil
 
-	case GlobalSearchReadyMsg:
-		m.Omnibar.SetLoading(false)
-		if msg.SkippedLibraries > 0 {
-			m.StatusMsg = fmt.Sprintf("Search ready (%d libraries still syncing)", msg.SkippedLibraries)
-		}
-		return m, nil
-
 	case LibrarySyncProgressMsg:
 		state := m.LibraryStates[msg.LibraryID]
 
@@ -426,7 +413,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		return m, tea.Batch(cmds...)
-
 
 	case ClearLibraryStatusMsg:
 		if state, ok := m.LibraryStates[msg.LibraryID]; ok {
@@ -539,7 +525,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle real-time filtering
 		if m.Omnibar.IsFilterMode() && m.Omnibar.QueryChanged() {
 			query := m.Omnibar.Query()
-			results := m.SearchSvc.FilterLocal(query)
+			results := m.SearchSvc.FilterLocal(query, nil, m.Libraries)
 			m.Omnibar.SetFilterResults(results)
 		}
 
@@ -633,11 +619,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Global search via Omnibar
 		m.Omnibar.ShowFilterMode()
 		m.Omnibar.SetSize(m.Width, m.Height)
-		m.Omnibar.SetLoading(true)
-		return m, tea.Batch(
-			m.Omnibar.Init(),
-			LoadAllForGlobalSearchCmd(m.LibrarySvc, m.SearchSvc, m.Libraries),
-		)
+		return m, m.Omnibar.Init()
 
 	case key.Matches(msg, Keys.Sort):
 		// Sort modal (only for movies/shows columns)
@@ -677,14 +659,13 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.Loading = true
 				m.MultiLibSync = false
 				m.updateLibraryStates()
-				return m, SyncLibraryCmd(m.LibrarySvc, m.SearchSvc, *lib, true)
+				return m, SyncLibraryCmd(m.LibrarySvc, *lib, true)
 			}
 		}
 		return m, nil
 
 	case key.Matches(msg, Keys.RefreshAll):
 		// Refresh ALL libraries
-		m.SearchSvc.ClearFilterIndex()
 		m.LibraryStates = make(map[string]components.LibrarySyncState)
 		for _, lib := range m.Libraries {
 			m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
@@ -708,7 +689,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.Inspector.SetLibraryStates(m.LibraryStates)
 		m.ColumnStack.Reset(libCol)
 
-		return m, SyncAllLibrariesCmd(m.LibrarySvc, m.SearchSvc, m.Libraries, true)
+		return m, SyncAllLibrariesCmd(m.LibrarySvc, m.Libraries, true)
 
 	case key.Matches(msg, Keys.MarkWatched):
 		// Mark as watched
@@ -815,7 +796,7 @@ func (m Model) routeToModal(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 
 		if m.Omnibar.IsFilterMode() && m.Omnibar.QueryChanged() {
 			query := m.Omnibar.Query()
-			results := m.SearchSvc.FilterLocal(query)
+			results := m.SearchSvc.FilterLocal(query, nil, m.Libraries)
 			m.Omnibar.SetFilterResults(results)
 		}
 
@@ -1085,7 +1066,7 @@ func (m *Model) drillSelected() *drillResult {
 			return &drillResult{
 				AwaitKind: AwaitMixed,
 				AwaitID:   v.ID,
-				Cmd:       LoadLibraryContentCmd(m.LibrarySvc, v.ID),
+				Cmd:       LoadMixedLibraryCmd(m.LibrarySvc, v.ID),
 			}
 
 		default:
@@ -1098,7 +1079,7 @@ func (m *Model) drillSelected() *drillResult {
 			return &drillResult{
 				AwaitKind: AwaitMixed,
 				AwaitID:   v.ID,
-				Cmd:       LoadLibraryContentCmd(m.LibrarySvc, v.ID),
+				Cmd:       LoadMixedLibraryCmd(m.LibrarySvc, v.ID),
 			}
 		}
 
@@ -1240,7 +1221,7 @@ func (m *Model) refreshCurrentView() tea.Cmd {
 	case components.ColumnTypeMixed:
 		if libCol := m.libraryColumn(); libCol != nil {
 			if lib := libCol.SelectedLibrary(); lib != nil {
-				return LoadLibraryContentCmd(m.LibrarySvc, lib.ID)
+				return LoadMixedLibraryCmd(m.LibrarySvc, lib.ID)
 			}
 		}
 	}
@@ -1294,7 +1275,7 @@ func (m *Model) updateLayout() {
 		}
 
 	case stackLen == 2:
-		m.ColumnStack.Get(topIdx - 1).SetSize(layout.parentWidth, contentHeight)
+		m.ColumnStack.Get(topIdx-1).SetSize(layout.parentWidth, contentHeight)
 		m.ColumnStack.Get(topIdx).SetSize(layout.activeWidth, contentHeight)
 		if m.ShowInspector {
 			m.Inspector.SetSize(layout.inspectorWidth, contentHeight)
@@ -1302,9 +1283,9 @@ func (m *Model) updateLayout() {
 
 	default: // 3+ columns
 		if layout.grandparentWidth > 0 {
-			m.ColumnStack.Get(topIdx - 2).SetSize(layout.grandparentWidth, contentHeight)
+			m.ColumnStack.Get(topIdx-2).SetSize(layout.grandparentWidth, contentHeight)
 		}
-		m.ColumnStack.Get(topIdx - 1).SetSize(layout.parentWidth, contentHeight)
+		m.ColumnStack.Get(topIdx-1).SetSize(layout.parentWidth, contentHeight)
 		m.ColumnStack.Get(topIdx).SetSize(layout.activeWidth, contentHeight)
 		if m.ShowInspector {
 			m.Inspector.SetSize(layout.inspectorWidth, contentHeight)
@@ -1604,96 +1585,6 @@ func (m Model) renderLogoutConfirmation() string {
 		styles.ModalStyle.Render(modal))
 }
 
-// indexMoviesForFilter indexes movies for the global filter
-func (m *Model) indexMoviesForFilter(movies []*domain.MediaItem, libID string) {
-	libName := m.findLibraryName(libID)
-	items := make([]service.FilterItem, len(movies))
-
-	for i, movie := range movies {
-		items[i] = service.FilterItem{
-			Item:  movie,
-			Title: movie.Title,
-			Type:  domain.MediaTypeMovie,
-			NavContext: service.NavigationContext{
-				LibraryID:   libID,
-				LibraryName: libName,
-				MovieID:     movie.ID,
-			},
-		}
-	}
-
-	m.SearchSvc.IndexForFilter(items)
-}
-
-// indexShowsForFilter indexes shows for the global filter
-func (m *Model) indexShowsForFilter(shows []*domain.Show, libID string) {
-	libName := m.findLibraryName(libID)
-	items := make([]service.FilterItem, len(shows))
-
-	for i, show := range shows {
-		items[i] = service.FilterItem{
-			Item:  show,
-			Title: show.Title,
-			Type:  domain.MediaTypeShow,
-			NavContext: service.NavigationContext{
-				LibraryID:   libID,
-				LibraryName: libName,
-				ShowID:      show.ID,
-				ShowTitle:   show.Title,
-			},
-		}
-	}
-
-	m.SearchSvc.IndexForFilter(items)
-}
-
-// indexMixedContentForFilter indexes mixed library content (movies + shows) for the global filter
-func (m *Model) indexMixedContentForFilter(content []domain.ListItem, libID string) {
-	libName := m.findLibraryName(libID)
-	items := make([]service.FilterItem, 0, len(content))
-
-	for _, item := range content {
-		switch v := item.(type) {
-		case *domain.MediaItem:
-			items = append(items, service.FilterItem{
-				Item:  v,
-				Title: v.Title,
-				Type:  domain.MediaTypeMovie,
-				NavContext: service.NavigationContext{
-					LibraryID:   libID,
-					LibraryName: libName,
-					MovieID:     v.ID,
-				},
-			})
-		case *domain.Show:
-			items = append(items, service.FilterItem{
-				Item:  v,
-				Title: v.Title,
-				Type:  domain.MediaTypeShow,
-				NavContext: service.NavigationContext{
-					LibraryID:   libID,
-					LibraryName: libName,
-					ShowID:      v.ID,
-					ShowTitle:   v.Title,
-				},
-			})
-		}
-	}
-
-	m.SearchSvc.IndexForFilter(items)
-}
-
-// findLibraryName returns the library name for a given ID
-func (m Model) findLibraryName(libID string) string {
-	for _, lib := range m.Libraries {
-		if lib.ID == libID {
-			return lib.Name
-		}
-	}
-	return ""
-}
-
-
 // clearNavPlan clears the current navigation plan
 func (m *Model) clearNavPlan() {
 	m.navPlan = nil
@@ -1757,6 +1648,9 @@ func (m *Model) advanceNavPlanAfterLoad(kind NavAwaitKind, id string) tea.Cmd {
 
 // navigateToFilteredItem navigates to a filtered item in its context
 func (m *Model) navigateToFilteredItem(item service.FilterItem) tea.Cmd {
+	// Build navigation context from the filter item
+	navCtx := m.buildNavContext(item)
+
 	// Append synthetic "Playlists" entry at bottom
 	playlistsEntry := domain.Library{
 		ID:   "__playlists__",
@@ -1772,7 +1666,7 @@ func (m *Model) navigateToFilteredItem(item service.FilterItem) tea.Cmd {
 
 	// Find and select the library
 	for i, lib := range m.Libraries {
-		if lib.ID == item.NavContext.LibraryID {
+		if lib.ID == navCtx.LibraryID {
 			libCol.SetSelectedIndex(i)
 			break
 		}
@@ -1782,7 +1676,7 @@ func (m *Model) navigateToFilteredItem(item service.FilterItem) tea.Cmd {
 
 	switch item.Type {
 	case domain.MediaTypeMovie:
-		lib := m.findLibrary(item.NavContext.LibraryID)
+		lib := m.findLibrary(navCtx.LibraryID)
 		if lib == nil {
 			return nil
 		}
@@ -1790,7 +1684,7 @@ func (m *Model) navigateToFilteredItem(item service.FilterItem) tea.Cmd {
 		// Handle mixed libraries differently - they use different cache/API
 		if lib.Type == "mixed" {
 			m.navPlan = &NavPlan{
-				Targets:     []NavTarget{{ID: item.NavContext.MovieID}},
+				Targets:     []NavTarget{{ID: navCtx.MovieID}},
 				CurrentStep: 0,
 				AwaitKind:   AwaitMixed,
 				AwaitID:     lib.ID,
@@ -1810,12 +1704,12 @@ func (m *Model) navigateToFilteredItem(item service.FilterItem) tea.Cmd {
 			m.ColumnStack.Push(mixedCol, 0)
 			m.Loading = true
 			m.updateLayout()
-			return LoadLibraryContentCmd(m.LibrarySvc, lib.ID)
+			return LoadMixedLibraryCmd(m.LibrarySvc, lib.ID)
 		}
 
 		m.navPlan = &NavPlan{
 			Targets: []NavTarget{
-				{ID: item.NavContext.MovieID},
+				{ID: navCtx.MovieID},
 			},
 			CurrentStep: 0,
 			AwaitKind:   AwaitMovies,
@@ -1827,10 +1721,10 @@ func (m *Model) navigateToFilteredItem(item service.FilterItem) tea.Cmd {
 		m.ColumnStack.Push(moviesCol, 0)
 		m.Loading = true
 		m.updateLayout()
-		return LoadMoviesCmd(m.LibrarySvc, item.NavContext.LibraryID)
+		return LoadMoviesCmd(m.LibrarySvc, navCtx.LibraryID)
 
 	case domain.MediaTypeShow:
-		lib := m.findLibrary(item.NavContext.LibraryID)
+		lib := m.findLibrary(navCtx.LibraryID)
 		if lib == nil {
 			return nil
 		}
@@ -1866,7 +1760,7 @@ func (m *Model) navigateToFilteredItem(item service.FilterItem) tea.Cmd {
 			m.ColumnStack.Push(mixedCol, 0)
 			m.Loading = true
 			m.updateLayout()
-			return LoadLibraryContentCmd(m.LibrarySvc, lib.ID)
+			return LoadMixedLibraryCmd(m.LibrarySvc, lib.ID)
 		}
 
 		m.navPlan = &NavPlan{
@@ -1882,7 +1776,7 @@ func (m *Model) navigateToFilteredItem(item service.FilterItem) tea.Cmd {
 		showsCol := components.NewListColumn(components.ColumnTypeShows, lib.Name)
 
 		// If cached, populate and immediately advance
-		cachedShows := m.LibrarySvc.GetCachedShows(item.NavContext.LibraryID)
+		cachedShows := m.LibrarySvc.GetCachedShows(navCtx.LibraryID)
 		if cachedShows != nil {
 			showsCol.SetItems(cachedShows)
 			m.ColumnStack.Push(showsCol, 0)
@@ -1895,10 +1789,10 @@ func (m *Model) navigateToFilteredItem(item service.FilterItem) tea.Cmd {
 		m.ColumnStack.Push(showsCol, 0)
 		m.Loading = true
 		m.updateLayout()
-		return LoadShowsCmd(m.LibrarySvc, item.NavContext.LibraryID)
+		return LoadShowsCmd(m.LibrarySvc, navCtx.LibraryID)
 
 	case domain.MediaTypeEpisode:
-		lib := m.findLibrary(item.NavContext.LibraryID)
+		lib := m.findLibrary(navCtx.LibraryID)
 		if lib == nil {
 			return nil
 		}
@@ -1908,9 +1802,9 @@ func (m *Model) navigateToFilteredItem(item service.FilterItem) tea.Cmd {
 			// Build NavPlan: Mixed -> Seasons -> Episodes
 			m.navPlan = &NavPlan{
 				Targets: []NavTarget{
-					{ID: item.NavContext.ShowID},    // Step 0: Select show in mixed column
-					{ID: item.NavContext.SeasonID},  // Step 1: Select season
-					{ID: item.NavContext.EpisodeID}, // Step 2: Select episode
+					{ID: navCtx.ShowID},    // Step 0: Select show in mixed column
+					{ID: navCtx.SeasonID},  // Step 1: Select season
+					{ID: navCtx.EpisodeID}, // Step 2: Select episode
 				},
 				CurrentStep: 0,
 				AwaitKind:   AwaitMixed,
@@ -1931,15 +1825,15 @@ func (m *Model) navigateToFilteredItem(item service.FilterItem) tea.Cmd {
 			m.ColumnStack.Push(mixedCol, 0)
 			m.Loading = true
 			m.updateLayout()
-			return LoadLibraryContentCmd(m.LibrarySvc, lib.ID)
+			return LoadMixedLibraryCmd(m.LibrarySvc, lib.ID)
 		}
 
 		// Build NavPlan: Shows -> Seasons -> Episodes
 		m.navPlan = &NavPlan{
 			Targets: []NavTarget{
-				{ID: item.NavContext.ShowID},    // Step 0: Select show
-				{ID: item.NavContext.SeasonID},  // Step 1: Select season
-				{ID: item.NavContext.EpisodeID}, // Step 2: Select episode
+				{ID: navCtx.ShowID},    // Step 0: Select show
+				{ID: navCtx.SeasonID},  // Step 1: Select season
+				{ID: navCtx.EpisodeID}, // Step 2: Select episode
 			},
 			CurrentStep: 0,
 			AwaitKind:   AwaitShows,
@@ -1953,7 +1847,7 @@ func (m *Model) navigateToFilteredItem(item service.FilterItem) tea.Cmd {
 		m.Loading = true
 		m.updateLayout()
 
-		return LoadShowsCmd(m.LibrarySvc, item.NavContext.LibraryID)
+		return LoadShowsCmd(m.LibrarySvc, navCtx.LibraryID)
 	}
 
 	return nil

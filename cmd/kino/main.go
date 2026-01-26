@@ -17,7 +17,6 @@ import (
 	"github.com/mmcdole/kino/internal/tui/styles"
 )
 
-
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -58,7 +57,7 @@ func run() error {
 
 	// Create services
 	librarySvc := service.NewLibraryService(client, logger, cfg.Server.URL)
-	searchSvc := service.NewSearchService(client, logger)
+	searchSvc := service.NewSearchService(client, librarySvc, logger)
 	playbackSvc := service.NewPlaybackService(launcher, client, logger)
 	playlistSvc := service.NewPlaylistService(client, logger)
 

@@ -365,11 +365,8 @@ func (o Omnibar) renderFilterResults(b *strings.Builder, modalWidth, maxResults 
 		}
 		line.WriteString(" ")
 
-		// Library context (dimmed)
-		if result.NavContext.LibraryName != "" {
-			line.WriteString(styles.DimStyle.Render(result.NavContext.LibraryName))
-			line.WriteString(styles.DimStyle.Render(" > "))
-		}
+		// Note: Library name display removed in refactor
+		// FilterItem now contains only LibraryID, navigation context is built in TUI layer
 
 		// Build display title
 		title := result.Title

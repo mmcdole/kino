@@ -55,8 +55,8 @@ func LoadShowsCmd(svc *service.LibraryService, libID string) tea.Cmd {
 	}
 }
 
-// LoadLibraryContentCmd loads content (movies AND shows) from a mixed library
-func LoadLibraryContentCmd(svc *service.LibraryService, libID string) tea.Cmd {
+// LoadMixedLibraryCmd loads content (movies AND shows) from a mixed library
+func LoadMixedLibraryCmd(svc *service.LibraryService, libID string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
@@ -65,7 +65,7 @@ func LoadLibraryContentCmd(svc *service.LibraryService, libID string) tea.Cmd {
 		if err != nil {
 			return ErrMsg{Err: err, Context: "loading library content"}
 		}
-		return LibraryContentLoadedMsg{Items: items, LibraryID: libID}
+		return MixedLibraryLoadedMsg{Items: items, LibraryID: libID}
 	}
 }
 
@@ -163,109 +163,10 @@ func ClearLibraryStatusCmd(libID string, delay time.Duration) tea.Cmd {
 	})
 }
 
-// LoadAllForGlobalSearchCmd loads cached content from all libraries for global search
-// Uses cache-only access to avoid blocking network requests and UI freezes
-func LoadAllForGlobalSearchCmd(libSvc *service.LibraryService, searchSvc *service.SearchService, libraries []domain.Library) tea.Cmd {
-	return func() tea.Msg {
-		var skippedLibraries int
-
-		for _, lib := range libraries {
-			switch lib.Type {
-			case "movie":
-				movies := libSvc.GetCachedMovies(lib.ID)
-				if movies == nil {
-					skippedLibraries++
-					continue // Skip - not cached yet
-				}
-				// Index movies (already pointers)
-				items := make([]service.FilterItem, len(movies))
-				for i, movie := range movies {
-					items[i] = service.FilterItem{
-						Item:  movie,
-						Title: movie.Title,
-						Type:  domain.MediaTypeMovie,
-						NavContext: service.NavigationContext{
-							LibraryID:   lib.ID,
-							LibraryName: lib.Name,
-							MovieID:     movie.ID,
-						},
-					}
-				}
-				searchSvc.IndexForFilter(items)
-
-			case "show":
-				shows := libSvc.GetCachedShows(lib.ID)
-				if shows == nil {
-					skippedLibraries++
-					continue // Skip - not cached yet
-				}
-				// Index shows (already pointers)
-				items := make([]service.FilterItem, len(shows))
-				for i, show := range shows {
-					items[i] = service.FilterItem{
-						Item:  show,
-						Title: show.Title,
-						Type:  domain.MediaTypeShow,
-						NavContext: service.NavigationContext{
-							LibraryID:   lib.ID,
-							LibraryName: lib.Name,
-							ShowID:      show.ID,
-							ShowTitle:   show.Title,
-						},
-					}
-				}
-				searchSvc.IndexForFilter(items)
-
-			case "mixed":
-				content := libSvc.GetCachedLibraryContent(lib.ID)
-				if content == nil {
-					skippedLibraries++
-					continue // Skip - not cached yet
-				}
-				// Index mixed content
-				items := make([]service.FilterItem, 0, len(content))
-				for _, item := range content {
-					switch v := item.(type) {
-					case *domain.MediaItem:
-						items = append(items, service.FilterItem{
-							Item:  v,
-							Title: v.Title,
-							Type:  domain.MediaTypeMovie,
-							NavContext: service.NavigationContext{
-								LibraryID:   lib.ID,
-								LibraryName: lib.Name,
-								MovieID:     v.ID,
-							},
-						})
-					case *domain.Show:
-						items = append(items, service.FilterItem{
-							Item:  v,
-							Title: v.Title,
-							Type:  domain.MediaTypeShow,
-							NavContext: service.NavigationContext{
-								LibraryID:   lib.ID,
-								LibraryName: lib.Name,
-								ShowID:      v.ID,
-								ShowTitle:   v.Title,
-							},
-						})
-					}
-				}
-				searchSvc.IndexForFilter(items)
-			}
-		}
-
-		return GlobalSearchReadyMsg{
-			SkippedLibraries: skippedLibraries,
-		}
-	}
-}
-
 // SyncLibraryCmd performs smart sync with streaming progress updates using channels
 // Uses a continuation pattern to pump all progress messages to the UI
 func SyncLibraryCmd(
 	libSvc *service.LibraryService,
-	searchSvc *service.SearchService,
 	lib domain.Library,
 	force bool,
 ) tea.Cmd {
@@ -283,7 +184,7 @@ func SyncLibraryCmd(
 		}()
 
 		// Read the first message and return it with continuation context
-		return readSyncProgress(lib, progressCh, searchSvc)
+		return readSyncProgress(lib, progressCh)
 	}
 }
 
@@ -292,7 +193,6 @@ func SyncLibraryCmd(
 func readSyncProgress(
 	lib domain.Library,
 	progressCh <-chan service.SyncProgress,
-	searchSvc *service.SearchService,
 ) tea.Msg {
 	progress, ok := <-progressCh
 	if !ok {
@@ -305,19 +205,11 @@ func readSyncProgress(
 		}
 	}
 
-	// Index chunk immediately for incremental search
-	if progress.Items != nil {
-		// Calculate offset: total loaded minus current chunk size
-		offset := progress.Loaded - progress.Items.ChunkSize()
-		indexChunkForSearch(searchSvc, progress.Items, lib, offset)
-	}
-
 	msg := LibrarySyncProgressMsg{
 		LibraryID:   progress.LibraryID,
 		LibraryType: progress.LibraryType,
 		Loaded:      progress.Loaded,
 		Total:       progress.Total,
-		Items:       progress.Items,
 		Done:        progress.Done,
 		FromDisk:    progress.FromDisk,
 		Error:       progress.Error,
@@ -325,7 +217,7 @@ func readSyncProgress(
 
 	// If not done and no error, attach continuation command
 	if !progress.Done && progress.Error == nil {
-		msg.NextCmd = listenToSyncCmd(lib, progressCh, searchSvc)
+		msg.NextCmd = listenToSyncCmd(lib, progressCh)
 	}
 
 	return msg
@@ -335,95 +227,23 @@ func readSyncProgress(
 func listenToSyncCmd(
 	lib domain.Library,
 	progressCh <-chan service.SyncProgress,
-	searchSvc *service.SearchService,
 ) tea.Cmd {
 	return func() tea.Msg {
-		return readSyncProgress(lib, progressCh, searchSvc)
+		return readSyncProgress(lib, progressCh)
 	}
 }
 
 // SyncAllLibrariesCmd syncs all libraries in parallel
 func SyncAllLibrariesCmd(
 	libSvc *service.LibraryService,
-	searchSvc *service.SearchService,
 	libraries []domain.Library,
 	force bool,
 ) tea.Cmd {
 	cmds := make([]tea.Cmd, len(libraries))
 	for i, lib := range libraries {
-		cmds[i] = SyncLibraryCmd(libSvc, searchSvc, lib, force)
+		cmds[i] = SyncLibraryCmd(libSvc, lib, force)
 	}
 	return tea.Batch(cmds...)
-}
-
-// indexChunkForSearch indexes a chunk of items for global search
-// offset is the starting index of this chunk in the full library list
-func indexChunkForSearch(searchSvc *service.SearchService, chunk service.SyncChunk, lib domain.Library, offset int) {
-	switch v := chunk.(type) {
-	case service.MovieChunk:
-		filterItems := make([]service.FilterItem, len(v))
-		for i, movie := range v {
-			filterItems[i] = service.FilterItem{
-				Item:  movie,
-				Title: movie.Title,
-				Type:  domain.MediaTypeMovie,
-				NavContext: service.NavigationContext{
-					LibraryID:   lib.ID,
-					LibraryName: lib.Name,
-					MovieID:     movie.ID,
-				},
-			}
-		}
-		searchSvc.IndexForFilter(filterItems)
-
-	case service.ShowChunk:
-		filterItems := make([]service.FilterItem, len(v))
-		for i, show := range v {
-			filterItems[i] = service.FilterItem{
-				Item:  show,
-				Title: show.Title,
-				Type:  domain.MediaTypeShow,
-				NavContext: service.NavigationContext{
-					LibraryID:   lib.ID,
-					LibraryName: lib.Name,
-					ShowID:      show.ID,
-					ShowTitle:   show.Title,
-				},
-			}
-		}
-		searchSvc.IndexForFilter(filterItems)
-
-	case service.MixedChunk:
-		filterItems := make([]service.FilterItem, 0, len(v))
-		for _, item := range v {
-			switch t := item.(type) {
-			case *domain.MediaItem:
-				filterItems = append(filterItems, service.FilterItem{
-					Item:  t,
-					Title: t.Title,
-					Type:  domain.MediaTypeMovie,
-					NavContext: service.NavigationContext{
-						LibraryID:   lib.ID,
-						LibraryName: lib.Name,
-						MovieID:     t.ID,
-					},
-				})
-			case *domain.Show:
-				filterItems = append(filterItems, service.FilterItem{
-					Item:  t,
-					Title: t.Title,
-					Type:  domain.MediaTypeShow,
-					NavContext: service.NavigationContext{
-						LibraryID:   lib.ID,
-						LibraryName: lib.Name,
-						ShowID:      t.ID,
-						ShowTitle:   t.Title,
-					},
-				})
-			}
-		}
-		searchSvc.IndexForFilter(filterItems)
-	}
 }
 
 // LogoutCmd clears server config and cache, then signals completion

@@ -3,7 +3,6 @@ package tui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/domain"
-	"github.com/mmcdole/kino/internal/service"
 )
 
 // Message types for the TUI
@@ -39,8 +38,8 @@ type ShowsLoadedMsg struct {
 	LibraryID string
 }
 
-// LibraryContentLoadedMsg signals that mixed library content has been loaded
-type LibraryContentLoadedMsg struct {
+// MixedLibraryLoadedMsg signals that mixed library content has been loaded
+type MixedLibraryLoadedMsg struct {
 	Items     []domain.ListItem
 	LibraryID string
 }
@@ -90,11 +89,6 @@ type StatusMsg struct {
 	IsError bool
 }
 
-// GlobalSearchReadyMsg signals that all content is loaded for global search
-type GlobalSearchReadyMsg struct {
-	SkippedLibraries int // Libraries not yet cached (still syncing)
-}
-
 // LibraryStatus represents the sync status of a library
 type LibraryStatus int
 
@@ -108,10 +102,10 @@ const (
 // LibrarySyncState tracks sync progress for a single library
 type LibrarySyncState struct {
 	Status   LibraryStatus
-	Loaded   int    // Items loaded so far
-	Total    int    // Total items expected
-	FromDisk bool   // Whether loaded from cache
-	Error    error  // Error if any
+	Loaded   int   // Items loaded so far
+	Total    int   // Total items expected
+	FromDisk bool  // Whether loaded from cache
+	Error    error // Error if any
 }
 
 // LibrarySyncProgressMsg sent for each chunk during streaming sync
@@ -120,7 +114,6 @@ type LibrarySyncProgressMsg struct {
 	LibraryType string
 	Loaded      int
 	Total       int
-	Items       service.SyncChunk // Current chunk (MovieChunk, ShowChunk, or MixedChunk)
 	Done        bool
 	FromDisk    bool
 	Error       error
