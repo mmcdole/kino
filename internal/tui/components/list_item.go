@@ -69,8 +69,3 @@ func WrapPlaylistItems(items []*domain.MediaItem) []domain.ListItem {
 	return result
 }
 
-// WrapMixedContent converts a slice of domain.ListItem to itself (identity operation)
-// This exists for API consistency with other Wrap* functions
-func WrapMixedContent(items []domain.ListItem) []domain.ListItem {
-	return items
-}

@@ -283,19 +283,11 @@ func MapPlaylists(metadata []Metadata, serverURL string) []*domain.Playlist {
 
 // mapPlaylist converts a single Plex playlist metadata to domain playlist
 func mapPlaylist(m Metadata, serverURL string) domain.Playlist {
-	// Determine if it's a smart playlist
-	// Plex returns "smart" field in some responses, but we also check for certain patterns
-	smart := false
-	if m.Key != "" && m.RatingKey != "" {
-		// Smart playlists have different characteristics
-		// For now, we'll rely on the API response structure
-	}
-
 	return domain.Playlist{
 		ID:           m.RatingKey,
 		Title:        m.Title,
 		PlaylistType: getPlaylistType(m.Type),
-		Smart:        smart,
+		Smart:        false,
 		ItemCount:    m.LeafCount,
 		Duration:     time.Duration(m.Duration) * time.Millisecond,
 		ThumbURL:     buildThumbURL(serverURL, m.Thumb),

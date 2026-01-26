@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/mmcdole/kino/internal/domain"
 )
@@ -20,10 +19,9 @@ const (
 	syncChunkSize   = 50 // Smaller batches to work around Jellyfin server issues
 )
 
-// cachedResult stores cached data with timestamp
+// cachedResult stores cached data
 type cachedResult struct {
-	Items     interface{}
-	FetchedAt time.Time
+	Items interface{}
 }
 
 // diskCacheEntry stores cached data with server timestamp for smart invalidation
@@ -678,8 +676,7 @@ func (s *LibraryService) setCache(key string, items interface{}) {
 	defer s.cacheMu.Unlock()
 
 	s.cache[key] = cachedResult{
-		Items:     items,
-		FetchedAt: time.Now(),
+		Items: items,
 	}
 }
 

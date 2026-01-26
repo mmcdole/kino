@@ -419,9 +419,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// If there's a continuation command, run it
 		if msg.NextCmd != nil {
-			if cmd, ok := msg.NextCmd.(tea.Cmd); ok {
-				cmds = append(cmds, cmd)
-			}
+			cmds = append(cmds, msg.NextCmd)
 		}
 
 		// Check if all done
