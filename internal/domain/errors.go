@@ -27,10 +27,4 @@ var (
 
 	// ErrNoNextEpisode indicates there is no next episode available
 	ErrNoNextEpisode = errors.New("no next episode available")
-
-	// ErrPINExpired indicates the authentication PIN has expired
-	ErrPINExpired = errors.New("authentication PIN has expired")
-
-	// ErrInvalidResponse indicates an unexpected response from the server
-	ErrInvalidResponse = errors.New("invalid response from server")
 )

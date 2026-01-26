@@ -286,20 +286,13 @@ func mapPlaylist(m Metadata, serverURL string) domain.Playlist {
 	return domain.Playlist{
 		ID:           m.RatingKey,
 		Title:        m.Title,
-		PlaylistType: getPlaylistType(m.Type),
+		PlaylistType: "video",
 		Smart:        false,
 		ItemCount:    m.LeafCount,
 		Duration:     time.Duration(m.Duration) * time.Millisecond,
 		ThumbURL:     buildThumbURL(serverURL, m.Thumb),
 		UpdatedAt:    m.UpdatedAt,
 	}
-}
-
-// getPlaylistType extracts the playlist type from metadata
-func getPlaylistType(metadataType string) string {
-	// Plex uses "playlist" as the type, but we want the content type
-	// This would need to be determined from the playlistType field when available
-	return "video"
 }
 
 // MapLibraryContent converts Plex metadata to domain.ListItem for mixed libraries.

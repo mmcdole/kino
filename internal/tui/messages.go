@@ -67,11 +67,6 @@ type PlaybackStartedMsg struct {
 	Item domain.MediaItem
 }
 
-// ItemMarkedPlayedMsg signals that an item was marked as played
-type ItemMarkedPlayedMsg struct {
-	ItemID string
-}
-
 // MarkWatchedMsg signals a request to mark an item as watched
 type MarkWatchedMsg struct {
 	ItemID string
@@ -82,50 +77,6 @@ type MarkWatchedMsg struct {
 type MarkUnwatchedMsg struct {
 	ItemID string
 	Title  string
-}
-
-// AuthRequiredMsg signals that authentication is needed
-type AuthRequiredMsg struct{}
-
-// PINGeneratedMsg contains a new PIN for authentication
-type PINGeneratedMsg struct {
-	PIN string
-	ID  int
-}
-
-// AuthSuccessMsg signals successful authentication
-type AuthSuccessMsg struct {
-	Token string
-}
-
-// RefreshMsg triggers a refresh of the current view
-type RefreshMsg struct{}
-
-// ResizeMsg signals a terminal resize
-type ResizeMsg struct {
-	Width  int
-	Height int
-}
-
-// FocusChangeMsg signals a focus change between panes
-type FocusChangeMsg struct {
-	Pane Pane
-}
-
-// NavigateMsg signals navigation to a new level
-type NavigateMsg struct {
-	Level     BrowseLevel
-	ID        string
-	Title     string
-	ParentCtx *NavContext
-}
-
-// NavigateBackMsg signals navigation back one level
-type NavigateBackMsg struct{}
-
-// SelectItemMsg signals item selection in the browser
-type SelectItemMsg struct {
-	Index int
 }
 
 // TickMsg is a general tick message for animations
@@ -184,9 +135,6 @@ type LibrarySyncProgressMsg struct {
 type ClearLibraryStatusMsg struct {
 	LibraryID string
 }
-
-// LogoutRequestedMsg signals that the user wants to log out
-type LogoutRequestedMsg struct{}
 
 // LogoutCompleteMsg signals that logout has been completed
 type LogoutCompleteMsg struct {

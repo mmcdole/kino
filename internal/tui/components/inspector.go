@@ -39,46 +39,6 @@ func (i *Inspector) SetItem(item interface{}) {
 	i.offset = 0 // Reset scroll on item change
 }
 
-// SetMediaItem sets a media item to display
-func (i *Inspector) SetMediaItem(item *domain.MediaItem) {
-	if item == nil {
-		i.item = nil
-		return
-	}
-	i.item = *item
-	i.offset = 0
-}
-
-// SetShow sets a show to display
-func (i *Inspector) SetShow(show *domain.Show) {
-	if show == nil {
-		i.item = nil
-		return
-	}
-	i.item = *show
-	i.offset = 0
-}
-
-// SetSeason sets a season to display
-func (i *Inspector) SetSeason(season *domain.Season) {
-	if season == nil {
-		i.item = nil
-		return
-	}
-	i.item = *season
-	i.offset = 0
-}
-
-// SetLibrary sets a library to display
-func (i *Inspector) SetLibrary(lib *domain.Library) {
-	if lib == nil {
-		i.item = nil
-		return
-	}
-	i.item = *lib
-	i.offset = 0
-}
-
 // SetLibraryStates sets the library sync states for displaying item counts
 func (i *Inspector) SetLibraryStates(states map[string]LibrarySyncState) {
 	i.libraryStates = states

@@ -9,9 +9,6 @@ type LibraryRepository interface {
 	// GetLibraries returns all available libraries
 	GetLibraries(ctx context.Context) ([]Library, error)
 
-	// GetLibraryDetails returns details for a specific library (lightweight)
-	GetLibraryDetails(ctx context.Context, libID string) (*Library, error)
-
 	// GetMovies returns paginated movies from a movie library
 	// Returns (items, totalSize, error) for pagination support
 	GetMovies(ctx context.Context, libID string, offset, limit int) ([]*MediaItem, int, error)
@@ -38,9 +35,6 @@ type LibraryRepository interface {
 
 	// GetEpisodes returns all episodes for a season
 	GetEpisodes(ctx context.Context, seasonID string) ([]*MediaItem, error)
-
-	// GetRecentlyAdded returns recently added items from a library
-	GetRecentlyAdded(ctx context.Context, libID string, limit int) ([]*MediaItem, error)
 }
 
 // SearchRepository provides search functionality across libraries
@@ -53,9 +47,6 @@ type SearchRepository interface {
 type MetadataRepository interface {
 	// ResolvePlayableURL returns a direct playback URL for an item
 	ResolvePlayableURL(ctx context.Context, itemID string) (string, error)
-
-	// GetNextEpisode returns the next episode in a series
-	GetNextEpisode(ctx context.Context, episodeID string) (*MediaItem, error)
 
 	// GetMediaItem returns detailed metadata for a specific item
 	GetMediaItem(ctx context.Context, itemID string) (*MediaItem, error)

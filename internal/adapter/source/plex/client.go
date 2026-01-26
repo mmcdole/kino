@@ -47,11 +47,6 @@ func NewClient(baseURL, token string, logger *slog.Logger) *Client {
 	}
 }
 
-// SetToken updates the authentication token
-func (c *Client) SetToken(token string) {
-	c.token = token
-}
-
 // FetchIdentity fetches and stores the server's machineIdentifier
 func (c *Client) FetchIdentity(ctx context.Context) error {
 	reqURL := fmt.Sprintf("%s/identity", c.baseURL)
@@ -152,30 +147,6 @@ func (c *Client) GetLibraries(ctx context.Context) ([]domain.Library, error) {
 	}
 
 	return MapLibraries(container.Directory), nil
-}
-
-// GetLibraryDetails returns details for a specific library (lightweight)
-func (c *Client) GetLibraryDetails(ctx context.Context, libID string) (*domain.Library, error) {
-	path := fmt.Sprintf("/library/sections/%s", libID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	container, err := c.parseResponse(body)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(container.Directory) == 0 {
-		return nil, domain.ErrItemNotFound
-	}
-
-	lib := MapLibrary(container.Directory[0])
-	if lib == nil {
-		return nil, domain.ErrItemNotFound
-	}
-	return lib, nil
 }
 
 // GetMovies returns movies from a movie library with pagination support
@@ -370,25 +341,6 @@ func (c *Client) GetEpisodes(ctx context.Context, seasonID string) ([]*domain.Me
 	return MapEpisodes(container.Metadata, c.baseURL), nil
 }
 
-// GetRecentlyAdded returns recently added items from a library
-func (c *Client) GetRecentlyAdded(ctx context.Context, libID string, limit int) ([]*domain.MediaItem, error) {
-	query := url.Values{}
-	query.Set("X-Plex-Container-Size", strconv.Itoa(limit))
-
-	path := fmt.Sprintf("/library/sections/%s/recentlyAdded", libID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, query)
-	if err != nil {
-		return nil, err
-	}
-
-	container, err := c.parseResponse(body)
-	if err != nil {
-		return nil, err
-	}
-
-	return MapOnDeck(container.Metadata, c.baseURL), nil
-}
-
 // Search performs a search across all libraries
 func (c *Client) Search(ctx context.Context, query string) ([]domain.MediaItem, error) {
 	params := url.Values{}
@@ -447,36 +399,6 @@ func (c *Client) GetMediaItem(ctx context.Context, itemID string) (*domain.Media
 
 	item := MapMediaItem(container.Metadata[0], c.baseURL)
 	return &item, nil
-}
-
-// GetNextEpisode returns the next episode in a series
-func (c *Client) GetNextEpisode(ctx context.Context, episodeID string) (*domain.MediaItem, error) {
-	// First get the current episode to find its position
-	current, err := c.GetMediaItem(ctx, episodeID)
-	if err != nil {
-		return nil, err
-	}
-
-	if current.Type != domain.MediaTypeEpisode {
-		return nil, domain.ErrNoNextEpisode
-	}
-
-	// Get all episodes in the season
-	episodes, err := c.GetEpisodes(ctx, current.ParentID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Find the next episode
-	for i, ep := range episodes {
-		if ep.ID == episodeID && i+1 < len(episodes) {
-			return episodes[i+1], nil
-		}
-	}
-
-	// No next episode in this season, try next season
-	// This would require additional logic to fetch next season
-	return nil, domain.ErrNoNextEpisode
 }
 
 // MarkPlayed marks an item as fully watched

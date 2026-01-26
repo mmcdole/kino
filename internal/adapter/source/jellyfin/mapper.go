@@ -297,11 +297,6 @@ func ticksToDuration(ticks int64) time.Duration {
 	return time.Duration(ticks * 100) // 100ns per tick
 }
 
-// durationToTicks converts time.Duration to Jellyfin ticks
-func durationToTicks(d time.Duration) int64 {
-	return d.Nanoseconds() / 100
-}
-
 // extractVideoCodec extracts the video codec from item media streams
 func extractVideoCodec(item Item) string {
 	// Try MediaSources first

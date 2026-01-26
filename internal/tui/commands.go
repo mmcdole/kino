@@ -287,7 +287,7 @@ func SyncLibraryCmd(
 		// Start the background work
 		go func() {
 			defer cancel()
-			libSvc.SmartSync(ctx, lib, force, progressCh)
+			libSvc.SyncLibrary(ctx, lib, force, progressCh)
 		}()
 
 		// Read the first message and return it with continuation context

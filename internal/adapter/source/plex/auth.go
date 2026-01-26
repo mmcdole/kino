@@ -3,6 +3,7 @@ package plex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,6 +12,12 @@ import (
 	"time"
 
 	"github.com/mmcdole/kino/internal/domain"
+)
+
+// Plex-specific errors
+var (
+	// ErrPINExpired indicates the authentication PIN has expired
+	ErrPINExpired = errors.New("authentication PIN has expired")
 )
 
 const (
@@ -116,7 +123,7 @@ func (a *AuthClient) CheckPIN(ctx context.Context, pinID int) (token string, cla
 	}
 
 	if resp.StatusCode == http.StatusNotFound {
-		return "", false, domain.ErrPINExpired
+		return "", false, ErrPINExpired
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -150,7 +157,7 @@ func (a *AuthClient) WaitForPIN(ctx context.Context, pinID int, timeout time.Dur
 		case <-time.After(interval):
 			token, claimed, err := a.CheckPIN(ctx, pinID)
 			if err != nil {
-				if err == domain.ErrPINExpired {
+				if err == ErrPINExpired {
 					return "", err
 				}
 				a.logger.Warn("PIN check error, retrying", "error", err)
@@ -166,7 +173,7 @@ func (a *AuthClient) WaitForPIN(ctx context.Context, pinID int, timeout time.Dur
 		}
 	}
 
-	return "", domain.ErrPINExpired
+	return "", ErrPINExpired
 }
 
 // AuthFlow implements domain.AuthFlow for Plex PIN-based authentication
