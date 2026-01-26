@@ -3,6 +3,7 @@ package tui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/service"
 )
 
 // Message types for the TUI
@@ -119,7 +120,7 @@ type LibrarySyncProgressMsg struct {
 	LibraryType string
 	Loaded      int
 	Total       int
-	Items       interface{} // Current chunk for indexing
+	Items       service.SyncChunk // Current chunk (MovieChunk, ShowChunk, or MixedChunk)
 	Done        bool
 	FromDisk    bool
 	Error       error

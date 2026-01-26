@@ -3,6 +3,7 @@ package components
 import (
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -118,17 +119,15 @@ func (m *PlaylistModal) HandleKeyMsg(msg tea.KeyMsg) (handled bool, shouldClose 
 		return false, false, false
 	}
 
-	key := msg.String()
-
 	// Handle create mode (text input active)
 	if m.createMode {
-		switch key {
-		case "esc":
+		switch {
+		case key.Matches(msg, PlaylistModalKeys.Escape):
 			m.createMode = false
 			m.newTitle.Blur()
 			m.newTitle.SetValue("")
 			return true, false, false
-		case "enter":
+		case key.Matches(msg, PlaylistModalKeys.Enter):
 			if m.newTitle.Value() != "" {
 				m.createMode = false
 				m.newTitle.Blur()
@@ -143,20 +142,20 @@ func (m *PlaylistModal) HandleKeyMsg(msg tea.KeyMsg) (handled bool, shouldClose 
 	}
 
 	// Normal navigation mode
-	switch key {
-	case "j", "down":
+	switch {
+	case key.Matches(msg, PlaylistModalKeys.Down):
 		// +1 for the "Create new" option at the end
 		maxIdx := len(m.playlists)
 		if m.cursor < maxIdx {
 			m.cursor++
 		}
 		return true, false, false
-	case "k", "up":
+	case key.Matches(msg, PlaylistModalKeys.Up):
 		if m.cursor > 0 {
 			m.cursor--
 		}
 		return true, false, false
-	case " ":
+	case key.Matches(msg, PlaylistModalKeys.Toggle):
 		// Toggle playlist membership or enter create mode
 		if m.cursor < len(m.playlists) {
 			playlist := m.playlists[m.cursor]
@@ -168,12 +167,12 @@ func (m *PlaylistModal) HandleKeyMsg(msg tea.KeyMsg) (handled bool, shouldClose 
 			m.newTitle.Focus()
 		}
 		return true, false, false
-	case "n":
+	case key.Matches(msg, PlaylistModalKeys.Create):
 		// Quick shortcut to create new
 		m.createMode = true
 		m.newTitle.Focus()
 		return true, false, false
-	case "enter":
+	case key.Matches(msg, PlaylistModalKeys.Enter):
 		// Select/toggle or confirm
 		if m.cursor < len(m.playlists) {
 			playlist := m.playlists[m.cursor]
@@ -184,7 +183,7 @@ func (m *PlaylistModal) HandleKeyMsg(msg tea.KeyMsg) (handled bool, shouldClose 
 			m.newTitle.Focus()
 		}
 		return true, false, false
-	case "esc", "q":
+	case key.Matches(msg, PlaylistModalKeys.Escape) || msg.String() == "q":
 		return true, true, false
 	}
 
