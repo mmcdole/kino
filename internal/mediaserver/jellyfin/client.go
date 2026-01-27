@@ -16,10 +16,9 @@ import (
 )
 
 const (
-	defaultTimeout   = 60 * time.Second
-	defaultBatchSize = 100
-	maxRetries       = 3
-	baseRetryDelay   = 500 * time.Millisecond
+	defaultTimeout = 60 * time.Second
+	maxRetries     = 3
+	baseRetryDelay = 500 * time.Millisecond
 )
 
 // Client implements the MediaSource interface for Jellyfin
@@ -223,50 +222,6 @@ func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) 
 	return shows, resp.TotalRecordCount, nil
 }
 
-// GetAllMovies returns all movies in a library (handles pagination internally)
-func (c *Client) GetAllMovies(ctx context.Context, libID string) ([]*domain.MediaItem, error) {
-	var allMovies []*domain.MediaItem
-	offset := 0
-
-	for {
-		movies, total, err := c.GetMovies(ctx, libID, offset, defaultBatchSize)
-		if err != nil {
-			return nil, err
-		}
-
-		allMovies = append(allMovies, movies...)
-
-		if len(allMovies) >= total || len(movies) == 0 {
-			break
-		}
-		offset += defaultBatchSize
-	}
-
-	return allMovies, nil
-}
-
-// GetAllShows returns all TV shows in a library (handles pagination internally)
-func (c *Client) GetAllShows(ctx context.Context, libID string) ([]*domain.Show, error) {
-	var allShows []*domain.Show
-	offset := 0
-
-	for {
-		shows, total, err := c.GetShows(ctx, libID, offset, defaultBatchSize)
-		if err != nil {
-			return nil, err
-		}
-
-		allShows = append(allShows, shows...)
-
-		if len(allShows) >= total || len(shows) == 0 {
-			break
-		}
-		offset += defaultBatchSize
-	}
-
-	return allShows, nil
-}
-
 // GetLibraryContent returns paginated content (movies AND shows) from a mixed library.
 // This fetches both types in a single API call with server-side sorting.
 func (c *Client) GetLibraryContent(ctx context.Context, libID string, offset, limit int) ([]domain.ListItem, int, error) {
@@ -305,28 +260,6 @@ func (c *Client) GetLibraryContent(ctx context.Context, libID string, offset, li
 	}
 
 	return items, resp.TotalRecordCount, nil
-}
-
-// GetAllLibraryContent returns all content from a mixed library (handles pagination internally)
-func (c *Client) GetAllLibraryContent(ctx context.Context, libID string) ([]domain.ListItem, error) {
-	var allItems []domain.ListItem
-	offset := 0
-
-	for {
-		items, total, err := c.GetLibraryContent(ctx, libID, offset, defaultBatchSize)
-		if err != nil {
-			return nil, err
-		}
-
-		allItems = append(allItems, items...)
-
-		if len(allItems) >= total || len(items) == 0 {
-			break
-		}
-		offset += defaultBatchSize
-	}
-
-	return allItems, nil
 }
 
 // GetSeasons returns all seasons for a TV show

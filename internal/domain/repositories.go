@@ -21,15 +21,6 @@ type LibraryRepository interface {
 	// Returns (items, totalSize, error) for pagination support
 	GetLibraryContent(ctx context.Context, libID string, offset, limit int) ([]ListItem, int, error)
 
-	// GetAllMovies returns all movies in a library (handles pagination internally)
-	GetAllMovies(ctx context.Context, libID string) ([]*MediaItem, error)
-
-	// GetAllShows returns all TV shows in a library (handles pagination internally)
-	GetAllShows(ctx context.Context, libID string) ([]*Show, error)
-
-	// GetAllLibraryContent returns all content from a mixed library (handles pagination internally)
-	GetAllLibraryContent(ctx context.Context, libID string) ([]ListItem, error)
-
 	// GetSeasons returns all seasons for a TV show
 	GetSeasons(ctx context.Context, showID string) ([]*Season, error)
 

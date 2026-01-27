@@ -17,7 +17,7 @@ const (
 
 // MediaItem represents a playable item (Movie or Episode)
 type MediaItem struct {
-	ID         string        // Plex RatingKey
+	ID         string        // Server-specific unique identifier
 	Title      string        // Display title
 	SortTitle  string        // Title used for sorting
 	LibraryID  string        // Parent library ID
@@ -27,8 +27,6 @@ type MediaItem struct {
 	UpdatedAt  int64         // Unix timestamp when last updated
 	Duration   time.Duration // Total runtime
 	ViewOffset time.Duration // Watch progress
-	ThumbURL   string        // Thumbnail image URL
-	MediaURL   string        // Direct playback URL
 	Format     string        // "HEVC", "H.264", etc.
 	IsPlayed   bool          // Whether item is marked as watched
 	Type       MediaType     // Movie or Episode
@@ -119,7 +117,7 @@ func (m *MediaItem) CanDrillDown() bool {
 
 // Show represents a TV series container
 type Show struct {
-	ID             string // Plex RatingKey
+	ID             string // Server-specific unique identifier
 	Title          string // Series title
 	SortTitle      string // Title used for sorting
 	LibraryID      string // Parent library ID
@@ -127,7 +125,6 @@ type Show struct {
 	Year           int    // First air year
 	AddedAt        int64  // Unix timestamp when added to library
 	UpdatedAt      int64  // Unix timestamp when last updated
-	ThumbURL       string // Thumbnail image URL
 	SeasonCount    int    // Total number of seasons
 	EpisodeCount   int    // Total number of episodes
 	UnwatchedCount int    // Number of unwatched episodes
@@ -174,12 +171,11 @@ func (s *Show) CanDrillDown() bool {
 
 // Season represents a season container
 type Season struct {
-	ID             string // Plex RatingKey
+	ID             string // Server-specific unique identifier
 	ShowID         string // Parent show ID
 	ShowTitle      string // Parent show name
 	SeasonNum      int    // Season number (0 = Specials)
 	Title          string // "Season 1" or custom name
-	ThumbURL       string // Thumbnail image URL
 	EpisodeCount   int    // Total number of episodes
 	UnwatchedCount int    // Number of unwatched episodes
 }
@@ -229,9 +225,9 @@ func (s *Season) CanDrillDown() bool {
 	return true
 }
 
-// Library represents a Plex library section
+// Library represents a media server library section
 type Library struct {
-	ID        string // Plex section key
+	ID        string // Server-specific unique identifier
 	Name      string // Display name
 	Type      string // "movie" or "show"
 	UpdatedAt int64  // Server's contentChangedAt timestamp
@@ -258,7 +254,6 @@ type Playlist struct {
 	Smart        bool          // Smart/dynamic playlist
 	ItemCount    int           // Number of items in playlist
 	Duration     time.Duration // Total duration of all items
-	ThumbURL     string        // Thumbnail image URL
 	UpdatedAt    int64         // Unix timestamp when last updated
 }
 

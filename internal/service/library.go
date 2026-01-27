@@ -5,12 +5,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"github.com/mmcdole/kino/internal/domain"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/mmcdole/kino/internal/config"
+	"github.com/mmcdole/kino/internal/domain"
 )
 
 const (
@@ -32,11 +34,6 @@ const (
 	// PrefixEpisodes is the prefix for season episode caches (episodes:{seasonID})
 	PrefixEpisodes = "episodes:"
 )
-
-// cachedResult stores cached data
-type cachedResult struct {
-	Items interface{}
-}
 
 // diskCacheEntry stores cached data with server timestamp for smart invalidation
 type diskCacheEntry struct {
@@ -60,7 +57,7 @@ type SyncProgress struct {
 type LibraryService struct {
 	repo     domain.LibraryRepository
 	logger   *slog.Logger
-	cache    map[string]cachedResult
+	cache    map[string]interface{}
 	cacheMu  sync.RWMutex
 	cacheDir string // Disk cache directory (namespaced by server URL)
 	diskMu   sync.Mutex
@@ -75,8 +72,8 @@ func NewLibraryService(repo domain.LibraryRepository, logger *slog.Logger, serve
 	}
 	// Set up disk cache directory, namespaced by server URL hash
 	cacheDir := ""
-	if home, err := os.UserHomeDir(); err == nil {
-		baseCacheDir := filepath.Join(home, ".local", "share", "kino", "cache")
+	baseCacheDir := config.DefaultCachePath()
+	if baseCacheDir != "" {
 		// Hash the server URL to create a unique subdirectory
 		if serverURL != "" {
 			hash := hashServerURL(serverURL)
@@ -93,7 +90,7 @@ func NewLibraryService(repo domain.LibraryRepository, logger *slog.Logger, serve
 	return &LibraryService{
 		repo:     repo,
 		logger:   logger,
-		cache:    make(map[string]cachedResult),
+		cache:    make(map[string]interface{}),
 		cacheDir: cacheDir,
 	}
 }
@@ -373,11 +370,20 @@ func (s *LibraryService) GetMovies(ctx context.Context, libID string) ([]*domain
 			return movies, nil
 		}
 	}
-	// 3. Fetch from API (adapter handles pagination)
-	allMovies, err := s.repo.GetAllMovies(ctx, libID)
-	if err != nil {
-		s.logger.Error("failed to get movies", "error", err, "libID", libID)
-		return nil, err
+	// 3. Fetch from API with pagination
+	var allMovies []*domain.MediaItem
+	offset := 0
+	for {
+		movies, total, err := s.repo.GetMovies(ctx, libID, offset, syncChunkSize)
+		if err != nil {
+			s.logger.Error("failed to get movies", "error", err, "libID", libID)
+			return nil, err
+		}
+		allMovies = append(allMovies, movies...)
+		if len(allMovies) >= total || len(movies) == 0 {
+			break
+		}
+		offset += syncChunkSize
 	}
 	// 4. Store in both caches (serverTS=0 since we don't know the timestamp)
 	s.setCache(cacheKey, allMovies)
@@ -403,11 +409,20 @@ func (s *LibraryService) GetShows(ctx context.Context, libID string) ([]*domain.
 			return shows, nil
 		}
 	}
-	// 3. Fetch from API (adapter handles pagination)
-	allShows, err := s.repo.GetAllShows(ctx, libID)
-	if err != nil {
-		s.logger.Error("failed to get shows", "error", err, "libID", libID)
-		return nil, err
+	// 3. Fetch from API with pagination
+	var allShows []*domain.Show
+	offset := 0
+	for {
+		shows, total, err := s.repo.GetShows(ctx, libID, offset, syncChunkSize)
+		if err != nil {
+			s.logger.Error("failed to get shows", "error", err, "libID", libID)
+			return nil, err
+		}
+		allShows = append(allShows, shows...)
+		if len(allShows) >= total || len(shows) == 0 {
+			break
+		}
+		offset += syncChunkSize
 	}
 	// 4. Store in both caches (serverTS=0 since we don't know the timestamp)
 	s.setCache(cacheKey, allShows)
@@ -451,11 +466,20 @@ func (s *LibraryService) GetLibraryContent(ctx context.Context, libID string) ([
 			return items, nil
 		}
 	}
-	// 3. Fetch from API (adapter handles pagination)
-	allItems, err := s.repo.GetAllLibraryContent(ctx, libID)
-	if err != nil {
-		s.logger.Error("failed to get library content", "error", err, "libID", libID)
-		return nil, err
+	// 3. Fetch from API with pagination
+	var allItems []domain.ListItem
+	offset := 0
+	for {
+		items, total, err := s.repo.GetLibraryContent(ctx, libID, offset, syncChunkSize)
+		if err != nil {
+			s.logger.Error("failed to get library content", "error", err, "libID", libID)
+			return nil, err
+		}
+		allItems = append(allItems, items...)
+		if len(allItems) >= total || len(items) == 0 {
+			break
+		}
+		offset += syncChunkSize
 	}
 	// 4. Store in both caches (serverTS=0 since we don't know the timestamp)
 	s.setCache(cacheKey, allItems)
@@ -534,7 +558,7 @@ func (s *LibraryService) RefreshAll() {
 	for key := range s.cache {
 		s.clearDiskCache(key)
 	}
-	s.cache = make(map[string]cachedResult)
+	s.cache = make(map[string]interface{})
 	s.logger.Info("cleared all cache")
 }
 
@@ -544,19 +568,14 @@ func (s *LibraryService) getFromCache(key string) (interface{}, bool) {
 	s.cacheMu.RLock()
 	defer s.cacheMu.RUnlock()
 	cached, ok := s.cache[key]
-	if !ok {
-		return nil, false
-	}
-	return cached.Items, true
+	return cached, ok
 }
 
 // setCache stores an item in cache
 func (s *LibraryService) setCache(key string, items interface{}) {
 	s.cacheMu.Lock()
 	defer s.cacheMu.Unlock()
-	s.cache[key] = cachedResult{
-		Items: items,
-	}
+	s.cache[key] = items
 }
 
 // diskCachePath returns the path for a cache file

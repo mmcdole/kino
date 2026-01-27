@@ -1,7 +1,6 @@
 package plex
 
 import (
-	"fmt"
 	"strconv"
 	"time"
 
@@ -52,7 +51,6 @@ func mapMovie(m Metadata, serverURL string) domain.MediaItem {
 		UpdatedAt:  m.UpdatedAt,
 		Duration:   time.Duration(m.Duration) * time.Millisecond,
 		ViewOffset: time.Duration(m.ViewOffset) * time.Millisecond,
-		ThumbURL:   buildThumbURL(serverURL, m.Thumb),
 		Format:     extractFormat(m.Media),
 		IsPlayed:   m.ViewCount > 0,
 		Type:       domain.MediaTypeMovie,
@@ -60,11 +58,6 @@ func mapMovie(m Metadata, serverURL string) domain.MediaItem {
 
 	if item.SortTitle == "" {
 		item.SortTitle = item.Title
-	}
-
-	// Extract media URL if available
-	if len(m.Media) > 0 && len(m.Media[0].Part) > 0 {
-		item.MediaURL = buildMediaURL(serverURL, m.Media[0].Part[0].Key)
 	}
 
 	return item
@@ -94,7 +87,6 @@ func mapShow(m Metadata, serverURL string) domain.Show {
 		Year:           m.Year,
 		AddedAt:        m.AddedAt,
 		UpdatedAt:      m.UpdatedAt,
-		ThumbURL:       buildThumbURL(serverURL, m.Thumb),
 		SeasonCount:    m.ChildCount,
 		EpisodeCount:   m.LeafCount,
 		UnwatchedCount: m.LeafCount - m.ViewedLeafCount,
@@ -128,7 +120,6 @@ func mapSeason(m Metadata, serverURL string) domain.Season {
 		ShowTitle:      m.ParentTitle,
 		SeasonNum:      m.Index,
 		Title:          m.Title,
-		ThumbURL:       buildThumbURL(serverURL, m.Thumb),
 		EpisodeCount:   m.LeafCount,
 		UnwatchedCount: m.LeafCount - m.ViewedLeafCount,
 	}
@@ -160,7 +151,6 @@ func mapEpisode(m Metadata, serverURL string) domain.MediaItem {
 		UpdatedAt:  m.UpdatedAt,
 		Duration:   time.Duration(m.Duration) * time.Millisecond,
 		ViewOffset: time.Duration(m.ViewOffset) * time.Millisecond,
-		ThumbURL:   buildThumbURL(serverURL, m.Thumb),
 		Format:     extractFormat(m.Media),
 		IsPlayed:   m.ViewCount > 0,
 		Type:       domain.MediaTypeEpisode,
@@ -173,11 +163,6 @@ func mapEpisode(m Metadata, serverURL string) domain.MediaItem {
 
 	if item.SortTitle == "" {
 		item.SortTitle = item.Title
-	}
-
-	// Extract media URL if available
-	if len(m.Media) > 0 && len(m.Media[0].Part) > 0 {
-		item.MediaURL = buildMediaURL(serverURL, m.Media[0].Part[0].Key)
 	}
 
 	return item
@@ -239,22 +224,6 @@ func extractFormat(media []Media) string {
 	}
 }
 
-// buildThumbURL constructs a full thumbnail URL
-func buildThumbURL(serverURL, path string) string {
-	if path == "" {
-		return ""
-	}
-	return fmt.Sprintf("%s%s", serverURL, path)
-}
-
-// buildMediaURL constructs a full media URL
-func buildMediaURL(serverURL, path string) string {
-	if path == "" {
-		return ""
-	}
-	return fmt.Sprintf("%s%s", serverURL, path)
-}
-
 // MapPlaylists converts Plex metadata to domain playlists
 func MapPlaylists(metadata []Metadata, serverURL string) []*domain.Playlist {
 	playlists := make([]*domain.Playlist, 0, len(metadata))
@@ -277,7 +246,6 @@ func mapPlaylist(m Metadata, serverURL string) domain.Playlist {
 		Smart:        false,
 		ItemCount:    m.LeafCount,
 		Duration:     time.Duration(m.Duration) * time.Millisecond,
-		ThumbURL:     buildThumbURL(serverURL, m.Thumb),
 		UpdatedAt:    m.UpdatedAt,
 	}
 }

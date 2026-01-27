@@ -23,6 +23,9 @@ import (
 // Version is set at build time via -ldflags
 var Version = "dev"
 
+// clearSpinnerLine clears the spinner line from the terminal
+const clearSpinnerLine = "\r                                    \r"
+
 func main() {
 	// Handle version flag
 	var showVersion bool
@@ -202,7 +205,7 @@ func detectServerWithSpinner(serverURL string) (config.SourceType, error) {
 		select {
 		case res := <-resultCh:
 			// Clear spinner line
-			fmt.Print("\r                                    \r")
+			fmt.Print(clearSpinnerLine)
 
 			if res.err != nil {
 				return "", res.err
@@ -225,7 +228,7 @@ func detectServerWithSpinner(serverURL string) (config.SourceType, error) {
 			fmt.Printf("\r%s Detecting server type...", styles.SpinnerFrames[frame%len(styles.SpinnerFrames)])
 
 		case <-ctx.Done():
-			fmt.Print("\r                                    \r")
+			fmt.Print(clearSpinnerLine)
 			return "", fmt.Errorf("detection timed out")
 		}
 	}

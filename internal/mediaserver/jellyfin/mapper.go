@@ -1,7 +1,6 @@
 package jellyfin
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
@@ -75,16 +74,15 @@ func MapMovies(items []Item, serverURL string) []*domain.MediaItem {
 // mapMovie converts a single Jellyfin movie item to a domain media item
 func mapMovie(item Item, serverURL string) domain.MediaItem {
 	mi := domain.MediaItem{
-		ID:         item.ID,
-		Title:      item.Name,
-		SortTitle:  item.SortName,
-		LibraryID:  item.ParentID,
-		Summary:    item.Overview,
-		Year:       item.ProductionYear,
-		Duration:   ticksToDuration(item.RunTimeTicks),
-		ThumbURL:   buildImageURL(serverURL, item.ID, "Primary", item.ImageTags.Primary),
-		Format:     extractVideoCodec(item),
-		Type:       domain.MediaTypeMovie,
+		ID:        item.ID,
+		Title:     item.Name,
+		SortTitle: item.SortName,
+		LibraryID: item.ParentID,
+		Summary:   item.Overview,
+		Year:      item.ProductionYear,
+		Duration:  ticksToDuration(item.RunTimeTicks),
+		Format:    extractVideoCodec(item),
+		Type:      domain.MediaTypeMovie,
 	}
 
 	if mi.SortTitle == "" {
@@ -130,7 +128,6 @@ func mapShow(item Item, serverURL string) domain.Show {
 		LibraryID:    item.ParentID,
 		Summary:      item.Overview,
 		Year:         item.ProductionYear,
-		ThumbURL:     buildImageURL(serverURL, item.ID, "Primary", item.ImageTags.Primary),
 		SeasonCount:  item.ChildCount,
 		EpisodeCount: item.RecursiveItemCount,
 	}
@@ -186,7 +183,6 @@ func mapSeason(item Item, serverURL string) domain.Season {
 		ShowTitle:    item.SeriesName,
 		SeasonNum:    item.IndexNumber, // Jellyfin uses IndexNumber for season number
 		Title:        item.Name,
-		ThumbURL:     buildImageURL(serverURL, item.ID, "Primary", item.ImageTags.Primary),
 		EpisodeCount: item.ChildCount,
 	}
 
@@ -220,7 +216,6 @@ func mapEpisode(item Item, serverURL string) domain.MediaItem {
 		Summary:    item.Overview,
 		Year:       item.ProductionYear,
 		Duration:   ticksToDuration(item.RunTimeTicks),
-		ThumbURL:   buildImageURL(serverURL, item.ID, "Primary", item.ImageTags.Primary),
 		Format:     extractVideoCodec(item),
 		Type:       domain.MediaTypeEpisode,
 		ShowTitle:  item.SeriesName,
@@ -282,7 +277,6 @@ func mapSearchHint(hint SearchHint, serverURL string) *domain.MediaItem {
 		Title:      hint.Name,
 		Year:       hint.ProductionYear,
 		Duration:   ticksToDuration(hint.RunTimeTicks),
-		ThumbURL:   buildImageURL(serverURL, hint.ID, "Primary", hint.PrimaryImageTag),
 		Type:       mediaType,
 		ShowTitle:  hint.SeriesName,
 		SeasonNum:  hint.ParentIndexNumber,
@@ -338,14 +332,6 @@ func normalizeCodec(codec string) string {
 	}
 }
 
-// buildImageURL constructs a Jellyfin image URL
-func buildImageURL(serverURL, itemID, imageType, imageTag string) string {
-	if imageTag == "" {
-		return ""
-	}
-	return fmt.Sprintf("%s/Items/%s/Images/%s?tag=%s", serverURL, itemID, imageType, imageTag)
-}
-
 // MapPlaylists converts Jellyfin items to domain playlists
 func MapPlaylists(items []Item, serverURL string) []*domain.Playlist {
 	playlists := make([]*domain.Playlist, 0, len(items))
@@ -368,7 +354,6 @@ func mapPlaylist(item Item, serverURL string) domain.Playlist {
 		Smart:        false,   // Jellyfin smart playlists would need different detection
 		ItemCount:    item.ChildCount,
 		Duration:     ticksToDuration(item.RunTimeTicks),
-		ThumbURL:     buildImageURL(serverURL, item.ID, "Primary", item.ImageTags.Primary),
 	}
 
 	// Parse dates

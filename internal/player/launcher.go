@@ -39,18 +39,6 @@ var darwinPlayers = []PlayerDef{
 	{Binary: "vlc", SeekFlag: "--start-time=%d"},
 }
 
-// playersByBinary provides lookup for configured player seek flags
-var playersByBinary = func() map[string]string {
-	m := make(map[string]string)
-	for _, p := range linuxPlayers {
-		m[p.Binary] = p.SeekFlag
-	}
-	for _, p := range darwinPlayers {
-		m[p.Binary] = p.SeekFlag
-	}
-	return m
-}()
-
 // NewLauncher creates a new Launcher
 // seekFlag is optional - if empty, we look up the flag from our known players table
 func NewLauncher(command string, args []string, seekFlag string, logger *slog.Logger) *Launcher {
@@ -138,7 +126,7 @@ func (l *Launcher) launchConfigured(url string, offsetSecs int) error {
 		seekFlag := l.seekFlag
 		if seekFlag == "" {
 			// Fall back to table lookup for known players
-			seekFlag = playersByBinary[l.command]
+			seekFlag = l.lookupSeekFlag(l.command)
 		}
 
 		if seekFlag != "" {
@@ -163,6 +151,21 @@ func (l *Launcher) launchConfigured(url string, offsetSecs int) error {
 
 	cmd := exec.Command(l.command, args...)
 	return cmd.Start()
+}
+
+// lookupSeekFlag finds the seek flag for a known player binary
+func (l *Launcher) lookupSeekFlag(binary string) string {
+	for _, p := range linuxPlayers {
+		if p.Binary == binary {
+			return p.SeekFlag
+		}
+	}
+	for _, p := range darwinPlayers {
+		if p.Binary == binary {
+			return p.SeekFlag
+		}
+	}
+	return ""
 }
 
 // launchMacOSApp launches a macOS GUI app using 'open -a'
