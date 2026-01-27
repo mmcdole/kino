@@ -35,7 +35,7 @@ type Metadata struct {
 	Key                   string  `json:"key"`
 	ParentRatingKey       string  `json:"parentRatingKey,omitempty"`
 	GrandparentRatingKey  string  `json:"grandparentRatingKey,omitempty"`
-	GUID                  string  `json:"guid,omitempty"`
+	GUID                  any     `json:"guid,omitempty"`
 	Studio                string  `json:"studio,omitempty"`
 	Type                  string  `json:"type"`
 	Title                 string  `json:"title"`
@@ -128,7 +128,7 @@ type PINCheckResponse struct {
 type PlaylistMetadata struct {
 	RatingKey    string `json:"ratingKey"`
 	Key          string `json:"key"`
-	GUID         string `json:"guid,omitempty"`
+	GUID         any    `json:"guid,omitempty"`
 	Type         string `json:"type"`
 	Title        string `json:"title"`
 	Summary      string `json:"summary,omitempty"`
