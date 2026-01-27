@@ -116,7 +116,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		Refresh: key.NewBinding(
 			key.WithKeys("r"),
-			key.WithHelp("r", "refresh"),
+			key.WithHelp("r", "refresh view"),
 		),
 		RefreshAll: key.NewBinding(
 			key.WithKeys("R"),

@@ -2,653 +2,338 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"log/slog"
-	"os"
-	"path/filepath"
-	"strings"
-	"sync"
 
-	"github.com/mmcdole/kino/internal/config"
 	"github.com/mmcdole/kino/internal/domain"
 )
 
-const (
-	syncChunkSize = 50 // Smaller batches to work around Jellyfin server issues
-)
-
-// Cache key prefixes for library content
-const (
-	// PrefixLibraries is the cache key for the libraries list
-	PrefixLibraries = "libraries"
-	// PrefixMovies is the prefix for movie library caches (movies:{libID})
-	PrefixMovies = "movies:"
-	// PrefixShows is the prefix for TV show library caches (shows:{libID})
-	PrefixShows = "shows:"
-	// PrefixMixed is the prefix for mixed library caches (mixed:{libID})
-	PrefixMixed = "mixed:"
-	// PrefixSeasons is the prefix for show season caches (seasons:{showID})
-	PrefixSeasons = "seasons:"
-	// PrefixEpisodes is the prefix for season episode caches (episodes:{seasonID})
-	PrefixEpisodes = "episodes:"
-)
-
-// diskCacheEntry stores cached data with server timestamp for smart invalidation
-type diskCacheEntry struct {
-	Items           json.RawMessage `json:"items"`
-	ServerUpdatedAt int64           `json:"serverUpdatedAt"`
-}
-
-// SyncProgress reports progress during library sync
-type SyncProgress struct {
-	LibraryID   string
-	LibraryType string
-	Loaded      int // Items loaded so far
-	Total       int // Total items (from first response)
-	Done        bool
-	FromDisk    bool
-	Error       error
-}
-
-// LibraryService handles library browsing with caching
-// Cache invalidation is based on server timestamps, not TTL
+// LibraryService orchestrates library synchronization.
+// Provides fetch-or-cache methods that check Store first, then network on miss.
 type LibraryService struct {
-	repo     domain.LibraryRepository
-	logger   *slog.Logger
-	cache    map[string]interface{}
-	cacheMu  sync.RWMutex
-	cacheDir string // Disk cache directory (namespaced by server URL)
-	diskMu   sync.Mutex
+	repo   domain.LibraryRepository // Network (Plex/Jellyfin)
+	store  domain.LibraryStore      // Local persistence
+	logger *slog.Logger
 }
 
 // NewLibraryService creates a new library service
-// serverURL is used to namespace the cache directory, preventing conflicts
-// when switching between different servers
-func NewLibraryService(repo domain.LibraryRepository, logger *slog.Logger, serverURL string) *LibraryService {
+func NewLibraryService(
+	repo domain.LibraryRepository,
+	store domain.LibraryStore,
+	logger *slog.Logger,
+) *LibraryService {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	// Set up disk cache directory, namespaced by server URL hash
-	cacheDir := ""
-	baseCacheDir := config.DefaultCachePath()
-	if baseCacheDir != "" {
-		// Hash the server URL to create a unique subdirectory
-		if serverURL != "" {
-			hash := hashServerURL(serverURL)
-			cacheDir = filepath.Join(baseCacheDir, hash)
-		} else {
-			// Fallback for backwards compatibility (no server URL provided)
-			cacheDir = baseCacheDir
-		}
-		if err := os.MkdirAll(cacheDir, 0755); err != nil {
-			logger.Warn("failed to create cache directory", "error", err)
-			cacheDir = ""
-		}
-	}
-	return &LibraryService{
-		repo:     repo,
-		logger:   logger,
-		cache:    make(map[string]interface{}),
-		cacheDir: cacheDir,
-	}
+	return &LibraryService{repo: repo, store: store, logger: logger}
 }
 
-// hashServerURL creates a short hash of the server URL for cache namespacing
-func hashServerURL(serverURL string) string {
-	// Normalize URL (trim trailing slashes, lowercase)
-	normalized := strings.TrimRight(strings.ToLower(serverURL), "/")
-	hash := sha256.Sum256([]byte(normalized))
-	// Use first 12 hex chars (6 bytes) - enough for uniqueness
-	return hex.EncodeToString(hash[:6])
-}
-
-// GetLibraries returns all available libraries
+// GetLibraries fetches library list from network (always fresh).
 func (s *LibraryService) GetLibraries(ctx context.Context) ([]domain.Library, error) {
-	cacheKey := PrefixLibraries
-	// Check cache
-	if cached, ok := s.getFromCache(cacheKey); ok {
-		s.logger.Debug("cache hit", "key", cacheKey)
-		return cached.([]domain.Library), nil
-	}
-	// Fetch from repository
-	libraries, err := s.repo.GetLibraries(ctx)
+	libs, err := s.repo.GetLibraries(ctx)
 	if err != nil {
 		s.logger.Error("failed to get libraries", "error", err)
 		return nil, err
 	}
-	// Store in cache
-	s.setCache(cacheKey, libraries)
-	s.logger.Info("loaded libraries", "count", len(libraries))
-	return libraries, nil
+	s.store.SaveLibraries(libs)
+	s.logger.Info("loaded libraries", "count", len(libs))
+	return libs, nil
 }
 
-// SyncLibrary fetches library content with smart timestamp comparison
-// Sends progress updates to the channel for live UI updates
-// The channel is closed when sync is complete
+// SyncLibrary synchronizes a library's content.
+// Checks freshness first; only fetches if stale or forced.
+// When force=true, also invalidates cached seasons/episodes (cascade).
 func (s *LibraryService) SyncLibrary(
 	ctx context.Context,
-	lib domain.Library, // Already has UpdatedAt from GetLibraries()
+	lib domain.Library,
 	force bool,
-	progressCh chan<- SyncProgress,
+	observer domain.SyncObserver,
 ) {
-	defer close(progressCh)
-	cacheKey := s.getCacheKeyForLib(lib)
-	// NOTE: lib.UpdatedAt is already populated from GetLibraries() call
-	// No need to call GetLibraryDetails() - doing so for every library at startup
-	// causes a "thundering herd" of API requests that overwhelm the server
-	// Try to load from disk cache if not forced
-	if !force {
-		entry, ok := s.loadDiskCacheEntry(cacheKey)
-		if ok && entry.ServerUpdatedAt >= lib.UpdatedAt {
-			// Cache is still valid - use cached data
-			s.logger.Debug("disk cache valid", "key", cacheKey, "cacheTS", entry.ServerUpdatedAt, "serverTS", lib.UpdatedAt)
-			switch lib.Type {
-			case "movie":
-				var movies []*domain.MediaItem
-				if err := json.Unmarshal(entry.Items, &movies); err == nil {
-					s.setCache(cacheKey, movies)
-					progressCh <- SyncProgress{
-						LibraryID:   lib.ID,
-						LibraryType: lib.Type,
-						Loaded:      len(movies),
-						Total:       len(movies),
-						Done:        true,
-						FromDisk:    true,
-					}
-					return
-				}
-			case "show":
-				var shows []*domain.Show
-				if err := json.Unmarshal(entry.Items, &shows); err == nil {
-					s.setCache(cacheKey, shows)
-					progressCh <- SyncProgress{
-						LibraryID:   lib.ID,
-						LibraryType: lib.Type,
-						Loaded:      len(shows),
-						Total:       len(shows),
-						Done:        true,
-						FromDisk:    true,
-					}
-					return
-				}
-			case "mixed":
-				var items []domain.ListItem
-				if err := json.Unmarshal(entry.Items, &items); err == nil {
-					s.setCache(cacheKey, items)
-					progressCh <- SyncProgress{
-						LibraryID:   lib.ID,
-						LibraryType: lib.Type,
-						Loaded:      len(items),
-						Total:       len(items),
-						Done:        true,
-						FromDisk:    true,
-					}
-					return
-				}
-			}
-		}
+	// 1. Force refresh: invalidate hierarchical cache (seasons/episodes)
+	if force {
+		s.store.InvalidateLibrary(lib.ID)
+		s.logger.Debug("force refresh: invalidated library cache", "libID", lib.ID)
 	}
-	// Cache is stale or forced refresh - fetch from server with chunked streaming
+
+	// 2. Freshness check (skip if forced since we just invalidated)
+	if !force && s.store.IsValid(lib.ID, lib.UpdatedAt) {
+		s.reportCacheHit(lib, observer)
+		return
+	}
+
+	// 3. Fetch from network
 	switch lib.Type {
 	case "movie":
-		s.syncMovies(ctx, lib, lib.UpdatedAt, progressCh)
+		s.syncMovies(ctx, lib, observer)
 	case "show":
-		s.syncShows(ctx, lib, lib.UpdatedAt, progressCh)
-	case "mixed":
-		s.syncMixed(ctx, lib, lib.UpdatedAt, progressCh)
+		s.syncShows(ctx, lib, observer)
 	default:
-		// Unknown type - treat as mixed
-		s.syncMixed(ctx, lib, lib.UpdatedAt, progressCh)
+		s.syncMixed(ctx, lib, observer)
 	}
 }
 
-// syncMovies fetches movies in chunks and sends progress to channel
-func (s *LibraryService) syncMovies(ctx context.Context, lib domain.Library, serverTS int64, progressCh chan<- SyncProgress) {
-	cacheKey := PrefixMovies + lib.ID
-	offset := 0
-	var allMovies []*domain.MediaItem
-	for {
-		// Check for cancellation before fetching
-		select {
-		case <-ctx.Done():
-			s.logger.Info("sync cancelled", "libID", lib.ID)
-			return
-		default:
-		}
-		movies, total, err := s.repo.GetMovies(ctx, lib.ID, offset, syncChunkSize)
-		if err != nil {
-			s.logger.Error("failed to get movies chunk", "error", err, "offset", offset)
-			progressCh <- SyncProgress{LibraryID: lib.ID, LibraryType: lib.Type, Error: err}
-			return
-		}
-		allMovies = append(allMovies, movies...)
-		done := len(allMovies) >= total || len(movies) == 0
-		// Send progress, but check for cancellation
-		select {
-		case progressCh <- SyncProgress{
-			LibraryID:   lib.ID,
-			LibraryType: lib.Type,
-			Loaded:      len(allMovies),
-			Total:       total,
-			Done:        done,
-		}:
-		case <-ctx.Done():
-			s.logger.Info("sync cancelled during progress send", "libID", lib.ID)
-			return
-		}
-		if done {
-			break
-		}
-		offset += syncChunkSize
+func (s *LibraryService) syncMovies(ctx context.Context, lib domain.Library, observer domain.SyncObserver) {
+	movies, err := fetchAll(ctx,
+		func(ctx context.Context, offset, limit int) ([]*domain.MediaItem, int, error) {
+			return s.repo.GetMovies(ctx, lib.ID, offset, limit)
+		},
+		defaultChunkSize,
+		func(loaded, total int) {
+			observer.OnProgress(domain.SyncProgress{
+				LibraryID:   lib.ID,
+				LibraryType: lib.Type,
+				Loaded:      loaded,
+				Total:       total,
+			})
+		},
+	)
+
+	if err != nil {
+		observer.OnProgress(domain.SyncProgress{
+			LibraryID: lib.ID, LibraryType: lib.Type, Error: err, Done: true,
+		})
+		s.logger.Error("failed to sync movies", "error", err, "libID", lib.ID)
+		return
 	}
-	// Store in both caches
-	s.setCache(cacheKey, allMovies)
-	s.saveDiskCacheEntry(cacheKey, allMovies, serverTS)
-	s.logger.Info("synced movies", "count", len(allMovies), "libID", lib.ID)
+
+	if err := s.store.SaveMovies(lib.ID, movies, lib.UpdatedAt); err != nil {
+		s.logger.Error("failed to save movies", "error", err, "libID", lib.ID)
+	}
+
+	observer.OnProgress(domain.SyncProgress{
+		LibraryID: lib.ID, LibraryType: lib.Type,
+		Loaded: len(movies), Total: len(movies), Done: true,
+	})
+	s.logger.Info("synced movies", "count", len(movies), "libID", lib.ID)
 }
 
-// syncShows fetches shows in chunks and sends progress to channel
-func (s *LibraryService) syncShows(ctx context.Context, lib domain.Library, serverTS int64, progressCh chan<- SyncProgress) {
-	cacheKey := PrefixShows + lib.ID
-	offset := 0
-	var allShows []*domain.Show
-	for {
-		// Check for cancellation before fetching
-		select {
-		case <-ctx.Done():
-			s.logger.Info("sync cancelled", "libID", lib.ID)
-			return
-		default:
-		}
-		shows, total, err := s.repo.GetShows(ctx, lib.ID, offset, syncChunkSize)
-		if err != nil {
-			s.logger.Error("failed to get shows chunk", "error", err, "offset", offset)
-			progressCh <- SyncProgress{LibraryID: lib.ID, LibraryType: lib.Type, Error: err}
-			return
-		}
-		allShows = append(allShows, shows...)
-		done := len(allShows) >= total || len(shows) == 0
-		// Send progress, but check for cancellation
-		select {
-		case progressCh <- SyncProgress{
-			LibraryID:   lib.ID,
-			LibraryType: lib.Type,
-			Loaded:      len(allShows),
-			Total:       total,
-			Done:        done,
-		}:
-		case <-ctx.Done():
-			s.logger.Info("sync cancelled during progress send", "libID", lib.ID)
-			return
-		}
-		if done {
-			break
-		}
-		offset += syncChunkSize
+func (s *LibraryService) syncShows(ctx context.Context, lib domain.Library, observer domain.SyncObserver) {
+	shows, err := fetchAll(ctx,
+		func(ctx context.Context, offset, limit int) ([]*domain.Show, int, error) {
+			return s.repo.GetShows(ctx, lib.ID, offset, limit)
+		},
+		defaultChunkSize,
+		func(loaded, total int) {
+			observer.OnProgress(domain.SyncProgress{
+				LibraryID:   lib.ID,
+				LibraryType: lib.Type,
+				Loaded:      loaded,
+				Total:       total,
+			})
+		},
+	)
+
+	if err != nil {
+		observer.OnProgress(domain.SyncProgress{
+			LibraryID: lib.ID, LibraryType: lib.Type, Error: err, Done: true,
+		})
+		s.logger.Error("failed to sync shows", "error", err, "libID", lib.ID)
+		return
 	}
-	// Store in both caches
-	s.setCache(cacheKey, allShows)
-	s.saveDiskCacheEntry(cacheKey, allShows, serverTS)
-	s.logger.Info("synced shows", "count", len(allShows), "libID", lib.ID)
+
+	if err := s.store.SaveShows(lib.ID, shows, lib.UpdatedAt); err != nil {
+		s.logger.Error("failed to save shows", "error", err, "libID", lib.ID)
+	}
+
+	observer.OnProgress(domain.SyncProgress{
+		LibraryID: lib.ID, LibraryType: lib.Type,
+		Loaded: len(shows), Total: len(shows), Done: true,
+	})
+	s.logger.Info("synced shows", "count", len(shows), "libID", lib.ID)
 }
 
-// syncMixed fetches mixed library content (movies AND shows) and sends progress to channel
-func (s *LibraryService) syncMixed(ctx context.Context, lib domain.Library, serverTS int64, progressCh chan<- SyncProgress) {
-	cacheKey := PrefixMixed + lib.ID
-	offset := 0
-	var allItems []domain.ListItem
-	for {
-		// Check for cancellation before fetching
-		select {
-		case <-ctx.Done():
-			s.logger.Info("sync cancelled", "libID", lib.ID)
-			return
-		default:
-		}
-		items, total, err := s.repo.GetLibraryContent(ctx, lib.ID, offset, syncChunkSize)
-		if err != nil {
-			s.logger.Error("failed to get mixed content chunk", "error", err, "offset", offset)
-			progressCh <- SyncProgress{LibraryID: lib.ID, LibraryType: lib.Type, Error: err}
-			return
-		}
-		allItems = append(allItems, items...)
-		done := len(allItems) >= total || len(items) == 0
-		// Send progress, but check for cancellation
-		select {
-		case progressCh <- SyncProgress{
-			LibraryID:   lib.ID,
-			LibraryType: lib.Type,
-			Loaded:      len(allItems),
-			Total:       total,
-			Done:        done,
-		}:
-		case <-ctx.Done():
-			s.logger.Info("sync cancelled during progress send", "libID", lib.ID)
-			return
-		}
-		if done {
-			break
-		}
-		offset += syncChunkSize
+func (s *LibraryService) syncMixed(ctx context.Context, lib domain.Library, observer domain.SyncObserver) {
+	items, err := fetchAll(ctx,
+		func(ctx context.Context, offset, limit int) ([]domain.ListItem, int, error) {
+			return s.repo.GetLibraryContent(ctx, lib.ID, offset, limit)
+		},
+		defaultChunkSize,
+		func(loaded, total int) {
+			observer.OnProgress(domain.SyncProgress{
+				LibraryID:   lib.ID,
+				LibraryType: lib.Type,
+				Loaded:      loaded,
+				Total:       total,
+			})
+		},
+	)
+
+	if err != nil {
+		observer.OnProgress(domain.SyncProgress{
+			LibraryID: lib.ID, LibraryType: lib.Type, Error: err, Done: true,
+		})
+		s.logger.Error("failed to sync mixed content", "error", err, "libID", lib.ID)
+		return
 	}
-	// Store in both caches
-	s.setCache(cacheKey, allItems)
-	s.saveDiskCacheEntry(cacheKey, allItems, serverTS)
-	s.logger.Info("synced mixed content", "count", len(allItems), "libID", lib.ID)
+
+	if err := s.store.SaveMixedContent(lib.ID, items, lib.UpdatedAt); err != nil {
+		s.logger.Error("failed to save mixed content", "error", err, "libID", lib.ID)
+	}
+
+	observer.OnProgress(domain.SyncProgress{
+		LibraryID: lib.ID, LibraryType: lib.Type,
+		Loaded: len(items), Total: len(items), Done: true,
+	})
+	s.logger.Info("synced mixed content", "count", len(items), "libID", lib.ID)
 }
 
-// getCacheKeyForLib returns the cache key for a library's content
-func (s *LibraryService) getCacheKeyForLib(lib domain.Library) string {
+func (s *LibraryService) reportCacheHit(lib domain.Library, observer domain.SyncObserver) {
+	var count int
 	switch lib.Type {
 	case "movie":
-		return PrefixMovies + lib.ID
+		if movies, ok := s.store.GetMovies(lib.ID); ok {
+			count = len(movies)
+		}
 	case "show":
-		return PrefixShows + lib.ID
-	case "mixed":
-		return PrefixMixed + lib.ID
+		if shows, ok := s.store.GetShows(lib.ID); ok {
+			count = len(shows)
+		}
 	default:
-		return PrefixMixed + lib.ID // Fallback for unknown types
+		if items, ok := s.store.GetMixedContent(lib.ID); ok {
+			count = len(items)
+		}
 	}
+
+	observer.OnProgress(domain.SyncProgress{
+		LibraryID:   lib.ID,
+		LibraryType: lib.Type,
+		Loaded:      count,
+		Total:       count,
+		Done:        true,
+		FromCache:   true,
+	})
+	s.logger.Debug("cache hit", "libID", lib.ID, "count", count)
 }
 
-// GetMovies returns all movies from a library
+// GetMovies returns all movies from a library (from store or network)
 func (s *LibraryService) GetMovies(ctx context.Context, libID string) ([]*domain.MediaItem, error) {
-	cacheKey := PrefixMovies + libID
-	// 1. Check memory cache
-	if cached, ok := s.getFromCache(cacheKey); ok {
-		s.logger.Debug("memory cache hit", "key", cacheKey)
-		return cached.([]*domain.MediaItem), nil
+	if movies, ok := s.store.GetMovies(libID); ok {
+		s.logger.Debug("store hit for movies", "libID", libID)
+		return movies, nil
 	}
-	// 2. Check disk cache
-	if entry, ok := s.loadDiskCacheEntry(cacheKey); ok {
-		var movies []*domain.MediaItem
-		if err := json.Unmarshal(entry.Items, &movies); err == nil {
-			s.logger.Debug("disk cache hit", "key", cacheKey, "count", len(movies))
-			s.setCache(cacheKey, movies) // Populate memory cache
-			return movies, nil
-		}
+
+	movies, err := fetchAll(ctx,
+		func(ctx context.Context, offset, limit int) ([]*domain.MediaItem, int, error) {
+			return s.repo.GetMovies(ctx, libID, offset, limit)
+		},
+		defaultChunkSize,
+		nil,
+	)
+	if err != nil {
+		s.logger.Error("failed to get movies", "error", err, "libID", libID)
+		return nil, err
 	}
-	// 3. Fetch from API with pagination
-	var allMovies []*domain.MediaItem
-	offset := 0
-	for {
-		movies, total, err := s.repo.GetMovies(ctx, libID, offset, syncChunkSize)
-		if err != nil {
-			s.logger.Error("failed to get movies", "error", err, "libID", libID)
-			return nil, err
-		}
-		allMovies = append(allMovies, movies...)
-		if len(allMovies) >= total || len(movies) == 0 {
-			break
-		}
-		offset += syncChunkSize
-	}
-	// 4. Store in both caches (serverTS=0 since we don't know the timestamp)
-	s.setCache(cacheKey, allMovies)
-	s.saveDiskCacheEntry(cacheKey, allMovies, 0)
-	s.logger.Info("loaded all movies", "count", len(allMovies), "libID", libID)
-	return allMovies, nil
+
+	s.store.SaveMovies(libID, movies, 0)
+	s.logger.Info("loaded movies", "count", len(movies), "libID", libID)
+	return movies, nil
 }
 
-// GetShows returns all TV shows from a library
+// GetShows returns all TV shows from a library (from store or network)
 func (s *LibraryService) GetShows(ctx context.Context, libID string) ([]*domain.Show, error) {
-	cacheKey := PrefixShows + libID
-	// 1. Check memory cache
-	if cached, ok := s.getFromCache(cacheKey); ok {
-		s.logger.Debug("memory cache hit", "key", cacheKey)
-		return cached.([]*domain.Show), nil
+	if shows, ok := s.store.GetShows(libID); ok {
+		s.logger.Debug("store hit for shows", "libID", libID)
+		return shows, nil
 	}
-	// 2. Check disk cache
-	if entry, ok := s.loadDiskCacheEntry(cacheKey); ok {
-		var shows []*domain.Show
-		if err := json.Unmarshal(entry.Items, &shows); err == nil {
-			s.logger.Debug("disk cache hit", "key", cacheKey, "count", len(shows))
-			s.setCache(cacheKey, shows) // Populate memory cache
-			return shows, nil
-		}
+
+	shows, err := fetchAll(ctx,
+		func(ctx context.Context, offset, limit int) ([]*domain.Show, int, error) {
+			return s.repo.GetShows(ctx, libID, offset, limit)
+		},
+		defaultChunkSize,
+		nil,
+	)
+	if err != nil {
+		s.logger.Error("failed to get shows", "error", err, "libID", libID)
+		return nil, err
 	}
-	// 3. Fetch from API with pagination
-	var allShows []*domain.Show
-	offset := 0
-	for {
-		shows, total, err := s.repo.GetShows(ctx, libID, offset, syncChunkSize)
-		if err != nil {
-			s.logger.Error("failed to get shows", "error", err, "libID", libID)
-			return nil, err
-		}
-		allShows = append(allShows, shows...)
-		if len(allShows) >= total || len(shows) == 0 {
-			break
-		}
-		offset += syncChunkSize
-	}
-	// 4. Store in both caches (serverTS=0 since we don't know the timestamp)
-	s.setCache(cacheKey, allShows)
-	s.saveDiskCacheEntry(cacheKey, allShows, 0)
-	s.logger.Info("loaded all shows", "count", len(allShows), "libID", libID)
-	return allShows, nil
+
+	s.store.SaveShows(libID, shows, 0)
+	s.logger.Info("loaded shows", "count", len(shows), "libID", libID)
+	return shows, nil
 }
 
-// GetCachedMovies returns movies only if cached in memory, nil otherwise (non-blocking)
-func (s *LibraryService) GetCachedMovies(libID string) []*domain.MediaItem {
-	cacheKey := PrefixMovies + libID
-	if cached, ok := s.getFromCache(cacheKey); ok {
-		return cached.([]*domain.MediaItem)
-	}
-	return nil
-}
-
-// GetCachedShows returns shows only if cached in memory, nil otherwise (non-blocking)
-func (s *LibraryService) GetCachedShows(libID string) []*domain.Show {
-	cacheKey := PrefixShows + libID
-	if cached, ok := s.getFromCache(cacheKey); ok {
-		return cached.([]*domain.Show)
-	}
-	return nil
-}
-
-// GetLibraryContent returns all content (movies AND shows) from a mixed library
+// GetLibraryContent returns all content from a mixed library (from store or network)
 func (s *LibraryService) GetLibraryContent(ctx context.Context, libID string) ([]domain.ListItem, error) {
-	cacheKey := PrefixMixed + libID
-	// 1. Check memory cache
-	if cached, ok := s.getFromCache(cacheKey); ok {
-		s.logger.Debug("memory cache hit", "key", cacheKey)
-		return cached.([]domain.ListItem), nil
+	if items, ok := s.store.GetMixedContent(libID); ok {
+		s.logger.Debug("store hit for mixed content", "libID", libID)
+		return items, nil
 	}
-	// 2. Check disk cache
-	if entry, ok := s.loadDiskCacheEntry(cacheKey); ok {
-		var items []domain.ListItem
-		if err := json.Unmarshal(entry.Items, &items); err == nil {
-			s.logger.Debug("disk cache hit", "key", cacheKey, "count", len(items))
-			s.setCache(cacheKey, items) // Populate memory cache
-			return items, nil
-		}
+
+	items, err := fetchAll(ctx,
+		func(ctx context.Context, offset, limit int) ([]domain.ListItem, int, error) {
+			return s.repo.GetLibraryContent(ctx, libID, offset, limit)
+		},
+		defaultChunkSize,
+		nil,
+	)
+	if err != nil {
+		s.logger.Error("failed to get library content", "error", err, "libID", libID)
+		return nil, err
 	}
-	// 3. Fetch from API with pagination
-	var allItems []domain.ListItem
-	offset := 0
-	for {
-		items, total, err := s.repo.GetLibraryContent(ctx, libID, offset, syncChunkSize)
-		if err != nil {
-			s.logger.Error("failed to get library content", "error", err, "libID", libID)
-			return nil, err
-		}
-		allItems = append(allItems, items...)
-		if len(allItems) >= total || len(items) == 0 {
-			break
-		}
-		offset += syncChunkSize
-	}
-	// 4. Store in both caches (serverTS=0 since we don't know the timestamp)
-	s.setCache(cacheKey, allItems)
-	s.saveDiskCacheEntry(cacheKey, allItems, 0)
-	s.logger.Info("loaded all library content", "count", len(allItems), "libID", libID)
-	return allItems, nil
+
+	s.store.SaveMixedContent(libID, items, 0)
+	s.logger.Info("loaded library content", "count", len(items), "libID", libID)
+	return items, nil
 }
 
-// GetCachedLibraryContent returns mixed library content only if cached in memory, nil otherwise (non-blocking)
-func (s *LibraryService) GetCachedLibraryContent(libID string) []domain.ListItem {
-	cacheKey := PrefixMixed + libID
-	if cached, ok := s.getFromCache(cacheKey); ok {
-		return cached.([]domain.ListItem)
+// GetSeasons fetches seasons from network, caches in store.
+// Requires libID for hierarchical cache key (enables cascade invalidation).
+func (s *LibraryService) GetSeasons(ctx context.Context, libID, showID string) ([]*domain.Season, error) {
+	if seasons, ok := s.store.GetSeasons(libID, showID); ok {
+		s.logger.Debug("store hit for seasons", "libID", libID, "showID", showID)
+		return seasons, nil
 	}
-	return nil
-}
 
-// GetSeasons returns all seasons for a TV show
-func (s *LibraryService) GetSeasons(ctx context.Context, showID string) ([]*domain.Season, error) {
-	cacheKey := PrefixSeasons + showID
-	// Check cache
-	if cached, ok := s.getFromCache(cacheKey); ok {
-		s.logger.Debug("cache hit", "key", cacheKey)
-		return cached.([]*domain.Season), nil
-	}
-	// Fetch from repository
 	seasons, err := s.repo.GetSeasons(ctx, showID)
 	if err != nil {
 		s.logger.Error("failed to get seasons", "error", err, "showID", showID)
 		return nil, err
 	}
-	// Store in cache
-	s.setCache(cacheKey, seasons)
+
+	s.store.SaveSeasons(libID, showID, seasons)
 	s.logger.Debug("loaded seasons", "count", len(seasons), "showID", showID)
 	return seasons, nil
 }
 
-// GetEpisodes returns all episodes for a season
-func (s *LibraryService) GetEpisodes(ctx context.Context, seasonID string) ([]*domain.MediaItem, error) {
-	cacheKey := PrefixEpisodes + seasonID
-	// Check cache
-	if cached, ok := s.getFromCache(cacheKey); ok {
-		s.logger.Debug("cache hit", "key", cacheKey)
-		return cached.([]*domain.MediaItem), nil
+// GetEpisodes fetches episodes from network, caches in store.
+// Requires full ancestry (libID, showID, seasonID) for hierarchical cache key.
+func (s *LibraryService) GetEpisodes(ctx context.Context, libID, showID, seasonID string) ([]*domain.MediaItem, error) {
+	if episodes, ok := s.store.GetEpisodes(libID, showID, seasonID); ok {
+		s.logger.Debug("store hit for episodes", "seasonID", seasonID)
+		return episodes, nil
 	}
-	// Fetch from repository
+
 	episodes, err := s.repo.GetEpisodes(ctx, seasonID)
 	if err != nil {
 		s.logger.Error("failed to get episodes", "error", err, "seasonID", seasonID)
 		return nil, err
 	}
-	// Store in cache
-	s.setCache(cacheKey, episodes)
+
+	s.store.SaveEpisodes(libID, showID, seasonID, episodes)
 	s.logger.Debug("loaded episodes", "count", len(episodes), "seasonID", seasonID)
 	return episodes, nil
 }
 
-// RefreshLibrary clears cache for a specific library
+// RefreshLibrary invalidates library + all its seasons + all its episodes.
 func (s *LibraryService) RefreshLibrary(libID string) {
-	s.cacheMu.Lock()
-	defer s.cacheMu.Unlock()
-	// Clear all cache entries related to this library (movies, shows, mixed)
-	for _, prefix := range []string{PrefixMovies, PrefixShows, PrefixMixed} {
-		key := prefix + libID
-		delete(s.cache, key)
-		s.clearDiskCache(key) // Also clear disk cache
-	}
-	s.logger.Info("cleared cache for library", "libID", libID)
+	s.store.InvalidateLibrary(libID)
+	s.logger.Info("invalidated cache for library (cascade)", "libID", libID)
 }
 
-// RefreshAll clears all cached data
+// RefreshShow invalidates a show's seasons + all its episodes.
+func (s *LibraryService) RefreshShow(libID, showID string) {
+	s.store.InvalidateShow(libID, showID)
+	s.logger.Info("invalidated cache for show (cascade)", "libID", libID, "showID", showID)
+}
+
+// RefreshSeason invalidates a season's episodes.
+func (s *LibraryService) RefreshSeason(libID, showID, seasonID string) {
+	s.store.InvalidateSeason(libID, showID, seasonID)
+	s.logger.Info("invalidated cache for season", "seasonID", seasonID)
+}
+
+// RefreshAll invalidates all stored data.
 func (s *LibraryService) RefreshAll() {
-	s.cacheMu.Lock()
-	defer s.cacheMu.Unlock()
-	// Clear disk cache for all keys
-	for key := range s.cache {
-		s.clearDiskCache(key)
-	}
-	s.cache = make(map[string]interface{})
-	s.logger.Info("cleared all cache")
-}
-
-// getFromCache retrieves an item from memory cache
-// Memory cache is invalidated via RefreshLibrary/RefreshAll, not by TTL
-func (s *LibraryService) getFromCache(key string) (interface{}, bool) {
-	s.cacheMu.RLock()
-	defer s.cacheMu.RUnlock()
-	cached, ok := s.cache[key]
-	return cached, ok
-}
-
-// setCache stores an item in cache
-func (s *LibraryService) setCache(key string, items interface{}) {
-	s.cacheMu.Lock()
-	defer s.cacheMu.Unlock()
-	s.cache[key] = items
-}
-
-// diskCachePath returns the path for a cache file
-func (s *LibraryService) diskCachePath(key string) string {
-	// Sanitize key for filename (replace : with _)
-	safe := strings.ReplaceAll(key, ":", "_")
-	return filepath.Join(s.cacheDir, safe+".json")
-}
-
-// loadDiskCacheEntry loads the new cache format with server timestamp
-func (s *LibraryService) loadDiskCacheEntry(key string) (*diskCacheEntry, bool) {
-	if s.cacheDir == "" {
-		return nil, false
-	}
-	s.diskMu.Lock()
-	defer s.diskMu.Unlock()
-	path := s.diskCachePath(key)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, false
-	}
-	var entry diskCacheEntry
-	if err := json.Unmarshal(data, &entry); err != nil {
-		// Might be old format, return false to trigger re-fetch
-		return nil, false
-	}
-	// Validate that items field is not empty
-	if len(entry.Items) == 0 {
-		return nil, false
-	}
-	return &entry, true
-}
-
-// saveDiskCacheEntry saves data with server timestamp using atomic write
-func (s *LibraryService) saveDiskCacheEntry(key string, data interface{}, serverTS int64) {
-	if s.cacheDir == "" {
-		return
-	}
-	s.diskMu.Lock()
-	defer s.diskMu.Unlock()
-	itemsBytes, err := json.Marshal(data)
-	if err != nil {
-		s.logger.Error("failed to marshal items", "error", err)
-		return
-	}
-	entry := diskCacheEntry{
-		Items:           itemsBytes,
-		ServerUpdatedAt: serverTS,
-	}
-	entryBytes, err := json.Marshal(entry)
-	if err != nil {
-		s.logger.Error("failed to marshal cache entry", "error", err)
-		return
-	}
-	path := s.diskCachePath(key)
-	tmpPath := path + ".tmp"
-	// Write to temp file first
-	if err := os.WriteFile(tmpPath, entryBytes, 0644); err != nil {
-		s.logger.Error("failed to write temp cache", "error", err, "path", tmpPath)
-		return
-	}
-	// Atomic rename
-	if err := os.Rename(tmpPath, path); err != nil {
-		s.logger.Error("failed to rename cache file", "error", err, "path", path)
-		os.Remove(tmpPath) // Clean up temp file
-		return
-	}
-}
-
-// clearDiskCache removes disk cache for a key
-func (s *LibraryService) clearDiskCache(key string) {
-	if s.cacheDir == "" {
-		return
-	}
-	os.Remove(s.diskCachePath(key))
+	s.store.InvalidateAll()
+	s.logger.Info("invalidated all cache")
 }

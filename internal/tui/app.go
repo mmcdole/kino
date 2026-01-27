@@ -71,6 +71,9 @@ type Model struct {
 	SearchSvc   *service.SearchService
 	PlaylistSvc *service.PlaylistService
 
+	// Store for direct data access
+	Store domain.LibraryStore
+
 	// UI Components - Miller Columns
 	ColumnStack   *ColumnStack             // Stack of navigable list columns
 	Inspector     components.Inspector     // View projection (always shows details for middle column selection)
@@ -103,6 +106,10 @@ type Model struct {
 
 	// Playlist navigation context (when viewing playlist items)
 	currentPlaylistID string
+
+	// Navigation context for hierarchical cache keys (cascade invalidation)
+	currentLibID  string // Set when entering a library
+	currentShowID string // Set when entering a show
 }
 
 // NewModel creates a new application model
@@ -111,6 +118,7 @@ func NewModel(
 	playbackSvc *service.PlaybackService,
 	searchSvc *service.SearchService,
 	playlistSvc *service.PlaylistService,
+	store domain.LibraryStore,
 ) Model {
 	return Model{
 		State:         StateBrowsing,
@@ -118,6 +126,7 @@ func NewModel(
 		PlaybackSvc:   playbackSvc,
 		SearchSvc:     searchSvc,
 		PlaylistSvc:   playlistSvc,
+		Store:         store,
 		ColumnStack:   NewColumnStack(),
 		Inspector:     components.NewInspector(),
 		GlobalSearch:  components.NewGlobalSearch(),
@@ -153,9 +162,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case TickMsg:
 		m.SpinnerFrame++
-		if m.SyncingCount > 0 {
-			m.ColumnStack.UpdateSpinnerFrame(m.SpinnerFrame)
-		}
+		// Always propagate spinner frame - columns render spinner only when their loading flag is true
+		m.ColumnStack.UpdateSpinnerFrame(m.SpinnerFrame)
 		return m, TickCmd(100 * time.Millisecond)
 
 	case LibrariesLoadedMsg:
@@ -331,7 +339,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			state.Loaded = msg.Loaded
 			state.Total = msg.Total
-			state.FromDisk = msg.FromDisk
+			state.FromCache = msg.FromCache
 
 			if msg.Done {
 				state.Status = components.StatusSynced
@@ -505,17 +513,17 @@ func (m *Model) refreshCurrentView() tea.Cmd {
 			}
 		}
 	case components.ColumnTypeSeasons:
-		// Get show from parent column
+		// Get show from parent column - needs libID for hierarchical cache
 		if showCol := m.ColumnStack.Get(m.ColumnStack.Len() - 2); showCol != nil {
 			if show := showCol.SelectedShow(); show != nil {
-				return LoadSeasonsCmd(m.LibrarySvc, show.ID)
+				return LoadSeasonsCmd(m.LibrarySvc, m.currentLibID, show.ID)
 			}
 		}
 	case components.ColumnTypeEpisodes:
-		// Get season from parent column
+		// Get season from parent column - needs full ancestry for hierarchical cache
 		if seasonCol := m.ColumnStack.Get(m.ColumnStack.Len() - 2); seasonCol != nil {
 			if season := seasonCol.SelectedSeason(); season != nil {
-				return LoadEpisodesCmd(m.LibrarySvc, season.ID)
+				return LoadEpisodesCmd(m.LibrarySvc, m.currentLibID, m.currentShowID, season.ID)
 			}
 		}
 	case components.ColumnTypeMixed:

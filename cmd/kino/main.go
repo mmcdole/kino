@@ -16,6 +16,7 @@ import (
 	"github.com/mmcdole/kino/internal/mediaserver"
 	"github.com/mmcdole/kino/internal/player"
 	"github.com/mmcdole/kino/internal/service"
+	"github.com/mmcdole/kino/internal/store"
 	"github.com/mmcdole/kino/internal/tui"
 	"github.com/mmcdole/kino/internal/tui/styles"
 )
@@ -72,17 +73,25 @@ func run() error {
 		return fmt.Errorf("failed to create media client: %w", err)
 	}
 
+	// Create store (persistence layer)
+	libraryStore, err := store.NewLibraryStore(config.DefaultCachePath(), cfg.Server.URL)
+	if err != nil {
+		logger.Warn("store unavailable, continuing memory-only", "error", err)
+		libraryStore, _ = store.NewLibraryStore("", "") // Memory-only fallback
+	}
+	defer libraryStore.Close() // Clean shutdown
+
 	// Create launcher (uses configured player or auto-detects)
 	launcher := player.NewLauncher(cfg.Player.Command, cfg.Player.Args, cfg.Player.StartFlag, logger)
 
-	// Create services
-	librarySvc := service.NewLibraryService(client, logger, cfg.Server.URL)
-	searchSvc := service.NewSearchService(client, librarySvc, logger)
+	// Create services - library and search share the same store
+	librarySvc := service.NewLibraryService(client, libraryStore, logger)
+	searchSvc := service.NewSearchService(client, libraryStore, logger)
 	playbackSvc := service.NewPlaybackService(launcher, client, logger)
 	playlistSvc := service.NewPlaylistService(client, logger)
 
-	// Create TUI model
-	model := tui.NewModel(librarySvc, playbackSvc, searchSvc, playlistSvc)
+	// Create TUI model - has direct Store access for reads (CQRS)
+	model := tui.NewModel(librarySvc, playbackSvc, searchSvc, playlistSvc, libraryStore)
 
 	// Run the TUI
 	p := tea.NewProgram(

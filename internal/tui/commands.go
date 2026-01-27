@@ -11,6 +11,9 @@ import (
 	"github.com/mmcdole/kino/internal/service"
 )
 
+// syncChannelSize is the buffer size for sync progress channels
+const syncChannelSize = 100
+
 // Command factories for async operations
 
 // LoadLibrariesCmd loads all available libraries
@@ -70,12 +73,13 @@ func LoadMixedLibraryCmd(svc *service.LibraryService, libID string) tea.Cmd {
 }
 
 // LoadSeasonsCmd loads seasons for a show
-func LoadSeasonsCmd(svc *service.LibraryService, showID string) tea.Cmd {
+// Requires libID for hierarchical cache key (enables cascade invalidation)
+func LoadSeasonsCmd(svc *service.LibraryService, libID, showID string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		seasons, err := svc.GetSeasons(ctx, showID)
+		seasons, err := svc.GetSeasons(ctx, libID, showID)
 		if err != nil {
 			return ErrMsg{Err: err, Context: "loading seasons"}
 		}
@@ -84,12 +88,13 @@ func LoadSeasonsCmd(svc *service.LibraryService, showID string) tea.Cmd {
 }
 
 // LoadEpisodesCmd loads episodes for a season
-func LoadEpisodesCmd(svc *service.LibraryService, seasonID string) tea.Cmd {
+// Requires full ancestry (libID, showID, seasonID) for hierarchical cache key
+func LoadEpisodesCmd(svc *service.LibraryService, libID, showID, seasonID string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		episodes, err := svc.GetEpisodes(ctx, seasonID)
+		episodes, err := svc.GetEpisodes(ctx, libID, showID, seasonID)
 		if err != nil {
 			return ErrMsg{Err: err, Context: "loading episodes"}
 		}
@@ -175,12 +180,14 @@ func SyncLibraryCmd(
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 
 		// Create a channel for this sync operation
-		progressCh := make(chan service.SyncProgress)
+		progressCh := make(chan domain.SyncProgress, syncChannelSize)
+		observer := NewChannelObserver(progressCh)
 
 		// Start the background work
 		go func() {
 			defer cancel()
-			libSvc.SyncLibrary(ctx, lib, force, progressCh)
+			defer close(progressCh)
+			libSvc.SyncLibrary(ctx, lib, force, observer)
 		}()
 
 		// Read the first message and return it with continuation context
@@ -192,7 +199,7 @@ func SyncLibraryCmd(
 // with the continuation command embedded
 func readSyncProgress(
 	lib domain.Library,
-	progressCh <-chan service.SyncProgress,
+	progressCh <-chan domain.SyncProgress,
 ) tea.Msg {
 	progress, ok := <-progressCh
 	if !ok {
@@ -211,7 +218,7 @@ func readSyncProgress(
 		Loaded:      progress.Loaded,
 		Total:       progress.Total,
 		Done:        progress.Done,
-		FromDisk:    progress.FromDisk,
+		FromCache:   progress.FromCache,
 		Error:       progress.Error,
 	}
 
@@ -226,7 +233,7 @@ func readSyncProgress(
 // listenToSyncCmd returns a command that reads the next message from the progress channel
 func listenToSyncCmd(
 	lib domain.Library,
-	progressCh <-chan service.SyncProgress,
+	progressCh <-chan domain.SyncProgress,
 ) tea.Cmd {
 	return func() tea.Msg {
 		return readSyncProgress(lib, progressCh)

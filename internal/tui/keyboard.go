@@ -83,7 +83,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if top := m.ColumnStack.Top(); top != nil {
 		oldCursor := top.SelectedIndex()
 		newCol, cmd := top.Update(msg)
-		m.ColumnStack.columns[len(m.ColumnStack.columns)-1] = newCol
+		m.ColumnStack.UpdateTop(newCol)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
@@ -205,8 +205,81 @@ func (m Model) handleSort() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleRefresh refreshes the single selected library
+// handleRefresh performs context-sensitive refresh with cascade invalidation.
+// At library level: refresh selected library (cascade to seasons/episodes)
+// At show level: refresh selected show (cascade to seasons/episodes)
+// At season level: refresh selected season (cascade to episodes)
+// At episode level: refresh current season's episodes
 func (m Model) handleRefresh() (tea.Model, tea.Cmd) {
+	top := m.ColumnStack.Top()
+	if top == nil {
+		return m, nil
+	}
+
+	switch top.ColumnType() {
+	case components.ColumnTypeLibraries:
+		// Refresh selected library
+		lib := top.SelectedLibrary()
+		if lib == nil || lib.ID == playlistsLibraryID {
+			return m, nil
+		}
+		m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
+		m.SyncingCount++
+		m.Loading = true
+		m.MultiLibSync = false
+		m.updateLibraryStates()
+		return m, SyncLibraryCmd(m.LibrarySvc, *lib, true)
+
+	case components.ColumnTypeMovies, components.ColumnTypeMixed, components.ColumnTypeShows:
+		return m.refreshLibraryContent(top)
+
+	case components.ColumnTypeSeasons:
+		// Refresh current show's seasons (invalidate seasons + episodes, re-fetch seasons)
+		m.LibrarySvc.RefreshShow(m.currentLibID, m.currentShowID)
+		top.SetItems(nil)
+		top.SetLoading(true)
+		m.Loading = true
+		return m, LoadSeasonsCmd(m.LibrarySvc, m.currentLibID, m.currentShowID)
+
+	case components.ColumnTypeEpisodes:
+		// Refresh current season's episodes
+		seasonCol := m.ColumnStack.Get(m.ColumnStack.Len() - 2)
+		if seasonCol == nil {
+			return m, nil
+		}
+		season := seasonCol.SelectedSeason()
+		if season == nil {
+			return m, nil
+		}
+		m.LibrarySvc.RefreshSeason(m.currentLibID, m.currentShowID, season.ID)
+		top.SetItems(nil)
+		top.SetLoading(true)
+		m.Loading = true
+		return m, LoadEpisodesCmd(m.LibrarySvc, m.currentLibID, m.currentShowID, season.ID)
+
+	case components.ColumnTypePlaylists:
+		// Refresh playlists
+		top.SetItems(nil)
+		top.SetLoading(true)
+		m.Loading = true
+		return m, LoadPlaylistsCmd(m.PlaylistSvc)
+
+	case components.ColumnTypePlaylistItems:
+		// Refresh playlist items
+		if m.currentPlaylistID == "" {
+			return m, nil
+		}
+		top.SetItems(nil)
+		top.SetLoading(true)
+		m.Loading = true
+		return m, LoadPlaylistItemsCmd(m.PlaylistSvc, m.currentPlaylistID)
+	}
+
+	return m, nil
+}
+
+// refreshLibraryContent refreshes movies, shows, or mixed content in the current library
+func (m Model) refreshLibraryContent(top *components.ListColumn) (Model, tea.Cmd) {
 	libCol := m.libraryColumn()
 	if libCol == nil {
 		return m, nil
@@ -215,12 +288,19 @@ func (m Model) handleRefresh() (tea.Model, tea.Cmd) {
 	if lib == nil {
 		return m, nil
 	}
-	m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
-	m.SyncingCount++
+	m.LibrarySvc.RefreshLibrary(lib.ID)
+	top.SetItems(nil)
+	top.SetLoading(true)
 	m.Loading = true
-	m.MultiLibSync = false
-	m.updateLibraryStates()
-	return m, SyncLibraryCmd(m.LibrarySvc, *lib, true)
+
+	switch lib.Type {
+	case "movie":
+		return m, LoadMoviesCmd(m.LibrarySvc, lib.ID)
+	case "show":
+		return m, LoadShowsCmd(m.LibrarySvc, lib.ID)
+	default:
+		return m, LoadMixedLibraryCmd(m.LibrarySvc, lib.ID)
+	}
 }
 
 // handleRefreshAll refreshes all libraries and resets to library view
@@ -472,7 +552,7 @@ func (m Model) handleFilterTypingInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 	}
 	oldCursor := top.SelectedIndex()
 	newCol, _ := top.Update(msg)
-	m.ColumnStack.columns[len(m.ColumnStack.columns)-1] = newCol
+	m.ColumnStack.UpdateTop(newCol)
 	if oldCursor != top.SelectedIndex() {
 		m.updateInspector()
 	}

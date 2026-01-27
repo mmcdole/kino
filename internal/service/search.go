@@ -28,18 +28,18 @@ type FilterResult struct {
 // SearchService handles fuzzy search across libraries
 type SearchService struct {
 	repo   domain.SearchRepository
-	libSvc *LibraryService
+	store  domain.LibraryStore
 	logger *slog.Logger
 }
 
 // NewSearchService creates a new search service
-func NewSearchService(repo domain.SearchRepository, libSvc *LibraryService, logger *slog.Logger) *SearchService {
+func NewSearchService(repo domain.SearchRepository, store domain.LibraryStore, logger *slog.Logger) *SearchService {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &SearchService{
 		repo:   repo,
-		libSvc: libSvc,
+		store:  store,
 		logger: logger,
 	}
 }
@@ -181,7 +181,7 @@ func (s *SearchService) gatherLibraryItems(lib domain.Library, types map[domain.
 	switch lib.Type {
 	case "movie":
 		if isTypeAllowed(domain.MediaTypeMovie) {
-			if movies := s.libSvc.GetCachedMovies(lib.ID); movies != nil {
+			if movies, ok := s.store.GetMovies(lib.ID); ok {
 				for _, m := range movies {
 					items = append(items, FilterItem{
 						Item:      m,
@@ -194,7 +194,7 @@ func (s *SearchService) gatherLibraryItems(lib domain.Library, types map[domain.
 		}
 	case "show":
 		if isTypeAllowed(domain.MediaTypeShow) {
-			if shows := s.libSvc.GetCachedShows(lib.ID); shows != nil {
+			if shows, ok := s.store.GetShows(lib.ID); ok {
 				for _, sh := range shows {
 					items = append(items, FilterItem{
 						Item:      sh,
@@ -206,7 +206,7 @@ func (s *SearchService) gatherLibraryItems(lib domain.Library, types map[domain.
 			}
 		}
 	case "mixed":
-		if content := s.libSvc.GetCachedLibraryContent(lib.ID); content != nil {
+		if content, ok := s.store.GetMixedContent(lib.ID); ok {
 			for _, item := range content {
 				switch v := item.(type) {
 				case *domain.MediaItem:
