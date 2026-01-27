@@ -16,6 +16,18 @@ type MediaContainer struct {
 	Metadata            []Metadata  `json:"Metadata,omitempty"`
 }
 
+// Guid represents an external identifier (IMDB, TMDB, TVDB, etc.)
+type Guid struct {
+	ID string `json:"id"` // e.g. "imdb://tt1234567", "tmdb://12345", "tvdb://12345"
+}
+
+// Rating represents a rating from an external source
+type Rating struct {
+	Image string  `json:"image,omitempty"` // e.g. "imdb://image.rating"
+	Type  string  `json:"type,omitempty"`
+	Value float64 `json:"value,omitempty"`
+}
+
 // Directory represents a library section
 type Directory struct {
 	Art              string `json:"art,omitempty"`
@@ -31,46 +43,48 @@ type Directory struct {
 
 // Metadata represents a media item (movie, show, season, or episode)
 type Metadata struct {
-	RatingKey             string  `json:"ratingKey"`
-	Key                   string  `json:"key"`
-	ParentRatingKey       string  `json:"parentRatingKey,omitempty"`
-	GrandparentRatingKey  string  `json:"grandparentRatingKey,omitempty"`
-	GUID                  any     `json:"guid,omitempty"`
-	Studio                string  `json:"studio,omitempty"`
-	Type                  string  `json:"type"`
-	Title                 string  `json:"title"`
-	GrandparentKey        string  `json:"grandparentKey,omitempty"`
-	ParentKey             string  `json:"parentKey,omitempty"`
-	GrandparentTitle      string  `json:"grandparentTitle,omitempty"`
-	ParentTitle           string  `json:"parentTitle,omitempty"`
-	ContentRating         string  `json:"contentRating,omitempty"`
-	Summary               string  `json:"summary,omitempty"`
-	Index                 int     `json:"index,omitempty"`
-	ParentIndex           int     `json:"parentIndex,omitempty"`
-	Rating                float64 `json:"rating,omitempty"`
-	AudienceRating        float64 `json:"audienceRating,omitempty"`
-	ViewOffset            int     `json:"viewOffset,omitempty"`
-	LastViewedAt          int64   `json:"lastViewedAt,omitempty"`
-	Year                  int     `json:"year,omitempty"`
-	Tagline               string  `json:"tagline,omitempty"`
-	Thumb                 string  `json:"thumb,omitempty"`
-	Art                   string  `json:"art,omitempty"`
-	ParentThumb           string  `json:"parentThumb,omitempty"`
-	GrandparentThumb      string  `json:"grandparentThumb,omitempty"`
-	GrandparentArt        string  `json:"grandparentArt,omitempty"`
-	Duration              int     `json:"duration,omitempty"`
-	OriginallyAvailableAt string  `json:"originallyAvailableAt,omitempty"`
-	AddedAt               int64   `json:"addedAt,omitempty"`
-	UpdatedAt             int64   `json:"updatedAt,omitempty"`
-	TitleSort             string  `json:"titleSort,omitempty"`
-	ViewCount             int     `json:"viewCount,omitempty"`
-	ChildCount            int     `json:"childCount,omitempty"`
-	LeafCount             int     `json:"leafCount,omitempty"`
-	ViewedLeafCount       int     `json:"viewedLeafCount,omitempty"`
-	LibrarySectionID      int     `json:"librarySectionID,omitempty"`
-	LibrarySectionKey     string  `json:"librarySectionKey,omitempty"`
-	LibrarySectionTitle   string  `json:"librarySectionTitle,omitempty"`
-	Media                 []Media `json:"Media,omitempty"`
+	RatingKey             string   `json:"ratingKey"`
+	Key                   string   `json:"key"`
+	ParentRatingKey       string   `json:"parentRatingKey,omitempty"`
+	GrandparentRatingKey  string   `json:"grandparentRatingKey,omitempty"`
+	GUID                  string   `json:"guid,omitempty"` // Plex internal GUID
+	Guids                 []Guid   `json:"Guid,omitempty"` // External IDs (IMDB, TMDB, TVDB)
+	Studio                string   `json:"studio,omitempty"`
+	Type                  string   `json:"type"`
+	Title                 string   `json:"title"`
+	GrandparentKey        string   `json:"grandparentKey,omitempty"`
+	ParentKey             string   `json:"parentKey,omitempty"`
+	GrandparentTitle      string   `json:"grandparentTitle,omitempty"`
+	ParentTitle           string   `json:"parentTitle,omitempty"`
+	ContentRating         string   `json:"contentRating,omitempty"`
+	Summary               string   `json:"summary,omitempty"`
+	Index                 int      `json:"index,omitempty"`
+	ParentIndex           int      `json:"parentIndex,omitempty"`
+	Rating                float64  `json:"rating,omitempty"`         // Critic rating
+	Ratings               []Rating `json:"Rating,omitempty"`         // External ratings
+	AudienceRating        float64  `json:"audienceRating,omitempty"` // Audience rating
+	ViewOffset            int      `json:"viewOffset,omitempty"`
+	LastViewedAt          int64    `json:"lastViewedAt,omitempty"`
+	Year                  int      `json:"year,omitempty"`
+	Tagline               string   `json:"tagline,omitempty"`
+	Thumb                 string   `json:"thumb,omitempty"`
+	Art                   string   `json:"art,omitempty"`
+	ParentThumb           string   `json:"parentThumb,omitempty"`
+	GrandparentThumb      string   `json:"grandparentThumb,omitempty"`
+	GrandparentArt        string   `json:"grandparentArt,omitempty"`
+	Duration              int      `json:"duration,omitempty"`
+	OriginallyAvailableAt string   `json:"originallyAvailableAt,omitempty"`
+	AddedAt               int64    `json:"addedAt,omitempty"`
+	UpdatedAt             int64    `json:"updatedAt,omitempty"`
+	TitleSort             string   `json:"titleSort,omitempty"`
+	ViewCount             int      `json:"viewCount,omitempty"`
+	ChildCount            int      `json:"childCount,omitempty"`
+	LeafCount             int      `json:"leafCount,omitempty"`
+	ViewedLeafCount       int      `json:"viewedLeafCount,omitempty"`
+	LibrarySectionID      int      `json:"librarySectionID,omitempty"`
+	LibrarySectionKey     string   `json:"librarySectionKey,omitempty"`
+	LibrarySectionTitle   string   `json:"librarySectionTitle,omitempty"`
+	Media                 []Media  `json:"Media,omitempty"`
 }
 
 // Media represents media information (video streams, codecs, etc.)
@@ -91,13 +105,13 @@ type Media struct {
 
 // Part represents a media file part
 type Part struct {
-	ID        int           `json:"id"`
-	Key       string        `json:"key"`
-	Duration  int           `json:"duration,omitempty"`
-	File      string        `json:"file,omitempty"`
-	Size      int64         `json:"size,omitempty"`
-	Container string        `json:"container,omitempty"`
-	Stream    []interface{} `json:"Stream,omitempty"`
+	ID        int    `json:"id"`
+	Key       string `json:"key"`
+	Duration  int    `json:"duration,omitempty"`
+	File      string `json:"file,omitempty"`
+	Size      int64  `json:"size,omitempty"`
+	Container string `json:"container,omitempty"`
+	Stream    []any  `json:"Stream,omitempty"`
 }
 
 // APIResponse wraps the MediaContainer for JSON unmarshaling
@@ -128,7 +142,8 @@ type PINCheckResponse struct {
 type PlaylistMetadata struct {
 	RatingKey    string `json:"ratingKey"`
 	Key          string `json:"key"`
-	GUID         any    `json:"guid,omitempty"`
+	GUID         string `json:"guid,omitempty"` // Plex internal GUID
+	Guids        []Guid `json:"Guid,omitempty"` // External IDs
 	Type         string `json:"type"`
 	Title        string `json:"title"`
 	Summary      string `json:"summary,omitempty"`
