@@ -73,6 +73,7 @@ type columnLoadSpec struct {
 // This consolidates the repeated cache-check-and-load pattern used throughout navigation.
 func (m *Model) pushAndLoadColumn(spec columnLoadSpec, cursor int) *drillResult {
 	col := components.NewListColumn(spec.colType, spec.name)
+	col.SetShowWatchStatus(m.UIConfig.ShowWatchStatus)
 	m.ColumnStack.Push(col, cursor)
 	m.updateLayout()
 
@@ -109,8 +110,9 @@ func (m *Model) navigateToMixedLibraryItem(lib *domain.Library, targets []NavTar
 	}
 
 	mixedCol := components.NewListColumn(components.ColumnTypeMixed, lib.Name)
+	mixedCol.SetShowWatchStatus(m.UIConfig.ShowWatchStatus)
 
-	if cached, ok := m.LibQueries.GetCachedMixedContent(lib.ID); ok {
+	if cached, ok := m.Store.GetMixedContent(lib.ID); ok {
 		mixedCol.SetItems(cached)
 		m.ColumnStack.Push(mixedCol, 0)
 		m.updateLayout()
@@ -122,7 +124,7 @@ func (m *Model) navigateToMixedLibraryItem(lib *domain.Library, targets []NavTar
 	m.ColumnStack.Push(mixedCol, 0)
 	m.Loading = true
 	m.updateLayout()
-	return LoadMixedLibraryCmd(m.LibCommands, lib.ID)
+	return LoadMixedLibraryCmd(m.LibraryService, lib.ID)
 }
 
 // NavigationContext contains information needed to navigate to an item
@@ -186,11 +188,12 @@ func (m *Model) drillSelected() *drillResult {
 		// Handle synthetic "Playlists" entry
 		if v.ID == playlistsLibraryID {
 			col := components.NewListColumn(components.ColumnTypePlaylists, "Playlists")
+			col.SetShowWatchStatus(m.UIConfig.ShowWatchStatus)
 			m.ColumnStack.Push(col, cursor)
 			m.updateLayout()
 
 			// Check cache first
-			if cached, ok := m.PlaylistQueries.GetCachedPlaylists(); ok {
+			if cached, ok := m.Store.GetPlaylists(); ok {
 				col.SetItems(cached)
 				m.updateInspector()
 				return &drillResult{AwaitKind: AwaitNone}
@@ -200,7 +203,7 @@ func (m *Model) drillSelected() *drillResult {
 			m.Loading = true
 			return &drillResult{
 				AwaitKind: AwaitNone,
-				Cmd:       LoadPlaylistsCmd(m.PlaylistCmds),
+				Cmd:       LoadPlaylistsCmd(m.PlaylistService),
 			}
 		}
 
@@ -218,12 +221,12 @@ func (m *Model) drillSelected() *drillResult {
 				awaitKind: AwaitMovies,
 				awaitID:   v.ID,
 				getCached: func() interface{} {
-					if c, ok := m.LibQueries.GetCachedMovies(v.ID); ok {
+					if c, ok := m.Store.GetMovies(v.ID); ok {
 						return c
 					}
 					return nil
 				},
-				loadCmd: LoadMoviesCmd(m.LibCommands, v.ID),
+				loadCmd: LoadMoviesCmd(m.LibraryService, v.ID),
 			}
 		case "show":
 			spec = columnLoadSpec{
@@ -232,12 +235,12 @@ func (m *Model) drillSelected() *drillResult {
 				awaitKind: AwaitShows,
 				awaitID:   v.ID,
 				getCached: func() interface{} {
-					if c, ok := m.LibQueries.GetCachedShows(v.ID); ok {
+					if c, ok := m.Store.GetShows(v.ID); ok {
 						return c
 					}
 					return nil
 				},
-				loadCmd: LoadShowsCmd(m.LibCommands, v.ID),
+				loadCmd: LoadShowsCmd(m.LibraryService, v.ID),
 			}
 		case "mixed":
 			spec = columnLoadSpec{
@@ -246,12 +249,12 @@ func (m *Model) drillSelected() *drillResult {
 				awaitKind: AwaitMixed,
 				awaitID:   v.ID,
 				getCached: func() interface{} {
-					if c, ok := m.LibQueries.GetCachedMixedContent(v.ID); ok {
+					if c, ok := m.Store.GetMixedContent(v.ID); ok {
 						return c
 					}
 					return nil
 				},
-				loadCmd: LoadMixedLibraryCmd(m.LibCommands, v.ID),
+				loadCmd: LoadMixedLibraryCmd(m.LibraryService, v.ID),
 			}
 		default:
 			// Unknown library type - treat as mixed
@@ -261,12 +264,12 @@ func (m *Model) drillSelected() *drillResult {
 				awaitKind: AwaitMixed,
 				awaitID:   v.ID,
 				getCached: func() interface{} {
-					if c, ok := m.LibQueries.GetCachedMixedContent(v.ID); ok {
+					if c, ok := m.Store.GetMixedContent(v.ID); ok {
 						return c
 					}
 					return nil
 				},
-				loadCmd: LoadMixedLibraryCmd(m.LibCommands, v.ID),
+				loadCmd: LoadMixedLibraryCmd(m.LibraryService, v.ID),
 			}
 		}
 		return m.pushAndLoadColumn(spec, cursor)
@@ -283,12 +286,12 @@ func (m *Model) drillSelected() *drillResult {
 			awaitKind: AwaitSeasons,
 			awaitID:   v.ID,
 			getCached: func() interface{} {
-				if c, ok := m.LibQueries.GetCachedSeasons(libID, showID); ok {
+				if c, ok := m.Store.GetSeasons(libID, showID); ok {
 					return c
 				}
 				return nil
 			},
-			loadCmd: LoadSeasonsCmd(m.LibCommands, libID, showID),
+			loadCmd: LoadSeasonsCmd(m.LibraryService, libID, showID),
 		}
 		return m.pushAndLoadColumn(spec, cursor)
 
@@ -309,23 +312,24 @@ func (m *Model) drillSelected() *drillResult {
 			awaitKind: AwaitEpisodes,
 			awaitID:   v.ID,
 			getCached: func() interface{} {
-				if c, ok := m.LibQueries.GetCachedEpisodes(libID, showID, seasonID); ok {
+				if c, ok := m.Store.GetEpisodes(libID, showID, seasonID); ok {
 					return c
 				}
 				return nil
 			},
-			loadCmd: LoadEpisodesCmd(m.LibCommands, libID, showID, seasonID),
+			loadCmd: LoadEpisodesCmd(m.LibraryService, libID, showID, seasonID),
 		}
 		return m.pushAndLoadColumn(spec, cursor)
 
 	case *domain.Playlist:
 		col := components.NewListColumn(components.ColumnTypePlaylistItems, v.Title)
+		col.SetShowWatchStatus(m.UIConfig.ShowWatchStatus)
 		m.ColumnStack.Push(col, cursor)
 		m.currentPlaylistID = v.ID
 		m.updateLayout()
 
 		// Check cache first
-		if cached, ok := m.PlaylistQueries.GetCachedPlaylistItems(v.ID); ok {
+		if cached, ok := m.Store.GetPlaylistItems(v.ID); ok {
 			col.SetItems(cached)
 			m.updateInspector()
 			return &drillResult{AwaitKind: AwaitNone}
@@ -336,7 +340,7 @@ func (m *Model) drillSelected() *drillResult {
 		return &drillResult{
 			AwaitKind: AwaitNone, // Playlists don't use the NavPlan system
 			AwaitID:   v.ID,
-			Cmd:       LoadPlaylistItemsCmd(m.PlaylistCmds, v.ID),
+			Cmd:       LoadPlaylistItemsCmd(m.PlaylistService, v.ID),
 		}
 	}
 	return nil
@@ -453,6 +457,7 @@ func (m *Model) navigateToSearchResult(item search.FilterItem) tea.Cmd {
 	// Reset stack to library level first
 	libCol := components.NewLibraryColumn(m.allLibraryEntries())
 	libCol.SetLibraryStates(m.LibraryStates)
+	libCol.SetShowWatchStatus(m.UIConfig.ShowWatchStatus)
 	m.Inspector.SetLibraryStates(m.LibraryStates)
 
 	// Find and select the library
@@ -520,12 +525,12 @@ func (m *Model) navigateToTypedLibraryItem(lib *domain.Library, navCtx Navigatio
 			awaitKind: AwaitMovies,
 			awaitID:   lib.ID,
 			getCached: func() interface{} {
-				if c, ok := m.LibQueries.GetCachedMovies(lib.ID); ok {
+				if c, ok := m.Store.GetMovies(lib.ID); ok {
 					return c
 				}
 				return nil
 			},
-			loadCmd: LoadMoviesCmd(m.LibCommands, navCtx.LibraryID),
+			loadCmd: LoadMoviesCmd(m.LibraryService, navCtx.LibraryID),
 		}
 	} else {
 		// Shows and episodes both start from the shows column
@@ -541,12 +546,12 @@ func (m *Model) navigateToTypedLibraryItem(lib *domain.Library, navCtx Navigatio
 			awaitKind: AwaitShows,
 			awaitID:   lib.ID,
 			getCached: func() interface{} {
-				if c, ok := m.LibQueries.GetCachedShows(lib.ID); ok {
+				if c, ok := m.Store.GetShows(lib.ID); ok {
 					return c
 				}
 				return nil
 			},
-			loadCmd: LoadShowsCmd(m.LibCommands, navCtx.LibraryID),
+			loadCmd: LoadShowsCmd(m.LibraryService, navCtx.LibraryID),
 		}
 	}
 

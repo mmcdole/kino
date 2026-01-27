@@ -12,13 +12,18 @@ import (
 	"github.com/mmcdole/kino/internal/mediaserver/plex"
 )
 
-// MediaSource combines all repository interfaces that a media server backend must implement.
-// This is the unified interface for browsing, metadata, search, and playlist operations.
+// MediaSource combines all client interfaces that a media server backend must implement.
+// This is the unified interface for browsing, playback, search, and playlist operations.
 type MediaSource interface {
-	domain.LibraryRepository  // Browsing: GetLibraries, GetMovies, GetShows, GetSeasons, GetEpisodes
-	domain.MetadataRepository // Playback: ResolvePlayableURL, MarkPlayed/Unplayed
-	domain.SearchRepository   // Search: Search(query) across all libraries
-	domain.PlaylistRepository // Playlists: GetPlaylists, CreatePlaylist, AddToPlaylist, etc.
+	domain.LibraryClient  // Browsing: GetLibraries, GetMovies, GetShows, GetSeasons, GetEpisodes
+	domain.PlaybackClient // Playback: ResolvePlayableURL, MarkPlayed/Unplayed
+	domain.SearchClient   // Search: Search(query) across all libraries
+	domain.PlaylistClient // Playlists: GetPlaylists, CreatePlaylist, AddToPlaylist, etc.
+
+	// GetMediaItem fetches full metadata for a single item.
+	// Kept on MediaSource (not in a domain interface) as it's only used
+	// by specific features that need detailed item metadata.
+	GetMediaItem(ctx context.Context, itemID string) (*domain.MediaItem, error)
 }
 
 // NewClient creates a new MediaSource based on the server type.

@@ -51,13 +51,19 @@ func mapMovie(m Metadata, serverURL string) domain.MediaItem {
 		UpdatedAt:  m.UpdatedAt,
 		Duration:   time.Duration(m.Duration) * time.Millisecond,
 		ViewOffset: time.Duration(m.ViewOffset) * time.Millisecond,
-		Format:     extractFormat(m.Media),
 		IsPlayed:   m.ViewCount > 0,
 		Type:       domain.MediaTypeMovie,
 	}
 
 	if item.SortTitle == "" {
 		item.SortTitle = item.Title
+	}
+
+	if m.Thumb != "" {
+		item.ThumbURL = serverURL + m.Thumb
+	}
+	if m.Art != "" {
+		item.ArtURL = serverURL + m.Art
 	}
 
 	return item
@@ -96,6 +102,13 @@ func mapShow(m Metadata, serverURL string) domain.Show {
 		show.SortTitle = show.Title
 	}
 
+	if m.Thumb != "" {
+		show.ThumbURL = serverURL + m.Thumb
+	}
+	if m.Art != "" {
+		show.ArtURL = serverURL + m.Art
+	}
+
 	return show
 }
 
@@ -114,7 +127,7 @@ func MapSeasons(metadata []Metadata, serverURL string) []*domain.Season {
 
 // mapSeason converts a single season metadata to domain season
 func mapSeason(m Metadata, serverURL string) domain.Season {
-	return domain.Season{
+	season := domain.Season{
 		ID:             m.RatingKey,
 		ShowID:         m.ParentRatingKey,
 		ShowTitle:      m.ParentTitle,
@@ -123,6 +136,12 @@ func mapSeason(m Metadata, serverURL string) domain.Season {
 		EpisodeCount:   m.LeafCount,
 		UnwatchedCount: m.LeafCount - m.ViewedLeafCount,
 	}
+
+	if m.Thumb != "" {
+		season.ThumbURL = serverURL + m.Thumb
+	}
+
+	return season
 }
 
 // MapEpisodes converts Plex metadata to domain media items (episodes)
@@ -151,7 +170,6 @@ func mapEpisode(m Metadata, serverURL string) domain.MediaItem {
 		UpdatedAt:  m.UpdatedAt,
 		Duration:   time.Duration(m.Duration) * time.Millisecond,
 		ViewOffset: time.Duration(m.ViewOffset) * time.Millisecond,
-		Format:     extractFormat(m.Media),
 		IsPlayed:   m.ViewCount > 0,
 		Type:       domain.MediaTypeEpisode,
 		ShowTitle:  m.GrandparentTitle,
@@ -163,6 +181,13 @@ func mapEpisode(m Metadata, serverURL string) domain.MediaItem {
 
 	if item.SortTitle == "" {
 		item.SortTitle = item.Title
+	}
+
+	if m.Thumb != "" {
+		item.ThumbURL = serverURL + m.Thumb
+	}
+	if m.Art != "" {
+		item.ArtURL = serverURL + m.Art
 	}
 
 	return item

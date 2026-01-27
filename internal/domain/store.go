@@ -1,8 +1,7 @@
 package domain
 
 // Store handles local cache (BoltDB + memory).
-// Used by library and playlist packages internally.
-// TUI accesses cache via Queries interfaces, not Store directly.
+// TUI reads directly from Store for cache access.
 type Store interface {
 	// === Libraries ===
 	GetLibraries() ([]Library, bool)

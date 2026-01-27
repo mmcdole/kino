@@ -18,7 +18,6 @@ import (
 	"github.com/mmcdole/kino/internal/player"
 	"github.com/mmcdole/kino/internal/playlist"
 	"github.com/mmcdole/kino/internal/search"
-	"github.com/mmcdole/kino/internal/service"
 	"github.com/mmcdole/kino/internal/store"
 	"github.com/mmcdole/kino/internal/tui"
 	"github.com/mmcdole/kino/internal/tui/styles"
@@ -87,21 +86,14 @@ func run() error {
 	// Create launcher (uses configured player or auto-detects)
 	launcher := player.NewLauncher(cfg.Player.Command, cfg.Player.Args, cfg.Player.StartFlag, logger)
 
-	// Create CQRS-lite components
-	// Queries: synchronous, cache-only reads
-	libQueries := library.NewQueries(libraryStore)
-	playlistQueries := playlist.NewQueries(libraryStore)
+	// Create services
+	librarySvc := library.NewService(client, libraryStore, logger)
+	playlistSvc := playlist.NewService(client, libraryStore, logger)
+	searchSvc := search.NewService(libraryStore)
+	playbackSvc := player.NewService(launcher, client, logger)
 
-	// Commands: asynchronous operations that may hit network
-	libCommands := library.NewCommands(client, libraryStore, logger)
-	playlistCmds := playlist.NewCommands(client, libraryStore, logger)
-
-	// Services
-	searchSvc := search.NewService(libQueries, logger)
-	playbackSvc := service.NewPlaybackService(launcher, client, logger)
-
-	// Create TUI model with CQRS interfaces
-	model := tui.NewModel(libQueries, libCommands, playlistQueries, playlistCmds, searchSvc, playbackSvc)
+	// Create TUI model with Store and concrete service types
+	model := tui.NewModel(libraryStore, librarySvc, playlistSvc, searchSvc, playbackSvc, cfg.UI)
 
 	// Run the TUI
 	p := tea.NewProgram(

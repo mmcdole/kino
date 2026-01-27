@@ -27,7 +27,6 @@ type MediaItem struct {
 	UpdatedAt  int64         // Unix timestamp when last updated
 	Duration   time.Duration // Total runtime
 	ViewOffset time.Duration // Watch progress
-	Format     string        // "HEVC", "H.264", etc.
 	IsPlayed   bool          // Whether item is marked as watched
 	Type       MediaType     // Movie or Episode
 
@@ -37,6 +36,10 @@ type MediaItem struct {
 	SeasonNum  int    // Season number (0 = specials)
 	EpisodeNum int    // Episode number within season
 	ParentID   string // Season ID (for navigation)
+
+	// Image URLs
+	ThumbURL string // Poster/thumbnail image URL
+	ArtURL   string // Background art URL
 }
 
 // WatchStatus returns the watch status of the media item
@@ -128,6 +131,10 @@ type Show struct {
 	SeasonCount    int    // Total number of seasons
 	EpisodeCount   int    // Total number of episodes
 	UnwatchedCount int    // Number of unwatched episodes
+
+	// Image URLs
+	ThumbURL string // Poster/thumbnail image URL
+	ArtURL   string // Background art URL
 }
 
 // WatchStatus returns the watch status of the show
@@ -178,6 +185,9 @@ type Season struct {
 	Title          string // "Season 1" or custom name
 	EpisodeCount   int    // Total number of episodes
 	UnwatchedCount int    // Number of unwatched episodes
+
+	// Image URLs
+	ThumbURL string // Poster/thumbnail image URL
 }
 
 // WatchStatus returns the watch status of the season

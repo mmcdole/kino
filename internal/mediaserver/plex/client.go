@@ -211,11 +211,11 @@ func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) 
 	return MapShows(container.Metadata, c.baseURL), totalSize, nil
 }
 
-// GetLibraryContent returns paginated content (movies AND shows) from a library.
+// GetMixedContent returns paginated content (movies AND shows) from a library.
 // Note: Plex doesn't truly support "mixed" libraries at the API level like Jellyfin,
 // so this method fetches all items and returns both types. For pure movie or show
 // libraries, this still works but is less efficient than GetMovies/GetShows.
-func (c *Client) GetLibraryContent(ctx context.Context, libID string, offset, limit int) ([]domain.ListItem, int, error) {
+func (c *Client) GetMixedContent(ctx context.Context, libID string, offset, limit int) ([]domain.ListItem, int, error) {
 	query := url.Values{}
 	query.Set("X-Plex-Container-Start", strconv.Itoa(offset))
 	if limit > 0 {

@@ -12,7 +12,4 @@ var (
 
 	// ErrAuthFailed indicates authentication failed
 	ErrAuthFailed = errors.New("authentication token is invalid")
-
-	// ErrLibraryNotFound indicates the requested library does not exist
-	ErrLibraryNotFound = errors.New("library not found")
 )

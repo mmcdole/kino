@@ -222,9 +222,9 @@ func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) 
 	return shows, resp.TotalRecordCount, nil
 }
 
-// GetLibraryContent returns paginated content (movies AND shows) from a mixed library.
+// GetMixedContent returns paginated content (movies AND shows) from a mixed library.
 // This fetches both types in a single API call with server-side sorting.
-func (c *Client) GetLibraryContent(ctx context.Context, libID string, offset, limit int) ([]domain.ListItem, int, error) {
+func (c *Client) GetMixedContent(ctx context.Context, libID string, offset, limit int) ([]domain.ListItem, int, error) {
 	query := url.Values{}
 	query.Set("ParentId", libID)
 	query.Set("IncludeItemTypes", "Movie,Series")

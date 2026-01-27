@@ -1,7 +1,6 @@
 package search
 
 import (
-	"log/slog"
 	"strings"
 
 	"github.com/mmcdole/kino/internal/domain"
@@ -24,34 +23,25 @@ type FilterResult struct {
 
 // Service handles fuzzy search across libraries
 type Service struct {
-	queries domain.LibraryQueries
-	logger  *slog.Logger
+	store domain.Store
 }
 
 // NewService creates a new search service
-func NewService(queries domain.LibraryQueries, logger *slog.Logger) *Service {
-	if logger == nil {
-		logger = slog.Default()
-	}
+func NewService(store domain.Store) *Service {
 	return &Service{
-		queries: queries,
-		logger:  logger,
+		store: store,
 	}
 }
 
 // FilterLocal searches cached data directly
-// types: filter by media types (nil = all types)
-// libraries: which libraries to search
-func (s *Service) FilterLocal(query string, types []domain.MediaType, libraries []domain.Library) []FilterResult {
+func (s *Service) FilterLocal(query string, libraries []domain.Library) []FilterResult {
 	if query == "" {
 		return nil
 	}
 
 	var items []FilterItem
-	typeSet := makeTypeSet(types)
-
 	for _, lib := range libraries {
-		items = append(items, s.gatherLibraryItems(lib, typeSet)...)
+		items = append(items, s.gatherLibraryItems(lib)...)
 	}
 
 	if len(items) == 0 {
@@ -78,77 +68,54 @@ func (s *Service) FilterLocal(query string, types []domain.MediaType, libraries 
 	return results
 }
 
-func (s *Service) gatherLibraryItems(lib domain.Library, types map[domain.MediaType]bool) []FilterItem {
+func (s *Service) gatherLibraryItems(lib domain.Library) []FilterItem {
 	var items []FilterItem
-
-	isTypeAllowed := func(t domain.MediaType) bool {
-		return len(types) == 0 || types[t]
-	}
 
 	switch lib.Type {
 	case "movie":
-		if isTypeAllowed(domain.MediaTypeMovie) {
-			if movies, ok := s.queries.GetCachedMovies(lib.ID); ok {
-				for _, m := range movies {
-					items = append(items, FilterItem{
-						Item:      m,
-						Title:     m.Title,
-						Type:      domain.MediaTypeMovie,
-						LibraryID: lib.ID,
-					})
-				}
+		if movies, ok := s.store.GetMovies(lib.ID); ok {
+			for _, m := range movies {
+				items = append(items, FilterItem{
+					Item:      m,
+					Title:     m.Title,
+					Type:      domain.MediaTypeMovie,
+					LibraryID: lib.ID,
+				})
 			}
 		}
 	case "show":
-		if isTypeAllowed(domain.MediaTypeShow) {
-			if shows, ok := s.queries.GetCachedShows(lib.ID); ok {
-				for _, sh := range shows {
+		if shows, ok := s.store.GetShows(lib.ID); ok {
+			for _, sh := range shows {
+				items = append(items, FilterItem{
+					Item:      sh,
+					Title:     sh.Title,
+					Type:      domain.MediaTypeShow,
+					LibraryID: lib.ID,
+				})
+			}
+		}
+	case "mixed":
+		if content, ok := s.store.GetMixedContent(lib.ID); ok {
+			for _, item := range content {
+				switch v := item.(type) {
+				case *domain.MediaItem:
 					items = append(items, FilterItem{
-						Item:      sh,
-						Title:     sh.Title,
+						Item:      v,
+						Title:     v.Title,
+						Type:      domain.MediaTypeMovie,
+						LibraryID: lib.ID,
+					})
+				case *domain.Show:
+					items = append(items, FilterItem{
+						Item:      v,
+						Title:     v.Title,
 						Type:      domain.MediaTypeShow,
 						LibraryID: lib.ID,
 					})
 				}
 			}
 		}
-	case "mixed":
-		if content, ok := s.queries.GetCachedMixedContent(lib.ID); ok {
-			for _, item := range content {
-				switch v := item.(type) {
-				case *domain.MediaItem:
-					if isTypeAllowed(domain.MediaTypeMovie) {
-						items = append(items, FilterItem{
-							Item:      v,
-							Title:     v.Title,
-							Type:      domain.MediaTypeMovie,
-							LibraryID: lib.ID,
-						})
-					}
-				case *domain.Show:
-					if isTypeAllowed(domain.MediaTypeShow) {
-						items = append(items, FilterItem{
-							Item:      v,
-							Title:     v.Title,
-							Type:      domain.MediaTypeShow,
-							LibraryID: lib.ID,
-						})
-					}
-				}
-			}
-		}
 	}
 
 	return items
-}
-
-func makeTypeSet(types []domain.MediaType) map[domain.MediaType]bool {
-	if len(types) == 0 {
-		return nil
-	}
-	set := make(map[domain.MediaType]bool)
-	for _, t := range types {
-		set[t] = true
-	}
-	return set
 }

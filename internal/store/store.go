@@ -34,7 +34,7 @@ type listItemWrapper struct {
 	Playlist *domain.Playlist  `json:"playlist,omitempty"`
 }
 
-// LibraryStore implements domain.LibraryStore using BoltDB.
+// LibraryStore implements domain.Store using BoltDB.
 type LibraryStore struct {
 	db *bolt.DB
 	mu sync.RWMutex // Protects memory cache
@@ -77,6 +77,9 @@ func NewLibraryStore(baseCacheDir, serverURL string) (*LibraryStore, error) {
 		return nil, err
 	}
 
+	// Clean up legacy JSON cache files from pre-BoltDB era
+	cleanupLegacyJSONCache(dir)
+
 	return &LibraryStore{db: db, cache: make(map[string][]byte)}, nil
 }
 
@@ -84,6 +87,17 @@ func hashServerURL(serverURL string) string {
 	normalized := strings.TrimRight(strings.ToLower(serverURL), "/")
 	hash := sha256.Sum256([]byte(normalized))
 	return hex.EncodeToString(hash[:6])
+}
+
+// cleanupLegacyJSONCache removes vestigial JSON cache files from pre-BoltDB era.
+func cleanupLegacyJSONCache(cacheDir string) {
+	matches, err := filepath.Glob(filepath.Join(cacheDir, "*.json"))
+	if err != nil || len(matches) == 0 {
+		return
+	}
+	for _, path := range matches {
+		os.Remove(path) // Ignore errors
+	}
 }
 
 func (s *LibraryStore) Close() error {

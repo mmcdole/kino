@@ -75,35 +75,29 @@ type Metadata struct {
 
 // Media represents media information (video streams, codecs, etc.)
 type Media struct {
-	ID                    int    `json:"id"`
-	Duration              int    `json:"duration,omitempty"`
-	Bitrate               int    `json:"bitrate,omitempty"`
-	Width                 int    `json:"width,omitempty"`
-	Height                int    `json:"height,omitempty"`
-	AspectRatio           interface{} `json:"aspectRatio,omitempty"`
-	AudioChannels         int    `json:"audioChannels,omitempty"`
-	AudioCodec            string `json:"audioCodec,omitempty"`
-	VideoCodec            string `json:"videoCodec,omitempty"`
-	VideoResolution       string `json:"videoResolution,omitempty"`
-	Container             string `json:"container,omitempty"`
-	VideoFrameRate        string `json:"videoFrameRate,omitempty"`
-	AudioProfile          string `json:"audioProfile,omitempty"`
-	VideoProfile          string `json:"videoProfile,omitempty"`
-	Part                  []Part `json:"Part,omitempty"`
+	ID              int    `json:"id"`
+	Duration        int    `json:"duration,omitempty"`
+	Bitrate         int    `json:"bitrate,omitempty"`
+	Width           int    `json:"width,omitempty"`
+	Height          int    `json:"height,omitempty"`
+	AudioChannels   int    `json:"audioChannels,omitempty"`
+	AudioCodec      string `json:"audioCodec,omitempty"`
+	VideoCodec      string `json:"videoCodec,omitempty"`
+	VideoResolution string `json:"videoResolution,omitempty"`
+	Container       string `json:"container,omitempty"`
+	VideoFrameRate  string `json:"videoFrameRate,omitempty"`
+	Part            []Part `json:"Part,omitempty"`
 }
 
 // Part represents a media file part
 type Part struct {
-	ID           int           `json:"id"`
-	Key          string        `json:"key"`
-	Duration     int           `json:"duration,omitempty"`
-	File         string        `json:"file,omitempty"`
-	Size         int64         `json:"size,omitempty"`
-	AudioProfile string        `json:"audioProfile,omitempty"`
-	Container    string        `json:"container,omitempty"`
-	VideoProfile string        `json:"videoProfile,omitempty"`
-	HasThumbnail string        `json:"hasThumbnail,omitempty"`
-	Stream       []interface{} `json:"Stream,omitempty"`
+	ID        int           `json:"id"`
+	Key       string        `json:"key"`
+	Duration  int           `json:"duration,omitempty"`
+	File      string        `json:"file,omitempty"`
+	Size      int64         `json:"size,omitempty"`
+	Container string        `json:"container,omitempty"`
+	Stream    []interface{} `json:"Stream,omitempty"`
 }
 
 // APIResponse wraps the MediaContainer for JSON unmarshaling
@@ -113,13 +107,13 @@ type APIResponse struct {
 
 // PINResponse represents the response from PIN generation
 type PINResponse struct {
-	ID          int    `json:"id"`
-	Code        string `json:"code"`
-	Product     string `json:"product"`
-	Trusted     bool   `json:"trusted"`
-	ClientID    string `json:"clientIdentifier"`
-	AuthToken   string `json:"authToken,omitempty"`
-	ExpiresAt   string `json:"expiresAt"`
+	ID        int    `json:"id"`
+	Code      string `json:"code"`
+	Product   string `json:"product"`
+	Trusted   bool   `json:"trusted"`
+	ClientID  string `json:"clientIdentifier"`
+	AuthToken string `json:"authToken,omitempty"`
+	ExpiresAt string `json:"expiresAt"`
 }
 
 // PINCheckResponse represents the response from PIN check
@@ -146,4 +140,3 @@ type PlaylistMetadata struct {
 	AddedAt      int64  `json:"addedAt,omitempty"`
 	UpdatedAt    int64  `json:"updatedAt,omitempty"`
 }
-

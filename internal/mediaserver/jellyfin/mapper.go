@@ -1,6 +1,7 @@
 package jellyfin
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -81,7 +82,6 @@ func mapMovie(item Item, serverURL string) domain.MediaItem {
 		Summary:   item.Overview,
 		Year:      item.ProductionYear,
 		Duration:  ticksToDuration(item.RunTimeTicks),
-		Format:    extractVideoCodec(item),
 		Type:      domain.MediaTypeMovie,
 	}
 
@@ -101,6 +101,11 @@ func mapMovie(item Item, serverURL string) domain.MediaItem {
 	if item.UserData != nil {
 		mi.IsPlayed = item.UserData.Played
 		mi.ViewOffset = ticksToDuration(item.UserData.PlaybackPositionTicks)
+	}
+
+	// Image URLs
+	if item.ImageTags.Primary != "" {
+		mi.ThumbURL = fmt.Sprintf("%s/Items/%s/Images/Primary?tag=%s", serverURL, item.ID, item.ImageTags.Primary)
 	}
 
 	return mi
@@ -159,6 +164,11 @@ func mapShow(item Item, serverURL string) domain.Show {
 		show.UnwatchedCount = item.UserData.UnplayedItemCount
 	}
 
+	// Image URLs
+	if item.ImageTags.Primary != "" {
+		show.ThumbURL = fmt.Sprintf("%s/Items/%s/Images/Primary?tag=%s", serverURL, item.ID, item.ImageTags.Primary)
+	}
+
 	return show
 }
 
@@ -191,6 +201,11 @@ func mapSeason(item Item, serverURL string) domain.Season {
 		season.UnwatchedCount = item.UserData.UnplayedItemCount
 	}
 
+	// Image URLs
+	if item.ImageTags.Primary != "" {
+		season.ThumbURL = fmt.Sprintf("%s/Items/%s/Images/Primary?tag=%s", serverURL, item.ID, item.ImageTags.Primary)
+	}
+
 	return season
 }
 
@@ -216,7 +231,6 @@ func mapEpisode(item Item, serverURL string) domain.MediaItem {
 		Summary:    item.Overview,
 		Year:       item.ProductionYear,
 		Duration:   ticksToDuration(item.RunTimeTicks),
-		Format:     extractVideoCodec(item),
 		Type:       domain.MediaTypeEpisode,
 		ShowTitle:  item.SeriesName,
 		ShowID:     item.SeriesID,
@@ -241,6 +255,11 @@ func mapEpisode(item Item, serverURL string) domain.MediaItem {
 	if item.UserData != nil {
 		mi.IsPlayed = item.UserData.Played
 		mi.ViewOffset = ticksToDuration(item.UserData.PlaybackPositionTicks)
+	}
+
+	// Image URLs
+	if item.ImageTags.Primary != "" {
+		mi.ThumbURL = fmt.Sprintf("%s/Items/%s/Images/Primary?tag=%s", serverURL, item.ID, item.ImageTags.Primary)
 	}
 
 	return mi

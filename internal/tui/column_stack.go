@@ -103,7 +103,6 @@ func (cs *ColumnStack) Reset(col *components.ListColumn) {
 	cs.cursorStack = nil
 	col.SetFocused(true)
 	cs.columns = append(cs.columns, col)
-	cs.cursorStack = nil
 }
 
 // Parent returns the parent column (second from top), or nil if at root
