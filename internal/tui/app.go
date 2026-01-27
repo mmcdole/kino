@@ -6,8 +6,12 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mmcdole/kino/internal/config"
 	"github.com/mmcdole/kino/internal/domain"
-	"github.com/mmcdole/kino/internal/service"
+	"github.com/mmcdole/kino/internal/library"
+	"github.com/mmcdole/kino/internal/player"
+	"github.com/mmcdole/kino/internal/playlist"
+	"github.com/mmcdole/kino/internal/search"
 	"github.com/mmcdole/kino/internal/tui/components"
 )
 
@@ -65,12 +69,16 @@ type Model struct {
 	State ApplicationState
 	Ready bool
 
-	// Services
-	LibrarySvc  *service.LibraryService
-	PlaybackSvc *service.PlaybackService
-	SearchSvc   *service.SearchService
-	PlaylistSvc *service.PlaylistService
-	SessionSvc  *service.SessionService
+	// Cache reads (View-safe)
+	Store domain.Store
+
+	// Network coordination (concrete types, not interfaces)
+	LibraryService  *library.Service
+	PlaylistService *playlist.Service
+
+	// Other services
+	SearchSvc   *search.Service
+	PlaybackSvc *player.Service
 
 	// UI Components - Miller Columns
 	ColumnStack   *ColumnStack             // Stack of navigable list columns
@@ -104,37 +112,46 @@ type Model struct {
 
 	// Playlist navigation context (when viewing playlist items)
 	currentPlaylistID string
+
+	// Navigation context for hierarchical cache keys (cascade invalidation)
+	currentLibID  string // Set when entering a library
+	currentShowID string // Set when entering a show
+
+	// UI preferences from config
+	UIConfig config.UIConfig
 }
 
 // NewModel creates a new application model
 func NewModel(
-	librarySvc *service.LibraryService,
-	playbackSvc *service.PlaybackService,
-	searchSvc *service.SearchService,
-	playlistSvc *service.PlaylistService,
-	sessionSvc *service.SessionService,
+	store domain.Store,
+	librarySvc *library.Service,
+	playlistSvc *playlist.Service,
+	searchSvc *search.Service,
+	playbackSvc *player.Service,
+	uiConfig config.UIConfig,
 ) Model {
 	return Model{
-		State:         StateBrowsing,
-		LibrarySvc:    librarySvc,
-		PlaybackSvc:   playbackSvc,
-		SearchSvc:     searchSvc,
-		PlaylistSvc:   playlistSvc,
-		SessionSvc:    sessionSvc,
-		ColumnStack:   NewColumnStack(),
-		Inspector:     components.NewInspector(),
-		GlobalSearch:  components.NewGlobalSearch(),
-		PlaylistModal: components.NewPlaylistModal(),
-		InputModal:    components.NewInputModal(),
-		LibraryStates: make(map[string]components.LibrarySyncState),
-		ShowInspector: false, // Inspector hidden by default - show 3 nav columns
+		State:           StateBrowsing,
+		Store:           store,
+		LibraryService:  librarySvc,
+		PlaylistService: playlistSvc,
+		SearchSvc:       searchSvc,
+		PlaybackSvc:     playbackSvc,
+		ColumnStack:     NewColumnStack(),
+		Inspector:       components.NewInspector(),
+		GlobalSearch:    components.NewGlobalSearch(),
+		PlaylistModal:   components.NewPlaylistModal(),
+		InputModal:      components.NewInputModal(),
+		LibraryStates:   make(map[string]components.LibrarySyncState),
+		ShowInspector:   false, // Inspector hidden by default - show 3 nav columns
+		UIConfig:        uiConfig,
 	}
 }
 
 // Init initializes the application
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
-		LoadLibrariesCmd(m.LibrarySvc),
+		LoadLibrariesCmd(m.LibraryService),
 		TickCmd(100*time.Millisecond),
 	)
 }
@@ -156,31 +173,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case TickMsg:
 		m.SpinnerFrame++
-		if m.SyncingCount > 0 {
-			m.ColumnStack.UpdateSpinnerFrame(m.SpinnerFrame)
-		}
+		// Always propagate spinner frame - columns render spinner only when their loading flag is true
+		m.ColumnStack.UpdateSpinnerFrame(m.SpinnerFrame)
 		return m, TickCmd(100 * time.Millisecond)
 
 	case LibrariesLoadedMsg:
 		m.Libraries = msg.Libraries
 
-		// Initialize all states to Syncing
+		// Initialize all states to Syncing (including playlists)
 		m.LibraryStates = make(map[string]components.LibrarySyncState)
 		for _, lib := range msg.Libraries {
 			m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
 		}
-		m.SyncingCount = len(msg.Libraries)
+		m.LibraryStates[playlistsLibraryID] = components.LibrarySyncState{Status: components.StatusSyncing}
+		m.SyncingCount = len(msg.Libraries) + 1 // +1 for playlists
 		m.MultiLibSync = true
 
 		// Create the library column as the root
 		libCol := components.NewLibraryColumn(m.allLibraryEntries())
 		libCol.SetLibraryStates(m.LibraryStates)
+		libCol.SetShowWatchStatus(m.UIConfig.ShowWatchStatus)
 		m.Inspector.SetLibraryStates(m.LibraryStates)
 		m.ColumnStack.Reset(libCol)
 
-		// Start parallel sync of ALL libraries
+		// Start parallel sync of ALL libraries + playlists
 		m.Loading = true
-		return m, SyncAllLibrariesCmd(m.LibrarySvc, msg.Libraries, false)
+		return m, tea.Batch(
+			SyncAllLibrariesCmd(m.LibraryService, msg.Libraries),
+			SyncPlaylistsCmd(m.PlaylistService, playlistsLibraryID),
+		)
 
 	case MoviesLoadedMsg:
 		m.Loading = false
@@ -334,7 +355,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			state.Loaded = msg.Loaded
 			state.Total = msg.Total
-			state.FromDisk = msg.FromDisk
+			state.FromCache = msg.FromCache
 
 			if msg.Done {
 				state.Status = components.StatusSynced
@@ -419,7 +440,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.StatusMsg = "Playlist updated"
 			// Refresh playlist items if viewing a playlist
 			if m.currentPlaylistID != "" {
-				return m, LoadPlaylistItemsCmd(m.PlaylistSvc, m.currentPlaylistID)
+				return m, LoadPlaylistItemsCmd(m.PlaylistService, m.currentPlaylistID)
 			}
 		}
 		cmds = append(cmds, ClearStatusCmd(3*time.Second))
@@ -433,7 +454,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.StatusMsg = fmt.Sprintf("Created playlist: %s", msg.Playlist.Title)
 			// Refresh playlists if viewing playlists
 			if top := m.ColumnStack.Top(); top != nil && top.ColumnType() == components.ColumnTypePlaylists {
-				return m, LoadPlaylistsCmd(m.PlaylistSvc)
+				return m, LoadPlaylistsCmd(m.PlaylistService)
 			}
 		}
 		cmds = append(cmds, ClearStatusCmd(3*time.Second))
@@ -448,7 +469,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.StatusMsg = "Playlist deleted"
 			// Clear current playlist ID and refresh the playlists
 			m.currentPlaylistID = ""
-			cmds = append(cmds, LoadPlaylistsCmd(m.PlaylistSvc))
+			cmds = append(cmds, LoadPlaylistsCmd(m.PlaylistService))
 			cmds = append(cmds, ClearStatusCmd(3*time.Second))
 		}
 		return m, tea.Batch(cmds...)
@@ -485,12 +506,12 @@ func (m *Model) updateLibraryStates() {
 
 // refreshCurrentView refreshes the current view
 func (m *Model) refreshCurrentView() tea.Cmd {
-	m.LibrarySvc.RefreshAll()
+	m.LibraryService.InvalidateAll()
 	m.Loading = true
 
 	top := m.ColumnStack.Top()
 	if top == nil {
-		return LoadLibrariesCmd(m.LibrarySvc)
+		return LoadLibrariesCmd(m.LibraryService)
 	}
 
 	// Get context from column stack to reload
@@ -498,38 +519,38 @@ func (m *Model) refreshCurrentView() tea.Cmd {
 	case components.ColumnTypeMovies:
 		if libCol := m.libraryColumn(); libCol != nil {
 			if lib := libCol.SelectedLibrary(); lib != nil {
-				return LoadMoviesCmd(m.LibrarySvc, lib.ID)
+				return LoadMoviesCmd(m.LibraryService, lib.ID)
 			}
 		}
 	case components.ColumnTypeShows:
 		if libCol := m.libraryColumn(); libCol != nil {
 			if lib := libCol.SelectedLibrary(); lib != nil {
-				return LoadShowsCmd(m.LibrarySvc, lib.ID)
+				return LoadShowsCmd(m.LibraryService, lib.ID)
 			}
 		}
 	case components.ColumnTypeSeasons:
-		// Get show from parent column
+		// Get show from parent column - needs libID for hierarchical cache
 		if showCol := m.ColumnStack.Get(m.ColumnStack.Len() - 2); showCol != nil {
 			if show := showCol.SelectedShow(); show != nil {
-				return LoadSeasonsCmd(m.LibrarySvc, show.ID)
+				return LoadSeasonsCmd(m.LibraryService, m.currentLibID, show.ID)
 			}
 		}
 	case components.ColumnTypeEpisodes:
-		// Get season from parent column
+		// Get season from parent column - needs full ancestry for hierarchical cache
 		if seasonCol := m.ColumnStack.Get(m.ColumnStack.Len() - 2); seasonCol != nil {
 			if season := seasonCol.SelectedSeason(); season != nil {
-				return LoadEpisodesCmd(m.LibrarySvc, season.ID)
+				return LoadEpisodesCmd(m.LibraryService, m.currentLibID, m.currentShowID, season.ID)
 			}
 		}
 	case components.ColumnTypeMixed:
 		if libCol := m.libraryColumn(); libCol != nil {
 			if lib := libCol.SelectedLibrary(); lib != nil {
-				return LoadMixedLibraryCmd(m.LibrarySvc, lib.ID)
+				return LoadMixedLibraryCmd(m.LibraryService, lib.ID)
 			}
 		}
 	}
 
-	return LoadLibrariesCmd(m.LibrarySvc)
+	return LoadLibrariesCmd(m.LibraryService)
 }
 
 // findLibrary finds a library by ID

@@ -170,12 +170,6 @@ func (i Inspector) renderMediaItemInspector(item domain.MediaItem, width int) st
 	b.WriteString(styles.DimStyle.Render(fmt.Sprintf("Duration: %s", item.FormattedDuration())))
 	b.WriteString("\n")
 
-	// Format
-	if item.Format != "" {
-		b.WriteString(styles.DimStyle.Render(fmt.Sprintf("Format: %s", item.Format)))
-		b.WriteString("\n")
-	}
-
 	// Watch status
 	status := item.WatchStatus().String()
 	if item.ViewOffset > 0 && !item.IsPlayed {

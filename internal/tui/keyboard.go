@@ -24,7 +24,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, Keys.Confirm):
 			// User confirmed logout
-			return m, LogoutCmd(m.SessionSvc)
+			return m, LogoutCmd()
 		case key.Matches(msg, Keys.Deny):
 			// User cancelled
 			m.State = StateBrowsing
@@ -83,7 +83,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if top := m.ColumnStack.Top(); top != nil {
 		oldCursor := top.SelectedIndex()
 		newCol, cmd := top.Update(msg)
-		m.ColumnStack.columns[len(m.ColumnStack.columns)-1] = newCol
+		m.ColumnStack.UpdateTop(newCol)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
 		}
@@ -99,7 +99,8 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // Returns (handled, model, cmd) where handled is true if a modal consumed the input
 func (m Model) routeToModal(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 	if m.GlobalSearch.IsVisible() {
-		return m.handleGlobalSearchInput(msg)
+		newModel, cmd := m.handleGlobalSearchInput(msg)
+		return true, newModel, cmd
 	}
 	if m.SortModal.IsVisible() {
 		return m.handleSortModalInput(msg)
@@ -205,8 +206,83 @@ func (m Model) handleSort() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleRefresh refreshes the single selected library
+// handleRefresh performs context-sensitive refresh with cascade invalidation.
+// At library level: refresh selected library (cascade to seasons/episodes)
+// At show level: refresh selected show (cascade to seasons/episodes)
+// At season level: refresh selected season (cascade to episodes)
+// At episode level: refresh current season's episodes
 func (m Model) handleRefresh() (tea.Model, tea.Cmd) {
+	top := m.ColumnStack.Top()
+	if top == nil {
+		return m, nil
+	}
+
+	switch top.ColumnType() {
+	case components.ColumnTypeLibraries:
+		// Refresh selected library
+		lib := top.SelectedLibrary()
+		if lib == nil || lib.ID == playlistsLibraryID {
+			return m, nil
+		}
+		m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
+		m.SyncingCount++
+		m.Loading = true
+		m.MultiLibSync = false
+		m.updateLibraryStates()
+		// Invalidate then sync
+		m.LibraryService.InvalidateLibrary(lib.ID)
+		return m, SyncLibraryCmd(m.LibraryService, *lib)
+
+	case components.ColumnTypeMovies, components.ColumnTypeMixed, components.ColumnTypeShows:
+		return m.refreshLibraryContent(top)
+
+	case components.ColumnTypeSeasons:
+		// Refresh current show's seasons (invalidate seasons + episodes, re-fetch seasons)
+		m.LibraryService.InvalidateShow(m.currentLibID, m.currentShowID)
+		top.SetItems(nil)
+		top.SetLoading(true)
+		m.Loading = true
+		return m, LoadSeasonsCmd(m.LibraryService, m.currentLibID, m.currentShowID)
+
+	case components.ColumnTypeEpisodes:
+		// Refresh current season's episodes
+		seasonCol := m.ColumnStack.Get(m.ColumnStack.Len() - 2)
+		if seasonCol == nil {
+			return m, nil
+		}
+		season := seasonCol.SelectedSeason()
+		if season == nil {
+			return m, nil
+		}
+		m.LibraryService.InvalidateSeason(m.currentLibID, m.currentShowID, season.ID)
+		top.SetItems(nil)
+		top.SetLoading(true)
+		m.Loading = true
+		return m, LoadEpisodesCmd(m.LibraryService, m.currentLibID, m.currentShowID, season.ID)
+
+	case components.ColumnTypePlaylists:
+		// Refresh playlists
+		top.SetItems(nil)
+		top.SetLoading(true)
+		m.Loading = true
+		return m, LoadPlaylistsCmd(m.PlaylistService)
+
+	case components.ColumnTypePlaylistItems:
+		// Refresh playlist items
+		if m.currentPlaylistID == "" {
+			return m, nil
+		}
+		top.SetItems(nil)
+		top.SetLoading(true)
+		m.Loading = true
+		return m, LoadPlaylistItemsCmd(m.PlaylistService, m.currentPlaylistID)
+	}
+
+	return m, nil
+}
+
+// refreshLibraryContent refreshes movies, shows, or mixed content in the current library
+func (m Model) refreshLibraryContent(top *components.ListColumn) (Model, tea.Cmd) {
 	libCol := m.libraryColumn()
 	if libCol == nil {
 		return m, nil
@@ -215,12 +291,19 @@ func (m Model) handleRefresh() (tea.Model, tea.Cmd) {
 	if lib == nil {
 		return m, nil
 	}
-	m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
-	m.SyncingCount++
+	m.LibraryService.InvalidateLibrary(lib.ID)
+	top.SetItems(nil)
+	top.SetLoading(true)
 	m.Loading = true
-	m.MultiLibSync = false
-	m.updateLibraryStates()
-	return m, SyncLibraryCmd(m.LibrarySvc, *lib, true)
+
+	switch lib.Type {
+	case "movie":
+		return m, LoadMoviesCmd(m.LibraryService, lib.ID)
+	case "show":
+		return m, LoadShowsCmd(m.LibraryService, lib.ID)
+	default:
+		return m, LoadMixedLibraryCmd(m.LibraryService, lib.ID)
+	}
 }
 
 // handleRefreshAll refreshes all libraries and resets to library view
@@ -229,17 +312,25 @@ func (m Model) handleRefreshAll() (tea.Model, tea.Cmd) {
 	for _, lib := range m.Libraries {
 		m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
 	}
-	m.SyncingCount = len(m.Libraries)
+	m.LibraryStates[playlistsLibraryID] = components.LibrarySyncState{Status: components.StatusSyncing}
+	m.SyncingCount = len(m.Libraries) + 1 // +1 for playlists
 	m.Loading = true
 	m.MultiLibSync = true
 	m.updateLibraryStates()
 
 	libCol := components.NewLibraryColumn(m.allLibraryEntries())
 	libCol.SetLibraryStates(m.LibraryStates)
+	libCol.SetShowWatchStatus(m.UIConfig.ShowWatchStatus)
 	m.Inspector.SetLibraryStates(m.LibraryStates)
 	m.ColumnStack.Reset(libCol)
 
-	return m, SyncAllLibrariesCmd(m.LibrarySvc, m.Libraries, true)
+	// Invalidate all then sync
+	m.LibraryService.InvalidateAll()
+	m.PlaylistService.InvalidatePlaylists()
+	return m, tea.Batch(
+		SyncAllLibrariesCmd(m.LibraryService, m.Libraries),
+		SyncPlaylistsCmd(m.PlaylistService, playlistsLibraryID),
+	)
 }
 
 // handleMarkWatched marks the selected item as watched
@@ -301,8 +392,8 @@ func (m Model) handlePlaylistModal() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	item := top.SelectedMediaItem()
-	if item != nil && m.PlaylistSvc != nil {
-		return m, LoadPlaylistModalDataCmd(m.PlaylistSvc, item)
+	if item != nil && m.PlaylistService != nil {
+		return m, LoadPlaylistModalDataCmd(m.PlaylistService, item)
 	}
 	return m, nil
 }
@@ -317,12 +408,12 @@ func (m Model) handleDelete() (tea.Model, tea.Cmd) {
 	case components.ColumnTypePlaylistItems:
 		item := top.SelectedMediaItem()
 		if item != nil && m.currentPlaylistID != "" {
-			return m, RemoveFromPlaylistCmd(m.PlaylistSvc, m.currentPlaylistID, item.ID)
+			return m, RemoveFromPlaylistCmd(m.PlaylistService, m.currentPlaylistID, item.ID)
 		}
 	case components.ColumnTypePlaylists:
 		playlist := top.SelectedPlaylist()
 		if playlist != nil {
-			return m, DeletePlaylistCmd(m.PlaylistSvc, playlist.ID)
+			return m, DeletePlaylistCmd(m.PlaylistService, playlist.ID)
 		}
 	}
 	return m, nil
@@ -343,7 +434,7 @@ func (m Model) handleNewPlaylist() (tea.Model, tea.Cmd) {
 // ----------------------------------------------------------------------------
 
 // handleGlobalSearchInput handles input when global search is visible
-func (m Model) handleGlobalSearchInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
+func (m Model) handleGlobalSearchInput(msg tea.KeyMsg) (Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 	var selected bool
@@ -355,7 +446,7 @@ func (m Model) handleGlobalSearchInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 
 	if m.GlobalSearch.QueryChanged() {
 		query := m.GlobalSearch.Query()
-		results := m.SearchSvc.FilterLocal(query, nil, m.Libraries)
+		results := m.SearchSvc.FilterLocal(query, m.Libraries)
 		m.GlobalSearch.SetResults(results)
 	}
 
@@ -367,7 +458,7 @@ func (m Model) handleGlobalSearchInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 			}
 		}
 	}
-	return true, m, tea.Batch(cmds...)
+	return m, tea.Batch(cmds...)
 }
 
 // handleSortModalInput handles input when sort modal is visible
@@ -393,55 +484,57 @@ func (m Model) handlePlaylistModalInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 	}
 
 	if shouldCreate {
-		return m.applyPlaylistCreate()
+		newModel, cmd := m.applyPlaylistCreate()
+		return true, newModel, cmd
 	}
 	if shouldClose {
-		return m.applyPlaylistChanges()
+		newModel, cmd := m.applyPlaylistChanges()
+		return true, newModel, cmd
 	}
 	return true, m, nil
 }
 
 // applyPlaylistCreate creates a new playlist and applies checkbox changes
-func (m Model) applyPlaylistCreate() (bool, Model, tea.Cmd) {
+func (m Model) applyPlaylistCreate() (Model, tea.Cmd) {
 	title := m.PlaylistModal.NewPlaylistTitle()
 	item := m.PlaylistModal.Item()
 	changes := m.PlaylistModal.GetChanges()
 	m.PlaylistModal.Hide()
 
 	if title == "" || item == nil {
-		return true, m, nil
+		return m, nil
 	}
 
-	cmds := []tea.Cmd{CreatePlaylistCmd(m.PlaylistSvc, title, []string{item.ID})}
+	cmds := []tea.Cmd{CreatePlaylistCmd(m.PlaylistService, title, []string{item.ID})}
 	for _, change := range changes {
 		if change.Add {
-			cmds = append(cmds, AddToPlaylistCmd(m.PlaylistSvc, change.PlaylistID, []string{item.ID}))
+			cmds = append(cmds, AddToPlaylistCmd(m.PlaylistService, change.PlaylistID, []string{item.ID}))
 		} else {
-			cmds = append(cmds, RemoveFromPlaylistCmd(m.PlaylistSvc, change.PlaylistID, item.ID))
+			cmds = append(cmds, RemoveFromPlaylistCmd(m.PlaylistService, change.PlaylistID, item.ID))
 		}
 	}
-	return true, m, tea.Batch(cmds...)
+	return m, tea.Batch(cmds...)
 }
 
 // applyPlaylistChanges applies pending playlist checkbox changes
-func (m Model) applyPlaylistChanges() (bool, Model, tea.Cmd) {
+func (m Model) applyPlaylistChanges() (Model, tea.Cmd) {
 	changes := m.PlaylistModal.GetChanges()
 	item := m.PlaylistModal.Item()
 	m.PlaylistModal.Hide()
 
 	if len(changes) == 0 || item == nil {
-		return true, m, nil
+		return m, nil
 	}
 
 	var cmds []tea.Cmd
 	for _, change := range changes {
 		if change.Add {
-			cmds = append(cmds, AddToPlaylistCmd(m.PlaylistSvc, change.PlaylistID, []string{item.ID}))
+			cmds = append(cmds, AddToPlaylistCmd(m.PlaylistService, change.PlaylistID, []string{item.ID}))
 		} else {
-			cmds = append(cmds, RemoveFromPlaylistCmd(m.PlaylistSvc, change.PlaylistID, item.ID))
+			cmds = append(cmds, RemoveFromPlaylistCmd(m.PlaylistService, change.PlaylistID, item.ID))
 		}
 	}
-	return true, m, tea.Batch(cmds...)
+	return m, tea.Batch(cmds...)
 }
 
 // handleInputModalInput handles input when input modal is visible
@@ -454,7 +547,7 @@ func (m Model) handleInputModalInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 		title := m.InputModal.Value()
 		m.InputModal.Hide()
 		if title != "" {
-			return true, m, CreatePlaylistCmd(m.PlaylistSvc, title, []string{})
+			return true, m, CreatePlaylistCmd(m.PlaylistService, title, []string{})
 		}
 		return true, m, nil
 	}
@@ -472,7 +565,7 @@ func (m Model) handleFilterTypingInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 	}
 	oldCursor := top.SelectedIndex()
 	newCol, _ := top.Update(msg)
-	m.ColumnStack.columns[len(m.ColumnStack.columns)-1] = newCol
+	m.ColumnStack.UpdateTop(newCol)
 	if oldCursor != top.SelectedIndex() {
 		m.updateInspector()
 	}

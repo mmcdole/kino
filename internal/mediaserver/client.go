@@ -1,4 +1,4 @@
-package source
+package mediaserver
 
 import (
 	"context"
@@ -6,24 +6,29 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/mmcdole/kino/internal/adapter"
-	"github.com/mmcdole/kino/internal/adapter/source/jellyfin"
-	"github.com/mmcdole/kino/internal/adapter/source/plex"
+	"github.com/mmcdole/kino/internal/config"
 	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/mediaserver/jellyfin"
+	"github.com/mmcdole/kino/internal/mediaserver/plex"
 )
 
-// MediaSource combines all repository interfaces that a media server backend must implement.
-// This is the unified interface for browsing, metadata, search, and playlist operations.
+// MediaSource combines all client interfaces that a media server backend must implement.
+// This is the unified interface for browsing, playback, search, and playlist operations.
 type MediaSource interface {
-	domain.LibraryRepository   // Browsing: GetLibraries, GetMovies, GetShows, GetSeasons, GetEpisodes
-	domain.MetadataRepository  // Playback: ResolvePlayableURL, MarkPlayed/Unplayed
-	domain.SearchRepository    // Search: Search(query) across all libraries
-	domain.PlaylistRepository  // Playlists: GetPlaylists, CreatePlaylist, AddToPlaylist, etc.
+	domain.LibraryClient  // Browsing: GetLibraries, GetMovies, GetShows, GetSeasons, GetEpisodes
+	domain.PlaybackClient // Playback: ResolvePlayableURL, MarkPlayed/Unplayed
+	domain.SearchClient   // Search: Search(query) across all libraries
+	domain.PlaylistClient // Playlists: GetPlaylists, CreatePlaylist, AddToPlaylist, etc.
+
+	// GetMediaItem fetches full metadata for a single item.
+	// Kept on MediaSource (not in a domain interface) as it's only used
+	// by specific features that need detailed item metadata.
+	GetMediaItem(ctx context.Context, itemID string) (*domain.MediaItem, error)
 }
 
 // NewClient creates a new MediaSource based on the server type.
 // This factory function abstracts away the specific backend implementation.
-func NewClient(cfg *adapter.Config, logger *slog.Logger) (MediaSource, error) {
+func NewClient(cfg *config.Config, logger *slog.Logger) (MediaSource, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
@@ -37,7 +42,7 @@ func NewClient(cfg *adapter.Config, logger *slog.Logger) (MediaSource, error) {
 	}
 
 	switch cfg.Server.Type {
-	case adapter.SourceTypePlex:
+	case config.SourceTypePlex:
 		client := plex.NewClient(cfg.Server.URL, cfg.Server.Token, logger)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -50,7 +55,7 @@ func NewClient(cfg *adapter.Config, logger *slog.Logger) (MediaSource, error) {
 
 		return client, nil
 
-	case adapter.SourceTypeJellyfin:
+	case config.SourceTypeJellyfin:
 		if cfg.Server.UserID == "" {
 			return nil, fmt.Errorf("Jellyfin requires user ID")
 		}

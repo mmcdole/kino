@@ -11,3 +11,7 @@ combined.go.txt
 
 # Config with secrets
 config.yaml
+
+# Local Claude Code config
+.claude/settings.json
+CLAUDE.md

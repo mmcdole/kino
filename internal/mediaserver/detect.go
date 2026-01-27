@@ -1,4 +1,4 @@
-package source
+package mediaserver
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmcdole/kino/internal/adapter"
+	"github.com/mmcdole/kino/internal/config"
 )
 
 const detectTimeout = 10 * time.Second
@@ -32,7 +32,7 @@ type plexIdentity struct {
 
 // DetectServerType probes a server URL to determine if it's Plex or Jellyfin.
 // Returns the detected SourceType or an error if detection fails.
-func DetectServerType(ctx context.Context, serverURL string) (adapter.SourceType, error) {
+func DetectServerType(ctx context.Context, serverURL string) (config.SourceType, error) {
 	// Normalize URL (remove trailing slash)
 	serverURL = strings.TrimRight(serverURL, "/")
 
@@ -58,7 +58,7 @@ func DetectServerType(ctx context.Context, serverURL string) (adapter.SourceType
 }
 
 // tryJellyfin attempts to detect a Jellyfin server
-func tryJellyfin(ctx context.Context, client *http.Client, serverURL string) (adapter.SourceType, error) {
+func tryJellyfin(ctx context.Context, client *http.Client, serverURL string) (config.SourceType, error) {
 	url := serverURL + "/System/Info/Public"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -88,14 +88,14 @@ func tryJellyfin(ctx context.Context, client *http.Client, serverURL string) (ad
 
 	// Check if ProductName indicates Jellyfin
 	if strings.Contains(strings.ToLower(info.ProductName), "jellyfin") {
-		return adapter.SourceTypeJellyfin, nil
+		return config.SourceTypeJellyfin, nil
 	}
 
 	return "", fmt.Errorf("not a Jellyfin server (ProductName: %s)", info.ProductName)
 }
 
 // tryPlex attempts to detect a Plex server
-func tryPlex(ctx context.Context, client *http.Client, serverURL string) (adapter.SourceType, error) {
+func tryPlex(ctx context.Context, client *http.Client, serverURL string) (config.SourceType, error) {
 	url := serverURL + "/identity"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -122,7 +122,7 @@ func tryPlex(ctx context.Context, client *http.Client, serverURL string) (adapte
 	var identity plexIdentity
 	if err := xml.Unmarshal(body, &identity); err == nil {
 		if identity.MachineIdentifier != "" {
-			return adapter.SourceTypePlex, nil
+			return config.SourceTypePlex, nil
 		}
 	}
 
@@ -134,7 +134,7 @@ func tryPlex(ctx context.Context, client *http.Client, serverURL string) (adapte
 	}
 	if err := json.Unmarshal(body, &jsonIdentity); err == nil {
 		if jsonIdentity.MediaContainer.MachineIdentifier != "" {
-			return adapter.SourceTypePlex, nil
+			return config.SourceTypePlex, nil
 		}
 	}
 

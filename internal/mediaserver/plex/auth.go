@@ -10,14 +10,21 @@ import (
 	"net/http"
 	"net/url"
 	"time"
-
-	"github.com/mmcdole/kino/internal/domain"
 )
+
+// AuthResult contains the result of a successful Plex authentication
+type AuthResult struct {
+	Token    string
+	UserID   string
+	Username string
+}
 
 // Plex-specific errors
 var (
 	// ErrPINExpired indicates the authentication PIN has expired
 	ErrPINExpired = errors.New("authentication PIN has expired")
+	// ErrServerOffline indicates the media server is unreachable
+	ErrServerOffline = errors.New("media server is unreachable")
 )
 
 const (
@@ -72,7 +79,7 @@ func (a *AuthClient) GetPIN(ctx context.Context) (pin string, id int, err error)
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		a.logger.Error("PIN request failed", "error", err)
-		return "", 0, domain.ErrServerOffline
+		return "", 0, ErrServerOffline
 	}
 	defer resp.Body.Close()
 
@@ -113,7 +120,7 @@ func (a *AuthClient) CheckPIN(ctx context.Context, pinID int) (token string, cla
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		a.logger.Error("PIN check failed", "error", err)
-		return "", false, domain.ErrServerOffline
+		return "", false, ErrServerOffline
 	}
 	defer resp.Body.Close()
 
@@ -176,7 +183,7 @@ func (a *AuthClient) WaitForPIN(ctx context.Context, pinID int, timeout time.Dur
 	return "", ErrPINExpired
 }
 
-// AuthFlow implements domain.AuthFlow for Plex PIN-based authentication
+// AuthFlow handles Plex PIN-based authentication
 type AuthFlow struct {
 	client *AuthClient
 }
@@ -190,7 +197,7 @@ func NewAuthFlow(logger *slog.Logger) *AuthFlow {
 
 // Run executes the Plex PIN-based authentication flow.
 // It prompts the user to visit plex.tv/link and enter the displayed PIN.
-func (f *AuthFlow) Run(ctx context.Context, serverURL string) (*domain.AuthResult, error) {
+func (f *AuthFlow) Run(ctx context.Context, serverURL string) (*AuthResult, error) {
 	// Note: serverURL is not used for Plex auth since authentication
 	// happens via plex.tv, not the local server
 
@@ -219,7 +226,7 @@ func (f *AuthFlow) Run(ctx context.Context, serverURL string) (*domain.AuthResul
 	fmt.Println()
 	fmt.Println("Authentication successful!")
 
-	return &domain.AuthResult{
+	return &AuthResult{
 		Token: token,
 		// Plex doesn't require UserID for API calls
 		UserID:   "",

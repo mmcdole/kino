@@ -103,7 +103,6 @@ func (cs *ColumnStack) Reset(col *components.ListColumn) {
 	cs.cursorStack = nil
 	col.SetFocused(true)
 	cs.columns = append(cs.columns, col)
-	cs.cursorStack = nil
 }
 
 // Parent returns the parent column (second from top), or nil if at root
@@ -125,6 +124,14 @@ func (cs *ColumnStack) Depth() int {
 		return 0
 	}
 	return len(cs.columns) - 1
+}
+
+// UpdateTop replaces the top column with the given column.
+// This preserves encapsulation by avoiding direct access to the columns slice.
+func (cs *ColumnStack) UpdateTop(col *components.ListColumn) {
+	if len(cs.columns) > 0 {
+		cs.columns[len(cs.columns)-1] = col
+	}
 }
 
 // UpdateSpinnerFrame updates the spinner frame for all columns

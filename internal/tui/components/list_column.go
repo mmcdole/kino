@@ -62,6 +62,9 @@ type ListColumn struct {
 	filterInput  textinput.Model
 	filterQuery  string
 	filteredIdx  []int // indices into sorted slice (or raw if no sort)
+
+	// Display settings
+	showWatchStatus bool // Whether to show watch status indicators
 }
 
 // NewListColumn creates a new list column with the given type and title
@@ -363,6 +366,11 @@ func (c *ListColumn) SetLibraryStates(states map[string]LibrarySyncState) {
 // SetSpinnerFrame updates the spinner animation frame
 func (c *ListColumn) SetSpinnerFrame(frame int) {
 	c.spinnerFrame = frame
+}
+
+// SetShowWatchStatus sets whether to display watch status indicators
+func (c *ListColumn) SetShowWatchStatus(show bool) {
+	c.showWatchStatus = show
 }
 
 // SelectedLibrary returns the selected library (if in library column)
@@ -696,21 +704,7 @@ func (c *ListColumn) renderItem(idx int, selected bool, width int) string {
 }
 
 func (c *ListColumn) renderLibraryItem(lib domain.Library, selected bool, width int) string {
-	// Special handling for synthetic "Playlists" entry - match library styling
-	if lib.Type == "playlist" {
-		prefix := "  " // Same spacing as idle libraries
-		prefixFg := styles.DimGray
-		title := styles.Truncate(lib.Name, width-4)
-
-		parts := []styles.RowPart{
-			{Text: prefix, Foreground: &prefixFg},
-			{Text: title, Foreground: nil},
-		}
-
-		return styles.RenderListRow(parts, selected, width)
-	}
-
-	// Get sync state for this library
+	// Get sync state for this library (works for playlists too via playlistsLibraryID)
 	state := c.libraryStates[lib.ID]
 
 	var prefix string
@@ -750,7 +744,13 @@ func (c *ListColumn) renderLibraryItem(lib domain.Library, selected bool, width 
 }
 
 func (c *ListColumn) renderMovieItem(item domain.MediaItem, selected bool, width int) string {
-	indicatorChar, indicatorFg := mediaItemWatchIndicator(item)
+	var indicatorChar string
+	var indicatorFg lipgloss.Color
+	if c.showWatchStatus {
+		indicatorChar, indicatorFg = mediaItemWatchIndicator(item)
+	} else {
+		indicatorChar = " "
+	}
 
 	title := item.Title
 	if item.Year > 0 {
@@ -773,7 +773,13 @@ func (c *ListColumn) renderMovieItem(item domain.MediaItem, selected bool, width
 }
 
 func (c *ListColumn) renderShowItem(show domain.Show, selected bool, width int) string {
-	indicatorChar, indicatorFg := watchIndicator(show.WatchStatus())
+	var indicatorChar string
+	var indicatorFg lipgloss.Color
+	if c.showWatchStatus {
+		indicatorChar, indicatorFg = watchIndicator(show.WatchStatus())
+	} else {
+		indicatorChar = " "
+	}
 
 	title := show.Title
 	if show.Year > 0 {
@@ -796,7 +802,13 @@ func (c *ListColumn) renderShowItem(show domain.Show, selected bool, width int) 
 }
 
 func (c *ListColumn) renderSeasonItem(season domain.Season, selected bool, width int) string {
-	indicatorChar, indicatorFg := watchIndicator(season.WatchStatus())
+	var indicatorChar string
+	var indicatorFg lipgloss.Color
+	if c.showWatchStatus {
+		indicatorChar, indicatorFg = watchIndicator(season.WatchStatus())
+	} else {
+		indicatorChar = " "
+	}
 
 	title := season.DisplayTitle()
 
@@ -816,7 +828,13 @@ func (c *ListColumn) renderSeasonItem(season domain.Season, selected bool, width
 }
 
 func (c *ListColumn) renderEpisodeItem(item domain.MediaItem, selected bool, width int) string {
-	indicatorChar, indicatorFg := mediaItemWatchIndicator(item)
+	var indicatorChar string
+	var indicatorFg lipgloss.Color
+	if c.showWatchStatus {
+		indicatorChar, indicatorFg = mediaItemWatchIndicator(item)
+	} else {
+		indicatorChar = " "
+	}
 
 	code := item.EpisodeCode()
 	plexOrange := styles.PlexOrange
@@ -900,7 +918,13 @@ func (c *ListColumn) renderPlaylistItem(playlist domain.Playlist, selected bool,
 }
 
 func (c *ListColumn) renderPlaylistMediaItem(item domain.MediaItem, selected bool, width int) string {
-	indicatorChar, indicatorFg := mediaItemWatchIndicator(item)
+	var indicatorChar string
+	var indicatorFg lipgloss.Color
+	if c.showWatchStatus {
+		indicatorChar, indicatorFg = mediaItemWatchIndicator(item)
+	} else {
+		indicatorChar = " "
+	}
 
 	title := item.Title
 	if item.Type == domain.MediaTypeEpisode && item.ShowTitle != "" {
@@ -926,7 +950,13 @@ func (c *ListColumn) renderPlaylistMediaItem(item domain.MediaItem, selected boo
 }
 
 func (c *ListColumn) renderMixedItem(item domain.ListItem, selected bool, width int) string {
-	indicatorChar, indicatorFg := watchIndicator(item.GetWatchStatus())
+	var indicatorChar string
+	var indicatorFg lipgloss.Color
+	if c.showWatchStatus {
+		indicatorChar, indicatorFg = watchIndicator(item.GetWatchStatus())
+	} else {
+		indicatorChar = " "
+	}
 
 	// Build title with year
 	title := item.GetTitle()

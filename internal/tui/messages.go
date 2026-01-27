@@ -90,7 +90,7 @@ type LibrarySyncProgressMsg struct {
 	Loaded      int
 	Total       int
 	Done        bool
-	FromDisk    bool
+	FromCache   bool
 	Error       error
 	NextCmd     tea.Cmd // Continuation command for streaming
 }

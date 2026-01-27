@@ -1,4 +1,4 @@
-package adapter
+package config
 
 import (
 	"fmt"
@@ -55,15 +55,6 @@ type LoggingConfig struct {
 // DefaultConfig returns the default configuration
 func DefaultConfig() *Config {
 	return &Config{
-		Server: ServerConfig{
-			Type:  "",
-			URL:   "",
-			Token: "",
-		},
-		Player: PlayerConfig{
-			Command: "",
-			Args:    []string{},
-		},
 		UI: UIConfig{
 			ShowWatchStatus: true,
 		},
@@ -165,8 +156,8 @@ func (c *Config) IsConfigured() bool {
 	return c.Server.URL != "" && c.Server.Token != ""
 }
 
-// defaultCachePath returns the default cache directory path for the current OS
-func defaultCachePath() string {
+// DefaultCachePath returns the default cache directory path for the current OS
+func DefaultCachePath() string {
 	switch runtime.GOOS {
 	case "windows":
 		return filepath.Join(os.Getenv("LOCALAPPDATA"), "kino", "cache")
@@ -201,7 +192,7 @@ func ClearServerConfig() error {
 
 // ClearCache removes all cached data
 func ClearCache() error {
-	cachePath := defaultCachePath()
+	cachePath := DefaultCachePath()
 	if err := os.RemoveAll(cachePath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to clear cache: %w", err)
 	}

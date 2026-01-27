@@ -211,57 +211,11 @@ func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) 
 	return MapShows(container.Metadata, c.baseURL), totalSize, nil
 }
 
-const defaultBatchSize = 100
-
-// GetAllMovies fetches all movies, handling pagination internally
-func (c *Client) GetAllMovies(ctx context.Context, libID string) ([]*domain.MediaItem, error) {
-	var allMovies []*domain.MediaItem
-	offset := 0
-
-	for {
-		movies, total, err := c.GetMovies(ctx, libID, offset, defaultBatchSize)
-		if err != nil {
-			return nil, err
-		}
-
-		allMovies = append(allMovies, movies...)
-
-		if len(allMovies) >= total || len(movies) == 0 {
-			break
-		}
-		offset += defaultBatchSize
-	}
-
-	return allMovies, nil
-}
-
-// GetAllShows fetches all shows, handling pagination internally
-func (c *Client) GetAllShows(ctx context.Context, libID string) ([]*domain.Show, error) {
-	var allShows []*domain.Show
-	offset := 0
-
-	for {
-		shows, total, err := c.GetShows(ctx, libID, offset, defaultBatchSize)
-		if err != nil {
-			return nil, err
-		}
-
-		allShows = append(allShows, shows...)
-
-		if len(allShows) >= total || len(shows) == 0 {
-			break
-		}
-		offset += defaultBatchSize
-	}
-
-	return allShows, nil
-}
-
-// GetLibraryContent returns paginated content (movies AND shows) from a library.
+// GetMixedContent returns paginated content (movies AND shows) from a library.
 // Note: Plex doesn't truly support "mixed" libraries at the API level like Jellyfin,
 // so this method fetches all items and returns both types. For pure movie or show
 // libraries, this still works but is less efficient than GetMovies/GetShows.
-func (c *Client) GetLibraryContent(ctx context.Context, libID string, offset, limit int) ([]domain.ListItem, int, error) {
+func (c *Client) GetMixedContent(ctx context.Context, libID string, offset, limit int) ([]domain.ListItem, int, error) {
 	query := url.Values{}
 	query.Set("X-Plex-Container-Start", strconv.Itoa(offset))
 	if limit > 0 {
@@ -285,28 +239,6 @@ func (c *Client) GetLibraryContent(ctx context.Context, libID string, offset, li
 	}
 
 	return MapLibraryContent(container.Metadata, c.baseURL), totalSize, nil
-}
-
-// GetAllLibraryContent returns all content from a library (handles pagination internally)
-func (c *Client) GetAllLibraryContent(ctx context.Context, libID string) ([]domain.ListItem, error) {
-	var allItems []domain.ListItem
-	offset := 0
-
-	for {
-		items, total, err := c.GetLibraryContent(ctx, libID, offset, defaultBatchSize)
-		if err != nil {
-			return nil, err
-		}
-
-		allItems = append(allItems, items...)
-
-		if len(allItems) >= total || len(items) == 0 {
-			break
-		}
-		offset += defaultBatchSize
-	}
-
-	return allItems, nil
 }
 
 // GetSeasons returns all seasons for a TV show
@@ -361,17 +293,34 @@ func (c *Client) Search(ctx context.Context, query string) ([]*domain.MediaItem,
 
 // ResolvePlayableURL returns a direct playback URL for an item
 func (c *Client) ResolvePlayableURL(ctx context.Context, itemID string) (string, error) {
-	item, err := c.GetMediaItem(ctx, itemID)
+	path := fmt.Sprintf("/library/metadata/%s", itemID)
+	body, err := c.doRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return "", err
 	}
 
-	if item.MediaURL == "" {
+	container, err := c.parseResponse(body)
+	if err != nil {
+		return "", err
+	}
+
+	if len(container.Metadata) == 0 {
+		return "", domain.ErrItemNotFound
+	}
+
+	// Extract media URL from the metadata
+	m := container.Metadata[0]
+	if len(m.Media) == 0 || len(m.Media[0].Part) == 0 {
+		return "", domain.ErrItemNotFound
+	}
+
+	mediaPath := m.Media[0].Part[0].Key
+	if mediaPath == "" {
 		return "", domain.ErrItemNotFound
 	}
 
 	// Add token to URL for direct play
-	return fmt.Sprintf("%s?X-Plex-Token=%s", item.MediaURL, c.token), nil
+	return fmt.Sprintf("%s%s?X-Plex-Token=%s", c.baseURL, mediaPath, c.token), nil
 }
 
 // GetMediaItem returns detailed metadata for a specific item

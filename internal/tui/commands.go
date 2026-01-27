@@ -3,23 +3,31 @@ package tui
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mmcdole/kino/internal/config"
 	"github.com/mmcdole/kino/internal/domain"
-	"github.com/mmcdole/kino/internal/service"
+	"github.com/mmcdole/kino/internal/library"
+	"github.com/mmcdole/kino/internal/player"
+	"github.com/mmcdole/kino/internal/playlist"
 )
+
+// syncChannelSize is the buffer size for sync progress channels
+const syncChannelSize = 100
 
 // Command factories for async operations
 
 // LoadLibrariesCmd loads all available libraries
-func LoadLibrariesCmd(svc *service.LibraryService) tea.Cmd {
+func LoadLibrariesCmd(svc *library.Service) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		libraries, err := svc.GetLibraries(ctx)
+		libraries, err := svc.FetchLibraries(ctx)
 		if err != nil {
+			slog.Error("failed to load libraries", "error", err)
 			return ErrMsg{Err: err, Context: "loading libraries"}
 		}
 		return LibrariesLoadedMsg{Libraries: libraries}
@@ -27,12 +35,12 @@ func LoadLibrariesCmd(svc *service.LibraryService) tea.Cmd {
 }
 
 // LoadMoviesCmd loads movies from a library
-func LoadMoviesCmd(svc *service.LibraryService, libID string) tea.Cmd {
+func LoadMoviesCmd(svc *library.Service, libID string) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second) // 60s for large libraries
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		movies, err := svc.GetMovies(ctx, libID)
+		movies, err := svc.FetchMovies(ctx, libID, nil)
 		if err != nil {
 			return ErrMsg{Err: err, Context: "loading movies"}
 		}
@@ -41,12 +49,12 @@ func LoadMoviesCmd(svc *service.LibraryService, libID string) tea.Cmd {
 }
 
 // LoadShowsCmd loads TV shows from a library
-func LoadShowsCmd(svc *service.LibraryService, libID string) tea.Cmd {
+func LoadShowsCmd(svc *library.Service, libID string) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second) // 60s for large libraries
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		shows, err := svc.GetShows(ctx, libID)
+		shows, err := svc.FetchShows(ctx, libID, nil)
 		if err != nil {
 			return ErrMsg{Err: err, Context: "loading shows"}
 		}
@@ -55,12 +63,12 @@ func LoadShowsCmd(svc *service.LibraryService, libID string) tea.Cmd {
 }
 
 // LoadMixedLibraryCmd loads content (movies AND shows) from a mixed library
-func LoadMixedLibraryCmd(svc *service.LibraryService, libID string) tea.Cmd {
+func LoadMixedLibraryCmd(svc *library.Service, libID string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		items, err := svc.GetLibraryContent(ctx, libID)
+		items, err := svc.FetchMixedContent(ctx, libID, nil)
 		if err != nil {
 			return ErrMsg{Err: err, Context: "loading library content"}
 		}
@@ -69,12 +77,12 @@ func LoadMixedLibraryCmd(svc *service.LibraryService, libID string) tea.Cmd {
 }
 
 // LoadSeasonsCmd loads seasons for a show
-func LoadSeasonsCmd(svc *service.LibraryService, showID string) tea.Cmd {
+func LoadSeasonsCmd(svc *library.Service, libID, showID string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		seasons, err := svc.GetSeasons(ctx, showID)
+		seasons, err := svc.FetchSeasons(ctx, libID, showID)
 		if err != nil {
 			return ErrMsg{Err: err, Context: "loading seasons"}
 		}
@@ -83,12 +91,12 @@ func LoadSeasonsCmd(svc *service.LibraryService, showID string) tea.Cmd {
 }
 
 // LoadEpisodesCmd loads episodes for a season
-func LoadEpisodesCmd(svc *service.LibraryService, seasonID string) tea.Cmd {
+func LoadEpisodesCmd(svc *library.Service, libID, showID, seasonID string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		episodes, err := svc.GetEpisodes(ctx, seasonID)
+		episodes, err := svc.FetchEpisodes(ctx, libID, showID, seasonID)
 		if err != nil {
 			return ErrMsg{Err: err, Context: "loading episodes"}
 		}
@@ -97,7 +105,7 @@ func LoadEpisodesCmd(svc *service.LibraryService, seasonID string) tea.Cmd {
 }
 
 // PlayItemCmd starts playback of an item
-func PlayItemCmd(svc *service.PlaybackService, item domain.MediaItem, resume bool) tea.Cmd {
+func PlayItemCmd(svc *player.Service, item domain.MediaItem, resume bool) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
 
@@ -116,7 +124,7 @@ func PlayItemCmd(svc *service.PlaybackService, item domain.MediaItem, resume boo
 }
 
 // MarkWatchedCmd marks an item as watched
-func MarkWatchedCmd(svc *service.PlaybackService, itemID, title string) tea.Cmd {
+func MarkWatchedCmd(svc *player.Service, itemID, title string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -129,7 +137,7 @@ func MarkWatchedCmd(svc *service.PlaybackService, itemID, title string) tea.Cmd 
 }
 
 // MarkUnwatchedCmd marks an item as unwatched
-func MarkUnwatchedCmd(svc *service.PlaybackService, itemID, title string) tea.Cmd {
+func MarkUnwatchedCmd(svc *player.Service, itemID, title string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -162,40 +170,56 @@ func ClearLibraryStatusCmd(libID string, delay time.Duration) tea.Cmd {
 	})
 }
 
-// SyncLibraryCmd performs smart sync with streaming progress updates using channels
-// Uses a continuation pattern to pump all progress messages to the UI
-func SyncLibraryCmd(
-	libSvc *service.LibraryService,
-	lib domain.Library,
-	force bool,
-) tea.Cmd {
+// SyncLibraryCmd performs smart sync with streaming progress updates
+func SyncLibraryCmd(svc *library.Service, lib domain.Library) tea.Cmd {
 	return func() tea.Msg {
-		// Use a generous timeout instead of Background
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 
-		// Create a channel for this sync operation
-		progressCh := make(chan service.SyncProgress)
+		progressCh := make(chan syncProgress, syncChannelSize)
 
-		// Start the background work
 		go func() {
 			defer cancel()
-			libSvc.SyncLibrary(ctx, lib, force, progressCh)
+			defer close(progressCh)
+
+			onProgress := func(loaded, total int) {
+				select {
+				case progressCh <- syncProgress{loaded: loaded, total: total}:
+				default:
+				}
+			}
+
+			result, err := svc.SyncLibrary(ctx, lib, onProgress)
+
+			// Send final message
+			select {
+			case progressCh <- syncProgress{
+				loaded:    result.Count,
+				total:     result.Count,
+				done:      true,
+				fromCache: result.FromCache,
+				err:       err,
+			}:
+			default:
+			}
 		}()
 
-		// Read the first message and return it with continuation context
 		return readSyncProgress(lib, progressCh)
 	}
 }
 
+// syncProgress is an internal type for channel communication
+type syncProgress struct {
+	loaded    int
+	total     int
+	done      bool
+	fromCache bool
+	err       error
+}
+
 // readSyncProgress reads one message from the channel and creates a LibrarySyncProgressMsg
-// with the continuation command embedded
-func readSyncProgress(
-	lib domain.Library,
-	progressCh <-chan service.SyncProgress,
-) tea.Msg {
+func readSyncProgress(lib domain.Library, progressCh <-chan syncProgress) tea.Msg {
 	progress, ok := <-progressCh
 	if !ok {
-		// Channel closed unexpectedly - sync was cancelled or errored
 		return LibrarySyncProgressMsg{
 			LibraryID:   lib.ID,
 			LibraryType: lib.Type,
@@ -205,17 +229,16 @@ func readSyncProgress(
 	}
 
 	msg := LibrarySyncProgressMsg{
-		LibraryID:   progress.LibraryID,
-		LibraryType: progress.LibraryType,
-		Loaded:      progress.Loaded,
-		Total:       progress.Total,
-		Done:        progress.Done,
-		FromDisk:    progress.FromDisk,
-		Error:       progress.Error,
+		LibraryID:   lib.ID,
+		LibraryType: lib.Type,
+		Loaded:      progress.loaded,
+		Total:       progress.total,
+		Done:        progress.done,
+		FromCache:   progress.fromCache,
+		Error:       progress.err,
 	}
 
-	// If not done and no error, attach continuation command
-	if !progress.Done && progress.Error == nil {
+	if !progress.done && progress.err == nil {
 		msg.NextCmd = listenToSyncCmd(lib, progressCh)
 	}
 
@@ -223,32 +246,82 @@ func readSyncProgress(
 }
 
 // listenToSyncCmd returns a command that reads the next message from the progress channel
-func listenToSyncCmd(
-	lib domain.Library,
-	progressCh <-chan service.SyncProgress,
-) tea.Cmd {
+func listenToSyncCmd(lib domain.Library, progressCh <-chan syncProgress) tea.Cmd {
 	return func() tea.Msg {
 		return readSyncProgress(lib, progressCh)
 	}
 }
 
 // SyncAllLibrariesCmd syncs all libraries in parallel
-func SyncAllLibrariesCmd(
-	libSvc *service.LibraryService,
-	libraries []domain.Library,
-	force bool,
-) tea.Cmd {
-	cmds := make([]tea.Cmd, len(libraries))
+func SyncAllLibrariesCmd(svc *library.Service, libraries []domain.Library) tea.Cmd {
+	teaCmds := make([]tea.Cmd, len(libraries))
 	for i, lib := range libraries {
-		cmds[i] = SyncLibraryCmd(libSvc, lib, force)
+		teaCmds[i] = SyncLibraryCmd(svc, lib)
 	}
-	return tea.Batch(cmds...)
+	return tea.Batch(teaCmds...)
+}
+
+// SyncPlaylistsCmd syncs playlists and their items (two levels deep, like library sync).
+func SyncPlaylistsCmd(svc *playlist.Service, playlistsID string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+
+		progressCh := make(chan syncProgress, syncChannelSize)
+
+		go func() {
+			defer cancel()
+			defer close(progressCh)
+
+			// SyncPlaylists fetches playlists AND items for each
+			playlists, err := svc.SyncPlaylists(ctx)
+
+			// Send final message
+			select {
+			case progressCh <- syncProgress{
+				loaded:    len(playlists),
+				total:     len(playlists),
+				done:      true,
+				fromCache: false,
+				err:       err,
+			}:
+			default:
+			}
+		}()
+
+		return readPlaylistSyncProgress(playlistsID, progressCh)
+	}
+}
+
+// readPlaylistSyncProgress reads sync progress for playlists
+func readPlaylistSyncProgress(playlistsID string, progressCh <-chan syncProgress) tea.Msg {
+	progress, ok := <-progressCh
+	if !ok {
+		return LibrarySyncProgressMsg{
+			LibraryID:   playlistsID,
+			LibraryType: "playlist",
+			Done:        true,
+			Error:       fmt.Errorf("sync cancelled"),
+		}
+	}
+
+	return LibrarySyncProgressMsg{
+		LibraryID:   playlistsID,
+		LibraryType: "playlist",
+		Loaded:      progress.loaded,
+		Total:       progress.total,
+		Done:        progress.done,
+		FromCache:   progress.fromCache,
+		Error:       progress.err,
+	}
 }
 
 // LogoutCmd clears server config and cache, then signals completion
-func LogoutCmd(svc *service.SessionService) tea.Cmd {
+func LogoutCmd() tea.Cmd {
 	return func() tea.Msg {
-		if err := svc.Logout(); err != nil {
+		if err := config.ClearServerConfig(); err != nil {
+			return LogoutCompleteMsg{Error: err}
+		}
+		if err := config.ClearCache(); err != nil {
 			return LogoutCompleteMsg{Error: err}
 		}
 		return LogoutCompleteMsg{Error: nil}
@@ -256,12 +329,12 @@ func LogoutCmd(svc *service.SessionService) tea.Cmd {
 }
 
 // LoadPlaylistsCmd loads all playlists
-func LoadPlaylistsCmd(svc *service.PlaylistService) tea.Cmd {
+func LoadPlaylistsCmd(svc *playlist.Service) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		playlists, err := svc.GetPlaylists(ctx)
+		playlists, err := svc.FetchPlaylists(ctx)
 		if err != nil {
 			return ErrMsg{Err: err, Context: "loading playlists"}
 		}
@@ -270,12 +343,12 @@ func LoadPlaylistsCmd(svc *service.PlaylistService) tea.Cmd {
 }
 
 // LoadPlaylistItemsCmd loads items from a playlist
-func LoadPlaylistItemsCmd(svc *service.PlaylistService, playlistID string) tea.Cmd {
+func LoadPlaylistItemsCmd(svc *playlist.Service, playlistID string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		items, err := svc.GetPlaylistItems(ctx, playlistID)
+		items, err := svc.FetchPlaylistItems(ctx, playlistID)
 		if err != nil {
 			return ErrMsg{Err: err, Context: "loading playlist items"}
 		}
@@ -284,7 +357,7 @@ func LoadPlaylistItemsCmd(svc *service.PlaylistService, playlistID string) tea.C
 }
 
 // CreatePlaylistCmd creates a new playlist
-func CreatePlaylistCmd(svc *service.PlaylistService, title string, itemIDs []string) tea.Cmd {
+func CreatePlaylistCmd(svc *playlist.Service, title string, itemIDs []string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -298,7 +371,7 @@ func CreatePlaylistCmd(svc *service.PlaylistService, title string, itemIDs []str
 }
 
 // AddToPlaylistCmd adds items to a playlist
-func AddToPlaylistCmd(svc *service.PlaylistService, playlistID string, itemIDs []string) tea.Cmd {
+func AddToPlaylistCmd(svc *playlist.Service, playlistID string, itemIDs []string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -312,7 +385,7 @@ func AddToPlaylistCmd(svc *service.PlaylistService, playlistID string, itemIDs [
 }
 
 // RemoveFromPlaylistCmd removes an item from a playlist
-func RemoveFromPlaylistCmd(svc *service.PlaylistService, playlistID, itemID string) tea.Cmd {
+func RemoveFromPlaylistCmd(svc *playlist.Service, playlistID, itemID string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -326,7 +399,7 @@ func RemoveFromPlaylistCmd(svc *service.PlaylistService, playlistID, itemID stri
 }
 
 // DeletePlaylistCmd deletes a playlist
-func DeletePlaylistCmd(svc *service.PlaylistService, playlistID string) tea.Cmd {
+func DeletePlaylistCmd(svc *playlist.Service, playlistID string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -340,12 +413,12 @@ func DeletePlaylistCmd(svc *service.PlaylistService, playlistID string) tea.Cmd 
 }
 
 // LoadPlaylistModalDataCmd loads data for the playlist management modal
-func LoadPlaylistModalDataCmd(svc *service.PlaylistService, item *domain.MediaItem) tea.Cmd {
+func LoadPlaylistModalDataCmd(svc *playlist.Service, item *domain.MediaItem) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		playlists, err := svc.GetPlaylists(ctx)
+		playlists, err := svc.FetchPlaylists(ctx)
 		if err != nil {
 			return ErrMsg{Err: err, Context: "loading playlists for modal"}
 		}

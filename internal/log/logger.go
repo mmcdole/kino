@@ -1,4 +1,4 @@
-package adapter
+package log
 
 import (
 	"fmt"
@@ -7,10 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/mmcdole/kino/internal/config"
 )
 
 // SetupLogger initializes the slog logger with file output
-func SetupLogger(cfg *LoggingConfig) (*slog.Logger, error) {
+func SetupLogger(cfg *config.LoggingConfig) (*slog.Logger, error) {
 	// Expand ~ in path
 	logPath := cfg.File
 	if strings.HasPrefix(logPath, "~") {
