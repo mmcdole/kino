@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/mmcdole/kino/internal/domain"
 	bolt "go.etcd.io/bbolt"
@@ -20,6 +21,7 @@ var (
 	bucketContent   = []byte("content")
 	bucketSeasons   = []byte("seasons")
 	bucketEpisodes  = []byte("episodes")
+	bucketPlaylists = []byte("playlists")
 )
 
 // listItemWrapper wraps ListItem for JSON serialization
@@ -56,14 +58,14 @@ func NewLibraryStore(baseCacheDir, serverURL string) (*LibraryStore, error) {
 	}
 
 	dbPath := filepath.Join(dir, "kino.db")
-	db, err := bolt.Open(dbPath, 0600, nil)
+	db, err := bolt.Open(dbPath, 0600, &bolt.Options{Timeout: 1 * time.Second})
 	if err != nil {
 		return nil, fmt.Errorf("failed to open bolt db: %w", err)
 	}
 
 	// Create buckets
 	err = db.Update(func(tx *bolt.Tx) error {
-		for _, bucket := range [][]byte{bucketLibraries, bucketContent, bucketSeasons, bucketEpisodes} {
+		for _, bucket := range [][]byte{bucketLibraries, bucketContent, bucketSeasons, bucketEpisodes, bucketPlaylists} {
 			if _, err := tx.CreateBucketIfNotExists(bucket); err != nil {
 				return err
 			}
@@ -350,7 +352,7 @@ func (s *LibraryStore) InvalidateAll() {
 
 	// Delete all data from all buckets
 	s.db.Update(func(tx *bolt.Tx) error {
-		for _, bucket := range [][]byte{bucketLibraries, bucketContent, bucketSeasons, bucketEpisodes} {
+		for _, bucket := range [][]byte{bucketLibraries, bucketContent, bucketSeasons, bucketEpisodes, bucketPlaylists} {
 			b := tx.Bucket(bucket)
 			if b == nil {
 				continue
@@ -364,6 +366,36 @@ func (s *LibraryStore) InvalidateAll() {
 		}
 		return nil
 	})
+}
+
+// === Playlists ===
+
+func (s *LibraryStore) GetPlaylists() ([]*domain.Playlist, bool) {
+	var playlists []*domain.Playlist
+	ok := s.get(bucketPlaylists, "list", &playlists)
+	return playlists, ok
+}
+
+func (s *LibraryStore) SavePlaylists(playlists []*domain.Playlist) error {
+	return s.set(bucketPlaylists, "list", playlists)
+}
+
+func (s *LibraryStore) GetPlaylistItems(playlistID string) ([]*domain.MediaItem, bool) {
+	var items []*domain.MediaItem
+	ok := s.get(bucketPlaylists, "items:"+playlistID, &items)
+	return items, ok
+}
+
+func (s *LibraryStore) SavePlaylistItems(playlistID string, items []*domain.MediaItem) error {
+	return s.set(bucketPlaylists, "items:"+playlistID, items)
+}
+
+func (s *LibraryStore) InvalidatePlaylists() {
+	s.delete(bucketPlaylists, "list")
+}
+
+func (s *LibraryStore) InvalidatePlaylistItems(playlistID string) {
+	s.delete(bucketPlaylists, "items:"+playlistID)
 }
 
 // wrapListItems converts domain.ListItem slice to serializable wrappers

@@ -228,18 +228,20 @@ func (m Model) handleRefresh() (tea.Model, tea.Cmd) {
 		m.Loading = true
 		m.MultiLibSync = false
 		m.updateLibraryStates()
-		return m, SyncLibraryCmd(m.LibrarySvc, *lib, true)
+		// Invalidate then sync
+		m.LibCommands.InvalidateLibrary(lib.ID)
+		return m, SyncLibraryCmd(m.LibCommands, *lib)
 
 	case components.ColumnTypeMovies, components.ColumnTypeMixed, components.ColumnTypeShows:
 		return m.refreshLibraryContent(top)
 
 	case components.ColumnTypeSeasons:
 		// Refresh current show's seasons (invalidate seasons + episodes, re-fetch seasons)
-		m.LibrarySvc.RefreshShow(m.currentLibID, m.currentShowID)
+		m.LibCommands.InvalidateShow(m.currentLibID, m.currentShowID)
 		top.SetItems(nil)
 		top.SetLoading(true)
 		m.Loading = true
-		return m, LoadSeasonsCmd(m.LibrarySvc, m.currentLibID, m.currentShowID)
+		return m, LoadSeasonsCmd(m.LibCommands, m.currentLibID, m.currentShowID)
 
 	case components.ColumnTypeEpisodes:
 		// Refresh current season's episodes
@@ -251,18 +253,18 @@ func (m Model) handleRefresh() (tea.Model, tea.Cmd) {
 		if season == nil {
 			return m, nil
 		}
-		m.LibrarySvc.RefreshSeason(m.currentLibID, m.currentShowID, season.ID)
+		m.LibCommands.InvalidateSeason(m.currentLibID, m.currentShowID, season.ID)
 		top.SetItems(nil)
 		top.SetLoading(true)
 		m.Loading = true
-		return m, LoadEpisodesCmd(m.LibrarySvc, m.currentLibID, m.currentShowID, season.ID)
+		return m, LoadEpisodesCmd(m.LibCommands, m.currentLibID, m.currentShowID, season.ID)
 
 	case components.ColumnTypePlaylists:
 		// Refresh playlists
 		top.SetItems(nil)
 		top.SetLoading(true)
 		m.Loading = true
-		return m, LoadPlaylistsCmd(m.PlaylistSvc)
+		return m, LoadPlaylistsCmd(m.PlaylistCmds)
 
 	case components.ColumnTypePlaylistItems:
 		// Refresh playlist items
@@ -272,7 +274,7 @@ func (m Model) handleRefresh() (tea.Model, tea.Cmd) {
 		top.SetItems(nil)
 		top.SetLoading(true)
 		m.Loading = true
-		return m, LoadPlaylistItemsCmd(m.PlaylistSvc, m.currentPlaylistID)
+		return m, LoadPlaylistItemsCmd(m.PlaylistCmds, m.currentPlaylistID)
 	}
 
 	return m, nil
@@ -288,18 +290,18 @@ func (m Model) refreshLibraryContent(top *components.ListColumn) (Model, tea.Cmd
 	if lib == nil {
 		return m, nil
 	}
-	m.LibrarySvc.RefreshLibrary(lib.ID)
+	m.LibCommands.InvalidateLibrary(lib.ID)
 	top.SetItems(nil)
 	top.SetLoading(true)
 	m.Loading = true
 
 	switch lib.Type {
 	case "movie":
-		return m, LoadMoviesCmd(m.LibrarySvc, lib.ID)
+		return m, LoadMoviesCmd(m.LibCommands, lib.ID)
 	case "show":
-		return m, LoadShowsCmd(m.LibrarySvc, lib.ID)
+		return m, LoadShowsCmd(m.LibCommands, lib.ID)
 	default:
-		return m, LoadMixedLibraryCmd(m.LibrarySvc, lib.ID)
+		return m, LoadMixedLibraryCmd(m.LibCommands, lib.ID)
 	}
 }
 
@@ -309,7 +311,8 @@ func (m Model) handleRefreshAll() (tea.Model, tea.Cmd) {
 	for _, lib := range m.Libraries {
 		m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
 	}
-	m.SyncingCount = len(m.Libraries)
+	m.LibraryStates[playlistsLibraryID] = components.LibrarySyncState{Status: components.StatusSyncing}
+	m.SyncingCount = len(m.Libraries) + 1 // +1 for playlists
 	m.Loading = true
 	m.MultiLibSync = true
 	m.updateLibraryStates()
@@ -319,7 +322,13 @@ func (m Model) handleRefreshAll() (tea.Model, tea.Cmd) {
 	m.Inspector.SetLibraryStates(m.LibraryStates)
 	m.ColumnStack.Reset(libCol)
 
-	return m, SyncAllLibrariesCmd(m.LibrarySvc, m.Libraries, true)
+	// Invalidate all then sync
+	m.LibCommands.InvalidateAll()
+	m.PlaylistCmds.InvalidatePlaylists()
+	return m, tea.Batch(
+		SyncAllLibrariesCmd(m.LibCommands, m.Libraries),
+		SyncPlaylistsCmd(m.PlaylistCmds, playlistsLibraryID),
+	)
 }
 
 // handleMarkWatched marks the selected item as watched
@@ -381,8 +390,8 @@ func (m Model) handlePlaylistModal() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	item := top.SelectedMediaItem()
-	if item != nil && m.PlaylistSvc != nil {
-		return m, LoadPlaylistModalDataCmd(m.PlaylistSvc, item)
+	if item != nil && m.PlaylistCmds != nil {
+		return m, LoadPlaylistModalDataCmd(m.PlaylistCmds, item)
 	}
 	return m, nil
 }
@@ -397,12 +406,12 @@ func (m Model) handleDelete() (tea.Model, tea.Cmd) {
 	case components.ColumnTypePlaylistItems:
 		item := top.SelectedMediaItem()
 		if item != nil && m.currentPlaylistID != "" {
-			return m, RemoveFromPlaylistCmd(m.PlaylistSvc, m.currentPlaylistID, item.ID)
+			return m, RemoveFromPlaylistCmd(m.PlaylistCmds, m.currentPlaylistID, item.ID)
 		}
 	case components.ColumnTypePlaylists:
 		playlist := top.SelectedPlaylist()
 		if playlist != nil {
-			return m, DeletePlaylistCmd(m.PlaylistSvc, playlist.ID)
+			return m, DeletePlaylistCmd(m.PlaylistCmds, playlist.ID)
 		}
 	}
 	return m, nil
@@ -492,12 +501,12 @@ func (m Model) applyPlaylistCreate() (bool, Model, tea.Cmd) {
 		return true, m, nil
 	}
 
-	cmds := []tea.Cmd{CreatePlaylistCmd(m.PlaylistSvc, title, []string{item.ID})}
+	cmds := []tea.Cmd{CreatePlaylistCmd(m.PlaylistCmds, title, []string{item.ID})}
 	for _, change := range changes {
 		if change.Add {
-			cmds = append(cmds, AddToPlaylistCmd(m.PlaylistSvc, change.PlaylistID, []string{item.ID}))
+			cmds = append(cmds, AddToPlaylistCmd(m.PlaylistCmds, change.PlaylistID, []string{item.ID}))
 		} else {
-			cmds = append(cmds, RemoveFromPlaylistCmd(m.PlaylistSvc, change.PlaylistID, item.ID))
+			cmds = append(cmds, RemoveFromPlaylistCmd(m.PlaylistCmds, change.PlaylistID, item.ID))
 		}
 	}
 	return true, m, tea.Batch(cmds...)
@@ -516,9 +525,9 @@ func (m Model) applyPlaylistChanges() (bool, Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	for _, change := range changes {
 		if change.Add {
-			cmds = append(cmds, AddToPlaylistCmd(m.PlaylistSvc, change.PlaylistID, []string{item.ID}))
+			cmds = append(cmds, AddToPlaylistCmd(m.PlaylistCmds, change.PlaylistID, []string{item.ID}))
 		} else {
-			cmds = append(cmds, RemoveFromPlaylistCmd(m.PlaylistSvc, change.PlaylistID, item.ID))
+			cmds = append(cmds, RemoveFromPlaylistCmd(m.PlaylistCmds, change.PlaylistID, item.ID))
 		}
 	}
 	return true, m, tea.Batch(cmds...)
@@ -534,7 +543,7 @@ func (m Model) handleInputModalInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 		title := m.InputModal.Value()
 		m.InputModal.Hide()
 		if title != "" {
-			return true, m, CreatePlaylistCmd(m.PlaylistSvc, title, []string{})
+			return true, m, CreatePlaylistCmd(m.PlaylistCmds, title, []string{})
 		}
 		return true, m, nil
 	}

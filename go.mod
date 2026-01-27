@@ -6,7 +6,6 @@ require (
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/lithammer/fuzzysearch v1.1.8
 	github.com/sahilm/fuzzy v0.1.1
 	github.com/spf13/viper v1.21.0
 	go.etcd.io/bbolt v1.4.3

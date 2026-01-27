@@ -696,21 +696,7 @@ func (c *ListColumn) renderItem(idx int, selected bool, width int) string {
 }
 
 func (c *ListColumn) renderLibraryItem(lib domain.Library, selected bool, width int) string {
-	// Special handling for synthetic "Playlists" entry - match library styling
-	if lib.Type == "playlist" {
-		prefix := "  " // Same spacing as idle libraries
-		prefixFg := styles.DimGray
-		title := styles.Truncate(lib.Name, width-4)
-
-		parts := []styles.RowPart{
-			{Text: prefix, Foreground: &prefixFg},
-			{Text: title, Foreground: nil},
-		}
-
-		return styles.RenderListRow(parts, selected, width)
-	}
-
-	// Get sync state for this library
+	// Get sync state for this library (works for playlists too via playlistsLibraryID)
 	state := c.libraryStates[lib.ID]
 
 	var prefix string

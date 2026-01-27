@@ -12,9 +12,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/config"
+	"github.com/mmcdole/kino/internal/library"
 	"github.com/mmcdole/kino/internal/log"
 	"github.com/mmcdole/kino/internal/mediaserver"
 	"github.com/mmcdole/kino/internal/player"
+	"github.com/mmcdole/kino/internal/playlist"
+	"github.com/mmcdole/kino/internal/search"
 	"github.com/mmcdole/kino/internal/service"
 	"github.com/mmcdole/kino/internal/store"
 	"github.com/mmcdole/kino/internal/tui"
@@ -84,14 +87,21 @@ func run() error {
 	// Create launcher (uses configured player or auto-detects)
 	launcher := player.NewLauncher(cfg.Player.Command, cfg.Player.Args, cfg.Player.StartFlag, logger)
 
-	// Create services - library and search share the same store
-	librarySvc := service.NewLibraryService(client, libraryStore, logger)
-	searchSvc := service.NewSearchService(client, libraryStore, logger)
-	playbackSvc := service.NewPlaybackService(launcher, client, logger)
-	playlistSvc := service.NewPlaylistService(client, logger)
+	// Create CQRS-lite components
+	// Queries: synchronous, cache-only reads
+	libQueries := library.NewQueries(libraryStore)
+	playlistQueries := playlist.NewQueries(libraryStore)
 
-	// Create TUI model - has direct Store access for reads (CQRS)
-	model := tui.NewModel(librarySvc, playbackSvc, searchSvc, playlistSvc, libraryStore)
+	// Commands: asynchronous operations that may hit network
+	libCommands := library.NewCommands(client, libraryStore, logger)
+	playlistCmds := playlist.NewCommands(client, libraryStore, logger)
+
+	// Services
+	searchSvc := search.NewService(libQueries, logger)
+	playbackSvc := service.NewPlaybackService(launcher, client, logger)
+
+	// Create TUI model with CQRS interfaces
+	model := tui.NewModel(libQueries, libCommands, playlistQueries, playlistCmds, searchSvc, playbackSvc)
 
 	// Run the TUI
 	p := tea.NewProgram(

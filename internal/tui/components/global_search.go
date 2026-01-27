@@ -9,14 +9,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mmcdole/kino/internal/domain"
-	"github.com/mmcdole/kino/internal/service"
+	"github.com/mmcdole/kino/internal/search"
 	"github.com/mmcdole/kino/internal/tui/styles"
 )
 
 // GlobalSearch is the fuzzy search modal component
 type GlobalSearch struct {
 	input     textinput.Model
-	results   []service.FilterResult
+	results   []search.FilterResult
 	cursor    int
 	visible   bool
 	width     int
@@ -66,7 +66,7 @@ func (o GlobalSearch) IsVisible() bool {
 }
 
 // SetResults sets the search results with match highlighting data
-func (o *GlobalSearch) SetResults(results []service.FilterResult) {
+func (o *GlobalSearch) SetResults(results []search.FilterResult) {
 	o.results = results
 	o.cursor = 0
 	o.loading = false
@@ -95,7 +95,7 @@ func (o *GlobalSearch) QueryChanged() bool {
 }
 
 // Selected returns the selected result's FilterItem
-func (o GlobalSearch) Selected() *service.FilterItem {
+func (o GlobalSearch) Selected() *search.FilterItem {
 	if len(o.results) == 0 || o.cursor >= len(o.results) {
 		return nil
 	}
