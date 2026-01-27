@@ -64,7 +64,8 @@ type ListColumn struct {
 	filteredIdx  []int // indices into sorted slice (or raw if no sort)
 
 	// Display settings
-	showWatchStatus bool // Whether to show watch status indicators
+	showWatchStatus   bool // Whether to show watch status indicators
+	showLibraryCounts bool // Whether to keep library item counts visible after sync
 }
 
 // NewListColumn creates a new list column with the given type and title
@@ -371,6 +372,11 @@ func (c *ListColumn) SetSpinnerFrame(frame int) {
 // SetShowWatchStatus sets whether to display watch status indicators
 func (c *ListColumn) SetShowWatchStatus(show bool) {
 	c.showWatchStatus = show
+}
+
+// SetShowLibraryCounts sets whether to keep library item counts visible after sync
+func (c *ListColumn) SetShowLibraryCounts(show bool) {
+	c.showLibraryCounts = show
 }
 
 // SelectedLibrary returns the selected library (if in library column)
@@ -727,10 +733,12 @@ func (c *ListColumn) renderLibraryItem(lib domain.Library, selected bool, width 
 	}
 
 	title := lib.Name
-	// Show count if available
+	// Show count if available:
+	// - During sync: show progress (loaded/total)
+	// - After sync: show count if config flag is set OR briefly after sync completes
 	if state.Status == StatusSyncing && state.Total > 0 {
 		title = fmt.Sprintf("%s (%d/%d)", lib.Name, state.Loaded, state.Total)
-	} else if state.Status == StatusSynced && state.Loaded > 0 {
+	} else if (state.Status == StatusSynced || c.showLibraryCounts) && state.Loaded > 0 {
 		title = fmt.Sprintf("%s (%d)", lib.Name, state.Loaded)
 	}
 	title = styles.Truncate(title, width-4)

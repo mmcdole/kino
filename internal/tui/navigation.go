@@ -458,6 +458,7 @@ func (m *Model) navigateToSearchResult(item search.FilterItem) tea.Cmd {
 	libCol := components.NewLibraryColumn(m.allLibraryEntries())
 	libCol.SetLibraryStates(m.LibraryStates)
 	libCol.SetShowWatchStatus(m.UIConfig.ShowWatchStatus)
+	libCol.SetShowLibraryCounts(m.UIConfig.ShowLibraryCounts)
 	m.Inspector.SetLibraryStates(m.LibraryStates)
 
 	// Find and select the library

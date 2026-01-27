@@ -321,6 +321,7 @@ func (m Model) handleRefreshAll() (tea.Model, tea.Cmd) {
 	libCol := components.NewLibraryColumn(m.allLibraryEntries())
 	libCol.SetLibraryStates(m.LibraryStates)
 	libCol.SetShowWatchStatus(m.UIConfig.ShowWatchStatus)
+	libCol.SetShowLibraryCounts(m.UIConfig.ShowLibraryCounts)
 	m.Inspector.SetLibraryStates(m.LibraryStates)
 	m.ColumnStack.Reset(libCol)
 

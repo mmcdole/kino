@@ -29,6 +29,8 @@ player:
 ui:
   # Show watch status indicators (watched/unwatched/in-progress)
   show_watch_status: true
+  # Keep library item counts visible after sync completes
+  show_library_counts: false
 
 # Logging Configuration
 logging:
