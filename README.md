@@ -57,51 +57,9 @@ You'll be prompted to enter your server URL. Kino automatically detects whether 
 
 ## Configuration
 
-Kino stores configuration in `~/.config/kino/config.yaml` (created on first run).
+Config file: `~/.config/kino/config.yaml` (created on first run).
 
-### Video Player Setup
-
-**Default Behavior:**
-
-Kino auto-detects installed video players in priority order:
-
-| macOS | Linux |
-|-------|-------|
-| IINA, mpv, VLC | mpv, VLC, Celluloid, Haruna, smplayer, mplayer |
-
-Resume playback works automatically with detected players.
-
-**Custom Player (Optional):**
-
-```yaml
-player:
-  command: "mpv"
-  args:
-    - "--no-terminal"
-  start_flag: "--start=%d"  # Only needed for unknown players
-```
-
-<details>
-<summary><b>Known Players & Resume Flags</b></summary>
-
-| Player | Platforms | Resume Flag |
-|--------|-----------|-------------|
-| mpv | macOS, Linux | `--start=%d` |
-| VLC | macOS, Linux | `--start-time=%d` |
-| IINA | macOS | `--mpv-start=%d` |
-| Celluloid | Linux | `--mpv-start=%d` |
-| Haruna | Linux | `--start=%d` |
-| smplayer | Linux | `-ss %d` |
-| mplayer | Linux | `-ss %d` |
-
-For unlisted players, set `start_flag` with `%d` as the seconds placeholder.
-</details>
-
-See `config.example.yaml` for all options.
-
-## Contributing
-
-Contributions welcome! Please open an issue or PR.
+Kino auto-detects video players (mpv, VLC, IINA, Celluloid, etc.) with resume support. See `config.example.yaml` for custom player setup and all options.
 
 ## License
 
