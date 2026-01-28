@@ -66,6 +66,9 @@ type ListColumn struct {
 	// Display settings
 	showWatchStatus   bool // Whether to show watch status indicators
 	showLibraryCounts bool // Whether to keep library item counts visible after sync
+
+	// Content identity for race condition prevention
+	contentID string
 }
 
 // NewListColumn creates a new list column with the given type and title
@@ -377,6 +380,16 @@ func (c *ListColumn) SetShowWatchStatus(show bool) {
 // SetShowLibraryCounts sets whether to keep library item counts visible after sync
 func (c *ListColumn) SetShowLibraryCounts(show bool) {
 	c.showLibraryCounts = show
+}
+
+// SetContentID sets the content identity for race condition prevention
+func (c *ListColumn) SetContentID(id string) {
+	c.contentID = id
+}
+
+// ContentID returns the content identity for this column
+func (c *ListColumn) ContentID() string {
+	return c.contentID
 }
 
 // SelectedLibrary returns the selected library (if in library column)

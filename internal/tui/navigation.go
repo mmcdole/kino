@@ -74,6 +74,7 @@ type columnLoadSpec struct {
 func (m *Model) pushAndLoadColumn(spec columnLoadSpec, cursor int) *drillResult {
 	col := components.NewListColumn(spec.colType, spec.name)
 	col.SetShowWatchStatus(m.UIConfig.ShowWatchStatus)
+	col.SetContentID(spec.awaitID)
 	m.ColumnStack.Push(col, cursor)
 	m.updateLayout()
 
@@ -111,6 +112,7 @@ func (m *Model) navigateToMixedLibraryItem(lib *domain.Library, targets []NavTar
 
 	mixedCol := components.NewListColumn(components.ColumnTypeMixed, lib.Name)
 	mixedCol.SetShowWatchStatus(m.UIConfig.ShowWatchStatus)
+	mixedCol.SetContentID(lib.ID)
 
 	if cached, ok := m.Store.GetMixedContent(lib.ID); ok {
 		mixedCol.SetItems(cached)
@@ -324,6 +326,7 @@ func (m *Model) drillSelected() *drillResult {
 	case *domain.Playlist:
 		col := components.NewListColumn(components.ColumnTypePlaylistItems, v.Title)
 		col.SetShowWatchStatus(m.UIConfig.ShowWatchStatus)
+		col.SetContentID(v.ID)
 		m.ColumnStack.Push(col, cursor)
 		m.currentPlaylistID = v.ID
 		m.updateLayout()

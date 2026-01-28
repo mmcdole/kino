@@ -215,6 +215,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateLibraryStates()
 		}
 
+		// Validate content ID to prevent race condition
+		if !m.validateContentID(msg.LibraryID) {
+			return m, nil
+		}
+
 		// Update top column with movies
 		if top := m.ColumnStack.Top(); top != nil {
 			top.SetItems(msg.Movies)
@@ -237,6 +242,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			state.Error = nil
 			m.LibraryStates[msg.LibraryID] = state
 			m.updateLibraryStates()
+		}
+
+		// Validate content ID to prevent race condition
+		if !m.validateContentID(msg.LibraryID) {
+			return m, nil
 		}
 
 		// Update top column with shows
@@ -263,6 +273,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateLibraryStates()
 		}
 
+		// Validate content ID to prevent race condition
+		if !m.validateContentID(msg.LibraryID) {
+			return m, nil
+		}
+
 		// Update top column with mixed content
 		if top := m.ColumnStack.Top(); top != nil {
 			top.SetItems(msg.Items)
@@ -279,6 +294,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case SeasonsLoadedMsg:
 		m.Loading = false
 
+		// Validate content ID to prevent race condition
+		if !m.validateContentID(msg.ShowID) {
+			return m, nil
+		}
+
 		// Update top column with seasons
 		if top := m.ColumnStack.Top(); top != nil {
 			top.SetItems(msg.Seasons)
@@ -294,6 +314,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case EpisodesLoadedMsg:
 		m.Loading = false
+
+		// Validate content ID to prevent race condition
+		if !m.validateContentID(msg.SeasonID) {
+			return m, nil
+		}
 
 		// Update top column with episodes
 		if top := m.ColumnStack.Top(); top != nil {
@@ -421,6 +446,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case PlaylistItemsLoadedMsg:
 		m.Loading = false
+
+		// Validate content ID to prevent race condition
+		if !m.validateContentID(msg.PlaylistID) {
+			return m, nil
+		}
+
 		m.currentPlaylistID = msg.PlaylistID
 		if top := m.ColumnStack.Top(); top != nil {
 			top.SetItems(msg.Items)
@@ -495,6 +526,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // libraryColumn returns the library column (index 0) or nil if not available
 func (m *Model) libraryColumn() *components.ListColumn {
 	return m.ColumnStack.Get(0)
+}
+
+// validateContentID checks if the top column has the expected content ID.
+// Returns false if the column doesn't match (user navigated away before async load completed).
+func (m *Model) validateContentID(expectedID string) bool {
+	top := m.ColumnStack.Top()
+	return top != nil && top.ContentID() == expectedID
 }
 
 // updateLibraryStates updates the library states in the library column and inspector
