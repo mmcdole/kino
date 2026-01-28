@@ -259,8 +259,6 @@ func (i Inspector) renderLibraryInspector(lib domain.Library, width int) string 
 		b.WriteString(styles.DimStyle.Render("Browse and manage your playlists"))
 		b.WriteString("\n\n")
 		b.WriteString(styles.SubtitleStyle.Render("Press Enter to browse"))
-		b.WriteString("\n")
-		b.WriteString(styles.DimStyle.Render("P: Jump here from anywhere"))
 		return b.String()
 	}
 
