@@ -18,6 +18,7 @@ type GlobalSearch struct {
 	input     textinput.Model
 	results   []search.FilterResult
 	cursor    int
+	offset    int
 	visible   bool
 	width     int
 	height    int
@@ -50,6 +51,7 @@ func (o *GlobalSearch) Show() {
 	o.input.Prompt = "🔍 "
 	o.results = nil
 	o.cursor = 0
+	o.offset = 0
 	o.loading = false
 	o.prevQuery = ""
 }
@@ -69,6 +71,7 @@ func (o GlobalSearch) IsVisible() bool {
 func (o *GlobalSearch) SetResults(results []search.FilterResult) {
 	o.results = results
 	o.cursor = 0
+	o.offset = 0
 	o.loading = false
 }
 
@@ -137,12 +140,14 @@ func (o GlobalSearch) Update(msg tea.Msg) (GlobalSearch, tea.Cmd, bool) {
 		case key.Matches(msg, GlobalSearchKeys.Down):
 			if o.cursor < resultCount-1 {
 				o.cursor++
+				o.ensureVisible(10)
 			}
 			return o, nil, false
 
 		case key.Matches(msg, GlobalSearchKeys.Up):
 			if o.cursor > 0 {
 				o.cursor--
+				o.ensureVisible(10)
 			}
 			return o, nil, false
 
@@ -156,6 +161,15 @@ func (o GlobalSearch) Update(msg tea.Msg) (GlobalSearch, tea.Cmd, bool) {
 	// Handle other messages
 	o.input, cmd = o.input.Update(msg)
 	return o, cmd, false
+}
+
+func (o *GlobalSearch) ensureVisible(maxVisible int) {
+	if o.cursor < o.offset {
+		o.offset = o.cursor
+	}
+	if o.cursor >= o.offset+maxVisible {
+		o.offset = o.cursor - maxVisible + 1
+	}
 }
 
 // View renders the component
@@ -292,12 +306,12 @@ func (o GlobalSearch) renderResults(b *strings.Builder, modalWidth, maxResults i
 		return
 	}
 
-	displayCount := len(o.results)
+	displayCount := len(o.results) - o.offset
 	if displayCount > maxResults {
 		displayCount = maxResults
 	}
 
-	for i := 0; i < displayCount; i++ {
+	for i := o.offset; i < o.offset+displayCount; i++ {
 		result := o.results[i]
 		selected := i == o.cursor
 
@@ -341,7 +355,7 @@ func (o GlobalSearch) renderResults(b *strings.Builder, modalWidth, maxResults i
 		b.WriteString("\n")
 	}
 
-	if len(o.results) > maxResults {
-		b.WriteString(styles.DimStyle.Render(fmt.Sprintf("... and %d more", len(o.results)-maxResults)))
+	if remaining := len(o.results) - (o.offset + displayCount); remaining > 0 {
+		b.WriteString(styles.DimStyle.Render(fmt.Sprintf("... and %d more", remaining)))
 	}
 }
