@@ -82,6 +82,8 @@ func NewListColumn(colType ColumnType, title string) *ListColumn {
 	return &ListColumn{
 		columnType:    colType,
 		title:         title,
+		sortField:     SortTitle,
+		sortDir:       SortAsc,
 		filterInput:   ti,
 		libraryStates: make(map[string]LibrarySyncState),
 	}
@@ -349,9 +351,13 @@ func (c *ListColumn) SetItems(rawItems interface{}) {
 		}
 	}
 
-	// Re-apply current sort if active
-	if c.sortField != SortDefault {
+	// Apply title sort only to sortable column types (not episodes, seasons, etc.)
+	if c.columnSortable() {
 		c.buildSortedIdx()
+	} else {
+		c.sortField = SortDefault
+		c.sortDir = SortAsc
+		c.sortedIdx = nil
 	}
 }
 
@@ -1000,6 +1006,17 @@ func (c *ListColumn) renderMixedItem(item domain.ListItem, selected bool, width 
 	return styles.RenderListRow(parts, selected, width)
 }
 
+// columnSortable returns true if this column type supports user-facing sorting.
+// Episodes, seasons, libraries, playlists, and playlist items keep their natural order.
+func (c *ListColumn) columnSortable() bool {
+	switch c.columnType {
+	case ColumnTypeMovies, ColumnTypeShows, ColumnTypeMixed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Sort methods
 
 // ApplySort sets the sort field and direction, rebuilds sortedIdx, and resets view
@@ -1009,11 +1026,6 @@ func (c *ListColumn) ApplySort(field SortField, dir SortDirection) {
 	c.clearFilter()
 	c.cursor = 0
 	c.offset = 0
-
-	if field == SortDefault {
-		c.sortedIdx = nil
-		return
-	}
 
 	c.buildSortedIdx()
 }

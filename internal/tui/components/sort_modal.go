@@ -3,6 +3,8 @@ package components
 import (
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mmcdole/kino/internal/tui/styles"
 )
@@ -21,8 +23,6 @@ const (
 // String returns the display name for the sort field
 func (f SortField) String() string {
 	switch f {
-	case SortDefault:
-		return "Default"
 	case SortTitle:
 		return "Title"
 	case SortDateAdded:
@@ -54,12 +54,12 @@ func DefaultDirection(field SortField) SortDirection {
 
 // MovieSortOptions returns the available sort options for movies
 func MovieSortOptions() []SortField {
-	return []SortField{SortDefault, SortTitle, SortDateAdded, SortReleased}
+	return []SortField{SortTitle, SortDateAdded, SortReleased}
 }
 
 // ShowSortOptions returns the available sort options for shows
 func ShowSortOptions() []SortField {
-	return []SortField{SortDefault, SortTitle, SortDateAdded, SortLastUpdated, SortReleased}
+	return []SortField{SortTitle, SortDateAdded, SortLastUpdated, SortReleased}
 }
 
 // SortSelection represents the user's sort choice
@@ -103,29 +103,36 @@ func (m SortModal) IsVisible() bool {
 	return m.visible
 }
 
-// HandleKey processes a key press, returns (handled, selection).
+// HandleKeyMsg processes a key press, returns (handled, selection).
 // If selection is non-nil, the user confirmed a choice.
-func (m *SortModal) HandleKey(key string) (handled bool, selection *SortSelection) {
+func (m *SortModal) HandleKeyMsg(msg tea.KeyMsg) (handled bool, selection *SortSelection) {
 	if !m.visible {
 		return false, nil
 	}
 
-	switch key {
-	case "j", "down":
+	switch {
+	case key.Matches(msg, SortModalKeys.Down):
 		if m.cursor < len(m.options)-1 {
 			m.cursor++
 		}
 		return true, nil
-	case "k", "up":
+	case key.Matches(msg, SortModalKeys.Up):
 		if m.cursor > 0 {
 			m.cursor--
 		}
 		return true, nil
-	case "enter":
+	case key.Matches(msg, SortModalKeys.Left):
+		chosen := m.options[m.cursor]
+		m.visible = false
+		return true, &SortSelection{Field: chosen, Direction: SortAsc}
+	case key.Matches(msg, SortModalKeys.Right):
+		chosen := m.options[m.cursor]
+		m.visible = false
+		return true, &SortSelection{Field: chosen, Direction: SortDesc}
+	case key.Matches(msg, SortModalKeys.Enter):
 		chosen := m.options[m.cursor]
 		dir := DefaultDirection(chosen)
 		if chosen == m.activeField {
-			// Toggle direction
 			if m.activeDir == SortAsc {
 				dir = SortDesc
 			} else {
@@ -134,7 +141,7 @@ func (m *SortModal) HandleKey(key string) (handled bool, selection *SortSelectio
 		}
 		m.visible = false
 		return true, &SortSelection{Field: chosen, Direction: dir}
-	case "esc", "s":
+	case key.Matches(msg, SortModalKeys.Escape), key.Matches(msg, SortModalKeys.Close):
 		m.visible = false
 		return true, nil
 	}
@@ -194,7 +201,10 @@ func (m SortModal) View() string {
 		}
 	}
 
-	content := strings.Join(lines, "\n")
+	hintText := "← asc   desc →"
+	pad := max((20-lipgloss.Width(hintText))/2, 0)
+	hint := styles.DimStyle.Render(strings.Repeat(" ", pad) + hintText)
+	content := strings.Join(lines, "\n") + "\n\n" + hint
 
 	modal := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

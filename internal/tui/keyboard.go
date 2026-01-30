@@ -464,7 +464,7 @@ func (m Model) handleGlobalSearchInput(msg tea.KeyMsg) (Model, tea.Cmd) {
 
 // handleSortModalInput handles input when sort modal is visible
 func (m Model) handleSortModalInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
-	handled, selection := m.SortModal.HandleKey(msg.String())
+	handled, selection := m.SortModal.HandleKeyMsg(msg)
 	if handled {
 		if selection != nil {
 			if top := m.ColumnStack.Top(); top != nil {
