@@ -18,6 +18,9 @@ const (
 	SortDateAdded
 	SortLastUpdated // shows only
 	SortReleased
+	SortDuration
+	SortRating
+	SortEpisodeNum
 )
 
 // String returns the display name for the sort field
@@ -31,6 +34,12 @@ func (f SortField) String() string {
 		return "Last Updated"
 	case SortReleased:
 		return "Release Date"
+	case SortDuration:
+		return "Duration"
+	case SortRating:
+		return "Rating"
+	case SortEpisodeNum:
+		return "Episode #"
 	default:
 		return "Unknown"
 	}
@@ -46,20 +55,34 @@ const (
 
 // DefaultDirection returns the default sort direction for a field
 func DefaultDirection(field SortField) SortDirection {
-	if field == SortTitle {
+	switch field {
+	case SortTitle:
 		return SortAsc // A-Z
+	case SortEpisodeNum:
+		return SortAsc // natural order
+	default:
+		return SortDesc // newest/highest/longest first
 	}
-	return SortDesc // newest first
 }
 
 // MovieSortOptions returns the available sort options for movies
 func MovieSortOptions() []SortField {
-	return []SortField{SortTitle, SortDateAdded, SortReleased}
+	return []SortField{SortTitle, SortDateAdded, SortReleased, SortDuration, SortRating}
 }
 
 // ShowSortOptions returns the available sort options for shows
 func ShowSortOptions() []SortField {
-	return []SortField{SortTitle, SortDateAdded, SortLastUpdated, SortReleased}
+	return []SortField{SortTitle, SortDateAdded, SortLastUpdated, SortReleased, SortRating}
+}
+
+// EpisodeSortOptions returns the available sort options for episodes
+func EpisodeSortOptions() []SortField {
+	return []SortField{SortEpisodeNum, SortTitle, SortDuration, SortDateAdded, SortRating}
+}
+
+// MixedSortOptions returns the available sort options for mixed content
+func MixedSortOptions() []SortField {
+	return []SortField{SortTitle, SortDateAdded, SortReleased, SortDuration, SortRating}
 }
 
 // SortSelection represents the user's sort choice

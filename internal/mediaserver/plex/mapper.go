@@ -2,6 +2,7 @@ package plex
 
 import (
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mmcdole/kino/internal/domain"
@@ -59,11 +60,32 @@ func mapMovie(m Metadata, serverURL string) domain.MediaItem {
 		item.SortTitle = item.Title
 	}
 
+	if m.AudienceRating > 0 {
+		item.Rating = m.AudienceRating
+	} else if m.Rating > 0 {
+		item.Rating = m.Rating
+	}
+
 	if m.Thumb != "" {
 		item.ThumbURL = serverURL + m.Thumb
 	}
 	if m.Art != "" {
 		item.ArtURL = serverURL + m.Art
+	}
+
+	item.ContentRating = normalizeContentRating(m.ContentRating)
+	if len(m.Media) > 0 {
+		media := m.Media[0]
+		item.Bitrate = media.Bitrate
+		item.Width = media.Width
+		item.Height = media.Height
+		item.VideoCodec = normalizeCodec(media.VideoCodec)
+		item.AudioCodec = normalizeAudioCodec(media.AudioCodec)
+		item.AudioChannels = media.AudioChannels
+		item.Container = normalizeContainer(media.Container)
+		if len(media.Part) > 0 {
+			item.FileSize = media.Part[0].Size
+		}
 	}
 
 	return item
@@ -102,12 +124,20 @@ func mapShow(m Metadata, serverURL string) domain.Show {
 		show.SortTitle = show.Title
 	}
 
+	if m.AudienceRating > 0 {
+		show.Rating = m.AudienceRating
+	} else if m.Rating > 0 {
+		show.Rating = m.Rating
+	}
+
 	if m.Thumb != "" {
 		show.ThumbURL = serverURL + m.Thumb
 	}
 	if m.Art != "" {
 		show.ArtURL = serverURL + m.Art
 	}
+
+	show.ContentRating = normalizeContentRating(m.ContentRating)
 
 	return show
 }
@@ -183,11 +213,32 @@ func mapEpisode(m Metadata, serverURL string) domain.MediaItem {
 		item.SortTitle = item.Title
 	}
 
+	if m.AudienceRating > 0 {
+		item.Rating = m.AudienceRating
+	} else if m.Rating > 0 {
+		item.Rating = m.Rating
+	}
+
 	if m.Thumb != "" {
 		item.ThumbURL = serverURL + m.Thumb
 	}
 	if m.Art != "" {
 		item.ArtURL = serverURL + m.Art
+	}
+
+	item.ContentRating = normalizeContentRating(m.ContentRating)
+	if len(m.Media) > 0 {
+		media := m.Media[0]
+		item.Bitrate = media.Bitrate
+		item.Width = media.Width
+		item.Height = media.Height
+		item.VideoCodec = normalizeCodec(media.VideoCodec)
+		item.AudioCodec = normalizeAudioCodec(media.AudioCodec)
+		item.AudioChannels = media.AudioChannels
+		item.Container = normalizeContainer(media.Container)
+		if len(media.Part) > 0 {
+			item.FileSize = media.Part[0].Size
+		}
 	}
 
 	return item
@@ -224,17 +275,34 @@ func MapMediaItem(m Metadata, serverURL string) domain.MediaItem {
 	}
 }
 
-// extractFormat extracts the video codec from media info
-func extractFormat(media []Media) string {
-	if len(media) == 0 {
+// normalizeContentRating shortens verbose content rating strings
+func normalizeContentRating(rating string) string {
+	switch strings.ToLower(rating) {
+	case "not rated", "unrated":
+		return "NR"
+	default:
+		return rating
+	}
+}
+
+// normalizeContainer cleans up the container format string
+func normalizeContainer(container string) string {
+	if container == "" {
 		return ""
 	}
+	// Plex may return comma-separated list (e.g. "mov,mp4,m4a,3gp,3g2,mj2"); take first
+	if i := strings.Index(container, ","); i >= 0 {
+		container = container[:i]
+	}
+	return strings.ToLower(container)
+}
 
-	codec := media[0].VideoCodec
-	switch codec {
-	case "hevc":
+// normalizeCodec converts video codec names to display format
+func normalizeCodec(codec string) string {
+	switch strings.ToLower(codec) {
+	case "hevc", "h265":
 		return "HEVC"
-	case "h264":
+	case "h264", "avc":
 		return "H.264"
 	case "mpeg4":
 		return "MPEG4"
@@ -245,7 +313,33 @@ func extractFormat(media []Media) string {
 	case "av1":
 		return "AV1"
 	default:
-		return codec
+		return strings.ToUpper(codec)
+	}
+}
+
+// normalizeAudioCodec converts audio codec names to display format
+func normalizeAudioCodec(codec string) string {
+	switch strings.ToLower(codec) {
+	case "aac":
+		return "AAC"
+	case "ac3":
+		return "AC3"
+	case "eac3":
+		return "EAC3"
+	case "dca", "dts":
+		return "DTS"
+	case "truehd":
+		return "TrueHD"
+	case "flac":
+		return "FLAC"
+	case "mp3":
+		return "MP3"
+	case "opus":
+		return "Opus"
+	case "vorbis":
+		return "Vorbis"
+	default:
+		return strings.ToUpper(codec)
 	}
 }
 

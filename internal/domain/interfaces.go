@@ -1,5 +1,7 @@
 package domain
 
+import "time"
+
 // ListItem is the polymorphic interface for items that can be displayed in lists.
 // It provides a common API for display, filtering, and sorting across all content types.
 // Domain entities (MediaItem, Show, Season) implement this interface directly.
@@ -33,4 +35,10 @@ type ListItem interface {
 
 	// GetUpdatedAt returns the unix timestamp when last updated (0 if not applicable)
 	GetUpdatedAt() int64
+
+	// GetDuration returns the duration (0 if not applicable)
+	GetDuration() time.Duration
+
+	// GetRating returns the audience/community rating 0-10 (0 if not applicable)
+	GetRating() float64
 }

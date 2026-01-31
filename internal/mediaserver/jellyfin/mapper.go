@@ -89,6 +89,8 @@ func mapMovie(item Item, serverURL string) domain.MediaItem {
 		mi.SortTitle = mi.Title
 	}
 
+	mi.Rating = item.CommunityRating
+
 	// Parse dates
 	if item.DateCreated != "" {
 		if t, err := time.Parse(time.RFC3339, item.DateCreated); err == nil {
@@ -106,6 +108,17 @@ func mapMovie(item Item, serverURL string) domain.MediaItem {
 	// Image URLs
 	if item.ImageTags.Primary != "" {
 		mi.ThumbURL = fmt.Sprintf("%s/Items/%s/Images/Primary?tag=%s", serverURL, item.ID, item.ImageTags.Primary)
+	}
+
+	mi.ContentRating = normalizeContentRating(item.OfficialRating)
+	mi.VideoCodec = extractVideoCodec(item)
+	mi.AudioCodec, mi.AudioChannels = extractAudioInfo(item)
+	mi.Container = normalizeContainer(item.Container)
+	if len(item.MediaSources) > 0 {
+		src := item.MediaSources[0]
+		mi.FileSize = src.Size
+		mi.Bitrate = extractBitrate(item)
+		mi.Width, mi.Height = extractResolution(item)
 	}
 
 	return mi
@@ -140,6 +153,9 @@ func mapShow(item Item, serverURL string) domain.Show {
 	if show.SortTitle == "" {
 		show.SortTitle = show.Title
 	}
+
+	show.Rating = item.CommunityRating
+	show.ContentRating = normalizeContentRating(item.OfficialRating)
 
 	// Parse dates
 	if item.DateCreated != "" {
@@ -243,6 +259,8 @@ func mapEpisode(item Item, serverURL string) domain.MediaItem {
 		mi.SortTitle = mi.Title
 	}
 
+	mi.Rating = item.CommunityRating
+
 	// Parse dates
 	if item.DateCreated != "" {
 		if t, err := time.Parse(time.RFC3339, item.DateCreated); err == nil {
@@ -260,6 +278,17 @@ func mapEpisode(item Item, serverURL string) domain.MediaItem {
 	// Image URLs
 	if item.ImageTags.Primary != "" {
 		mi.ThumbURL = fmt.Sprintf("%s/Items/%s/Images/Primary?tag=%s", serverURL, item.ID, item.ImageTags.Primary)
+	}
+
+	mi.ContentRating = normalizeContentRating(item.OfficialRating)
+	mi.VideoCodec = extractVideoCodec(item)
+	mi.AudioCodec, mi.AudioChannels = extractAudioInfo(item)
+	mi.Container = normalizeContainer(item.Container)
+	if len(item.MediaSources) > 0 {
+		src := item.MediaSources[0]
+		mi.FileSize = src.Size
+		mi.Bitrate = extractBitrate(item)
+		mi.Width, mi.Height = extractResolution(item)
 	}
 
 	return mi
@@ -349,6 +378,105 @@ func normalizeCodec(codec string) string {
 	default:
 		return strings.ToUpper(codec)
 	}
+}
+
+// extractAudioInfo extracts the audio codec and channel count from item media streams
+func extractAudioInfo(item Item) (string, int) {
+	for _, source := range item.MediaSources {
+		for _, stream := range source.MediaStreams {
+			if stream.Type == "Audio" {
+				return normalizeAudioCodec(stream.Codec), stream.Channels
+			}
+		}
+	}
+	for _, stream := range item.MediaStreams {
+		if stream.Type == "Audio" {
+			return normalizeAudioCodec(stream.Codec), stream.Channels
+		}
+	}
+	return "", 0
+}
+
+// normalizeAudioCodec converts audio codec names to display format
+func normalizeAudioCodec(codec string) string {
+	switch strings.ToLower(codec) {
+	case "aac":
+		return "AAC"
+	case "ac3":
+		return "AC3"
+	case "eac3":
+		return "EAC3"
+	case "dca", "dts":
+		return "DTS"
+	case "truehd":
+		return "TrueHD"
+	case "flac":
+		return "FLAC"
+	case "mp3":
+		return "MP3"
+	case "opus":
+		return "Opus"
+	case "vorbis":
+		return "Vorbis"
+	default:
+		return strings.ToUpper(codec)
+	}
+}
+
+// normalizeContentRating shortens verbose content rating strings
+func normalizeContentRating(rating string) string {
+	switch strings.ToLower(rating) {
+	case "not rated", "unrated":
+		return "NR"
+	default:
+		return rating
+	}
+}
+
+// normalizeContainer cleans up the container format string
+func normalizeContainer(container string) string {
+	if container == "" {
+		return ""
+	}
+	// Jellyfin may return comma-separated list; take first
+	if i := strings.Index(container, ","); i >= 0 {
+		container = container[:i]
+	}
+	return strings.ToLower(container)
+}
+
+// extractBitrate extracts the video bitrate from item media streams
+func extractBitrate(item Item) int {
+	for _, source := range item.MediaSources {
+		for _, stream := range source.MediaStreams {
+			if stream.Type == "Video" && stream.BitRate > 0 {
+				return stream.BitRate / 1000 // Convert to kbps
+			}
+		}
+	}
+	for _, stream := range item.MediaStreams {
+		if stream.Type == "Video" && stream.BitRate > 0 {
+			return stream.BitRate / 1000
+		}
+	}
+	return 0
+}
+
+// extractResolution extracts the video width and height from item media streams
+func extractResolution(item Item) (int, int) {
+	for _, source := range item.MediaSources {
+		for _, stream := range source.MediaStreams {
+			if stream.Type == "Video" && stream.Width > 0 {
+				return stream.Width, stream.Height
+			}
+		}
+	}
+	for _, stream := range item.MediaStreams {
+		if stream.Type == "Video" && stream.Width > 0 {
+			return stream.Width, stream.Height
+		}
+	}
+	return 0, 0
 }
 
 // MapPlaylists converts Jellyfin items to domain playlists

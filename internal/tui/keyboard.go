@@ -198,6 +198,10 @@ func (m Model) handleSort() (tea.Model, tea.Cmd) {
 		opts = components.MovieSortOptions()
 	case components.ColumnTypeShows:
 		opts = components.ShowSortOptions()
+	case components.ColumnTypeEpisodes:
+		opts = components.EpisodeSortOptions()
+	case components.ColumnTypeMixed:
+		opts = components.MixedSortOptions()
 	}
 	if opts != nil {
 		field, dir := top.SortState()

@@ -47,6 +47,7 @@ type Item struct {
 	ProductionYear     int           `json:"ProductionYear,omitempty"`
 	RunTimeTicks       int64         `json:"RunTimeTicks,omitempty"` // Duration in 100-nanosecond units
 	CommunityRating    float64       `json:"CommunityRating,omitempty"`
+	OfficialRating     string        `json:"OfficialRating,omitempty"`
 	ImageTags          ImageTags     `json:"ImageTags,omitempty"`
 	ParentID           string        `json:"ParentId,omitempty"`
 	SeriesID           string        `json:"SeriesId,omitempty"`

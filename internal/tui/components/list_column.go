@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -351,8 +352,15 @@ func (c *ListColumn) SetItems(rawItems interface{}) {
 		}
 	}
 
-	// Apply title sort only to sortable column types (not episodes, seasons, etc.)
+	// Apply default sort for sortable column types
 	if c.columnSortable() {
+		if c.columnType == ColumnTypeEpisodes {
+			c.sortField = SortEpisodeNum
+			c.sortDir = SortAsc
+		} else {
+			c.sortField = SortTitle
+			c.sortDir = SortAsc
+		}
 		c.buildSortedIdx()
 	} else {
 		c.sortField = SortDefault
@@ -789,15 +797,19 @@ func (c *ListColumn) renderMovieItem(item domain.MediaItem, selected bool, width
 
 	// Available space: width - indicator(1) - space(1) - margins(2)
 	availableForTitle := width - 4
+	tag := c.sortTag(&item)
+	if tag != "" {
+		availableForTitle -= len(tag) + 1
+	}
 	if availableForTitle < 5 {
 		availableForTitle = 5
 	}
 	title = styles.Truncate(title, availableForTitle)
 
-	parts := []styles.RowPart{
+	parts := appendSortTag([]styles.RowPart{
 		{Text: indicatorChar, Foreground: &indicatorFg},
 		{Text: " " + title, Foreground: nil},
-	}
+	}, tag, width)
 
 	return styles.RenderListRow(parts, selected, width)
 }
@@ -818,15 +830,19 @@ func (c *ListColumn) renderShowItem(show domain.Show, selected bool, width int) 
 
 	// Available space: width - indicator(1) - space(1) - margins(2)
 	availableForTitle := width - 4
+	tag := c.sortTag(&show)
+	if tag != "" {
+		availableForTitle -= len(tag) + 1
+	}
 	if availableForTitle < 5 {
 		availableForTitle = 5
 	}
 	title = styles.Truncate(title, availableForTitle)
 
-	parts := []styles.RowPart{
+	parts := appendSortTag([]styles.RowPart{
 		{Text: indicatorChar, Foreground: &indicatorFg},
 		{Text: " " + title, Foreground: nil},
-	}
+	}, tag, width)
 
 	return styles.RenderListRow(parts, selected, width)
 }
@@ -871,16 +887,20 @@ func (c *ListColumn) renderEpisodeItem(item domain.MediaItem, selected bool, wid
 
 	// Available space: width - indicator(1) - space(1) - code - space(1) - margins(2)
 	availableForTitle := width - 4 - len(code) - 1
+	tag := c.sortTag(&item)
+	if tag != "" {
+		availableForTitle -= len(tag) + 1
+	}
 	if availableForTitle < 5 {
 		availableForTitle = 5
 	}
 	title := styles.Truncate(item.Title, availableForTitle)
 
-	parts := []styles.RowPart{
+	parts := appendSortTag([]styles.RowPart{
 		{Text: indicatorChar, Foreground: &indicatorFg},
 		{Text: " " + code, Foreground: &plexOrange},
 		{Text: " " + title, Foreground: nil},
-	}
+	}, tag, width)
 
 	return styles.RenderListRow(parts, selected, width)
 }
@@ -996,24 +1016,102 @@ func (c *ListColumn) renderMixedItem(item domain.ListItem, selected bool, width 
 
 	// Available space: width - indicator(1) - space(1) - margins(2)
 	availableForTitle := width - 4
+	tag := c.sortTag(item)
+	if tag != "" {
+		availableForTitle -= len(tag) + 1
+	}
 	if availableForTitle < 5 {
 		availableForTitle = 5
 	}
 	title = styles.Truncate(title, availableForTitle)
 
-	parts := []styles.RowPart{
+	parts := appendSortTag([]styles.RowPart{
 		{Text: indicatorChar, Foreground: &indicatorFg},
 		{Text: " " + title, Foreground: nil},
-	}
+	}, tag, width)
 
 	return styles.RenderListRow(parts, selected, width)
+}
+
+// sortTag returns a right-aligned tag string for the current sort field, or "" if
+// sorting by the default field or the value is zero/empty.
+func (c *ListColumn) sortTag(item domain.ListItem) string {
+	if c.sortField == SortTitle || c.sortField == SortEpisodeNum {
+		return ""
+	}
+
+	switch c.sortField {
+	case SortDuration:
+		d := item.GetDuration()
+		if d <= 0 {
+			return ""
+		}
+		h := int(d.Hours())
+		m := int(d.Minutes()) % 60
+		if h > 0 {
+			return fmt.Sprintf("%dh %dm", h, m)
+		}
+		return fmt.Sprintf("%dm", m)
+	case SortRating:
+		r := item.GetRating()
+		if r == 0 {
+			return ""
+		}
+		return fmt.Sprintf("%.1f", r)
+	case SortDateAdded, SortLastUpdated:
+		var ts int64
+		if c.sortField == SortDateAdded {
+			ts = item.GetAddedAt()
+		} else {
+			ts = item.GetUpdatedAt()
+		}
+		if ts == 0 {
+			return ""
+		}
+		return formatMonthYear(ts)
+	case SortReleased:
+		// Skip for movies/shows since year is already in the title
+		switch c.columnType {
+		case ColumnTypeMovies, ColumnTypeShows, ColumnTypeMixed:
+			return ""
+		}
+		y := item.GetYear()
+		if y == 0 {
+			return ""
+		}
+		return fmt.Sprintf("%d", y)
+	}
+	return ""
+}
+
+// appendSortTag appends a right-aligned dim gray tag to the row parts.
+// It calculates the gap needed to push the tag to the right edge within the given width.
+func appendSortTag(parts []styles.RowPart, tag string, width int) []styles.RowPart {
+	if tag == "" {
+		return parts
+	}
+	used := 2 // left + right margin
+	for _, p := range parts {
+		used += lipgloss.Width(p.Text)
+	}
+	gap := width - used - len(tag)
+	if gap < 1 {
+		gap = 1
+	}
+	dimGray := styles.DimGray
+	return append(parts, styles.RowPart{Text: strings.Repeat(" ", gap) + tag, Foreground: &dimGray})
+}
+
+// formatMonthYear formats a unix timestamp as "Jan 2006"
+func formatMonthYear(ts int64) string {
+	return time.Unix(ts, 0).Format("Jan 2006")
 }
 
 // columnSortable returns true if this column type supports user-facing sorting.
 // Episodes, seasons, libraries, playlists, and playlist items keep their natural order.
 func (c *ListColumn) columnSortable() bool {
 	switch c.columnType {
-	case ColumnTypeMovies, ColumnTypeShows, ColumnTypeMixed:
+	case ColumnTypeMovies, ColumnTypeShows, ColumnTypeMixed, ColumnTypeEpisodes:
 		return true
 	default:
 		return false
@@ -1110,6 +1208,45 @@ func (c *ListColumn) compareBySortField(i, j int) int {
 		}
 		if yi > yj {
 			return 1
+		}
+		return 0
+	case SortDuration:
+		di := itemI.GetDuration()
+		dj := itemJ.GetDuration()
+		if di < dj {
+			return -1
+		}
+		if di > dj {
+			return 1
+		}
+		return 0
+	case SortRating:
+		ri := itemI.GetRating()
+		rj := itemJ.GetRating()
+		if ri < rj {
+			return -1
+		}
+		if ri > rj {
+			return 1
+		}
+		return 0
+	case SortEpisodeNum:
+		// Compare by season number first, then episode number
+		miI, okI := itemI.(*domain.MediaItem)
+		miJ, okJ := itemJ.(*domain.MediaItem)
+		if okI && okJ {
+			if miI.SeasonNum != miJ.SeasonNum {
+				if miI.SeasonNum < miJ.SeasonNum {
+					return -1
+				}
+				return 1
+			}
+			if miI.EpisodeNum < miJ.EpisodeNum {
+				return -1
+			}
+			if miI.EpisodeNum > miJ.EpisodeNum {
+				return 1
+			}
 		}
 		return 0
 	default:
