@@ -505,10 +505,37 @@ func (c *Client) AddToPlaylist(ctx context.Context, playlistID string, itemIDs [
 	return nil
 }
 
-// RemoveFromPlaylist removes an item from a playlist
+// RemoveFromPlaylist removes an item from a playlist.
+// Plex requires the playlist-specific entry ID (playlistItemID), not the media's ratingKey.
+// This method fetches playlist items to resolve the correct entry ID internally.
 func (c *Client) RemoveFromPlaylist(ctx context.Context, playlistID string, itemID string) error {
-	path := fmt.Sprintf("/playlists/%s/items/%s", playlistID, itemID)
-	reqURL := fmt.Sprintf("%s%s", c.baseURL, path)
+	// Fetch playlist items to find the playlistItemID for this ratingKey
+	path := fmt.Sprintf("/playlists/%s/items", playlistID)
+	body, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return err
+	}
+
+	container, err := c.parseResponse(body)
+	if err != nil {
+		return err
+	}
+
+	var entryID int
+	found := false
+	for _, m := range container.Metadata {
+		if m.RatingKey == itemID && m.PlaylistItemID > 0 {
+			entryID = m.PlaylistItemID
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("item %s not found in playlist %s", itemID, playlistID)
+	}
+
+	deletePath := fmt.Sprintf("/playlists/%s/items/%d", playlistID, entryID)
+	reqURL := fmt.Sprintf("%s%s", c.baseURL, deletePath)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, reqURL, nil)
 	if err != nil {

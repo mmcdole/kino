@@ -131,12 +131,16 @@ func (s *Service) GetPlaylistMembership(ctx context.Context, itemID string) (map
 
 	membership := make(map[string]bool)
 
-	// Check each playlist's cached items
+	// Check each playlist's items, fetching from server if not cached
 	for _, p := range playlists {
 		items, ok := s.store.GetPlaylistItems(p.ID)
 		if !ok {
-			// Items not cached for this playlist, skip
-			continue
+			var err error
+			items, err = s.FetchPlaylistItems(ctx, p.ID)
+			if err != nil {
+				s.logger.Error("failed to fetch playlist items for membership check", "error", err, "playlistID", p.ID)
+				continue
+			}
 		}
 
 		for _, item := range items {

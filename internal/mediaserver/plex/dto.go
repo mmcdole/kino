@@ -84,6 +84,7 @@ type Metadata struct {
 	LibrarySectionID      int      `json:"librarySectionID,omitempty"`
 	LibrarySectionKey     string   `json:"librarySectionKey,omitempty"`
 	LibrarySectionTitle   string   `json:"librarySectionTitle,omitempty"`
+	PlaylistItemID        int      `json:"playlistItemID,omitempty"`
 	Media                 []Media  `json:"Media,omitempty"`
 }
 
