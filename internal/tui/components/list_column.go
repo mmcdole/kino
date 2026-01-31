@@ -490,12 +490,15 @@ func (c *ListColumn) SetSelectedByID(id string) bool {
 	if id == "" {
 		return true
 	}
-	idx := c.FindIndexByID(id)
-	if idx < 0 {
-		return false
+	count := c.filteredCount()
+	for i := 0; i < count; i++ {
+		rawIdx := c.mapIndex(i)
+		if rawIdx < len(c.items) && c.items[rawIdx].GetID() == id {
+			c.SetSelectedIndex(i)
+			return true
+		}
 	}
-	c.SetSelectedIndex(idx)
-	return true
+	return false
 }
 
 // ToggleFilter activates the filter input
