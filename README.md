@@ -1,6 +1,6 @@
 # Kino
 
-![Kino Demo](demo.gif?v=2)
+![Kino Demo](demo.gif?v=3)
 
 > A fast terminal client for browsing and playing media from Plex and Jellyfin servers
 
