@@ -312,30 +312,14 @@ func (m Model) refreshLibraryContent(top *components.ListColumn) (Model, tea.Cmd
 
 // handleRefreshAll refreshes all libraries and resets to library view
 func (m Model) handleRefreshAll() (tea.Model, tea.Cmd) {
-	m.LibraryStates = make(map[string]components.LibrarySyncState)
-	for _, lib := range m.Libraries {
-		m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
-	}
-	m.LibraryStates[playlistsLibraryID] = components.LibrarySyncState{Status: components.StatusSyncing}
-	m.SyncingCount = len(m.Libraries) + 1 // +1 for playlists
 	m.Loading = true
-	m.MultiLibSync = true
-	m.updateLibraryStates()
 
-	libCol := components.NewLibraryColumn(m.allLibraryEntries())
-	libCol.SetLibraryStates(m.LibraryStates)
-	libCol.SetShowWatchStatus(m.UIConfig.ShowWatchStatus)
-	libCol.SetShowLibraryCounts(m.UIConfig.ShowLibraryCounts)
-	m.Inspector.SetLibraryStates(m.LibraryStates)
-	m.ColumnStack.Reset(libCol)
-
-	// Invalidate all then sync
+	// Invalidate all cached data, then re-fetch libraries from the server.
+	// This goes through LoadLibrariesCmd -> LibrariesLoadedMsg which rebuilds
+	// the full library list and triggers SyncAllLibrariesCmd with fresh data.
 	m.LibraryService.InvalidateAll()
 	m.PlaylistService.InvalidatePlaylists()
-	return m, tea.Batch(
-		SyncAllLibrariesCmd(m.LibraryService, m.Libraries),
-		SyncPlaylistsCmd(m.PlaylistService, playlistsLibraryID),
-	)
+	return m, LoadLibrariesCmd(m.LibraryService)
 }
 
 // handleMarkWatched marks the selected item as watched
