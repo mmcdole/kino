@@ -29,11 +29,14 @@ func SetupLogger(cfg *config.LoggingConfig) (*slog.Logger, error) {
 		return nil, fmt.Errorf("failed to create log directory: %w", err)
 	}
 
-	// Open log file
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	// Open log file. 0600: log lines include server details and, at Debug
+	// level, request URLs — keep them out of reach of other local users.
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open log file: %w", err)
 	}
+	// Tighten pre-existing log files created with the old 0644 default
+	_ = logFile.Chmod(0600)
 
 	// Parse log level
 	level := parseLogLevel(cfg.Level)

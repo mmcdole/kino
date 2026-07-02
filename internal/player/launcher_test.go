@@ -138,6 +138,29 @@ func TestLaunchDefaultWSLExplorerLastResort(t *testing.T) {
 	}
 }
 
+// Credential query parameters must never reach the log file.
+func TestRedactTokens(t *testing.T) {
+	in := []string{
+		"--start=30",
+		"http://server:8096/Videos/1/stream.mkv?Static=true&api_key=SECRET1",
+		"http://server:32400/library/parts/2/file.mkv?X-Plex-Token=SECRET2&other=1",
+	}
+	out := redactTokens(in)
+	joined := strings.Join(out, " ")
+	if strings.Contains(joined, "SECRET1") || strings.Contains(joined, "SECRET2") {
+		t.Fatalf("token leaked: %q", joined)
+	}
+	if !strings.Contains(joined, "api_key=REDACTED") || !strings.Contains(joined, "X-Plex-Token=REDACTED") {
+		t.Fatalf("redaction markers missing: %q", joined)
+	}
+	if out[0] != "--start=30" {
+		t.Fatalf("non-URL arg mangled: %q", out[0])
+	}
+	if in[1] == out[1] {
+		t.Fatal("input not redacted")
+	}
+}
+
 // With no player and no opener anywhere, the error must tell the user what
 // to do instead of surfacing a raw exec failure.
 func TestLaunchDefaultNoOpenerActionableError(t *testing.T) {

@@ -59,4 +59,14 @@ func TestLoadConfigGeneratesDeviceID(t *testing.T) {
 	if !strings.Contains(string(data), "abc123") {
 		t.Fatalf("token lost when persisting device ID:\n%s", data)
 	}
+
+	// The config file contains the token: it must not be world-readable,
+	// including pre-existing files created with the old 0644 default
+	info, err := os.Stat(configFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Fatalf("config file mode = %o, want 600", perm)
+	}
 }
