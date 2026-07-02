@@ -12,12 +12,16 @@ import (
 func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
+	// Ctrl+C always quits, even inside modals and text inputs
+	if msg.String() == "ctrl+c" {
+		return m, tea.Quit
+	}
+
 	// Handle state-specific keys
 	switch m.State {
 	case StateHelp:
-		if key.Matches(msg, Keys.Escape, Keys.Help, Keys.Quit) {
-			m.State = StateBrowsing
-		}
+		// Any key returns to browsing, as the help screen promises
+		m.State = StateBrowsing
 		return m, nil
 
 	case StateConfirmLogout:
@@ -28,6 +32,23 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, Keys.Deny):
 			// User cancelled
 			m.State = StateBrowsing
+		}
+		return m, nil
+
+	case StateConfirmDeletePlaylist:
+		switch {
+		case key.Matches(msg, Keys.Confirm):
+			m.State = StateBrowsing
+			if m.pendingDeletePlaylistID != "" {
+				id := m.pendingDeletePlaylistID
+				m.pendingDeletePlaylistID = ""
+				m.pendingDeletePlaylistName = ""
+				return m, DeletePlaylistCmd(m.PlaylistService, id)
+			}
+		case key.Matches(msg, Keys.Deny), key.Matches(msg, Keys.Escape):
+			m.State = StateBrowsing
+			m.pendingDeletePlaylistID = ""
+			m.pendingDeletePlaylistName = ""
 		}
 		return m, nil
 	}
@@ -167,6 +188,7 @@ func (m Model) handleDrillIn() (tea.Model, tea.Cmd) {
 	}
 	if !top.CanDrillInto() {
 		if item := top.SelectedMediaItem(); item != nil {
+			m.StatusMsg = "Launching: " + item.Title
 			return m, PlayItemCmd(m.PlaybackSvc, *item, item.ShouldResume())
 		}
 		return m, nil
@@ -185,6 +207,7 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 		return m.drillIntoSelection()
 	}
 	if item := top.SelectedMediaItem(); item != nil {
+		m.StatusMsg = "Launching: " + item.Title
 		return m, PlayItemCmd(m.PlaybackSvc, *item, item.ShouldResume())
 	}
 	return m, nil
@@ -207,10 +230,11 @@ func (m Model) handleSort() (tea.Model, tea.Cmd) {
 	case components.ColumnTypeMixed:
 		opts = components.MixedSortOptions()
 	}
-	if opts != nil {
-		field, dir := top.SortState()
-		m.SortModal.Show(opts, field, dir)
+	if opts == nil {
+		return m.notAvailableHere("Sort (s)")
 	}
+	field, dir := top.SortState()
+	m.SortModal.Show(opts, field, dir)
 	return m, nil
 }
 
@@ -333,7 +357,7 @@ func (m Model) handleMarkWatched() (tea.Model, tea.Cmd) {
 	}
 	item := top.SelectedMediaItem()
 	if item == nil {
-		return m, nil
+		return m.notAvailableHere("Mark watched (w)")
 	}
 	return m, MarkWatchedCmd(m.PlaybackSvc, item.ID, item.Title)
 }
@@ -346,7 +370,7 @@ func (m Model) handleMarkUnwatched() (tea.Model, tea.Cmd) {
 	}
 	item := top.SelectedMediaItem()
 	if item == nil {
-		return m, nil
+		return m.notAvailableHere("Mark unwatched (u)")
 	}
 	return m, MarkUnwatchedCmd(m.PlaybackSvc, item.ID, item.Title)
 }
@@ -359,9 +383,17 @@ func (m Model) handlePlay() (tea.Model, tea.Cmd) {
 	}
 	item := top.SelectedMediaItem()
 	if item == nil {
-		return m, nil
+		return m.notAvailableHere("Play (p)")
 	}
+	m.StatusMsg = "Launching: " + item.Title
 	return m, PlayItemCmd(m.PlaybackSvc, *item, false)
+}
+
+// notAvailableHere emits a short status explaining that a key does nothing
+// for the current selection, instead of silently ignoring it
+func (m Model) notAvailableHere(action string) (tea.Model, tea.Cmd) {
+	m.StatusMsg = action + " is not available for this item"
+	return m, ClearStatusCmd(3 * time.Second)
 }
 
 // handleToggleInspector toggles the inspector panel visibility
@@ -384,10 +416,11 @@ func (m Model) handlePlaylistModal() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	item := top.SelectedMediaItem()
-	if item != nil && m.PlaylistService != nil {
-		return m, LoadPlaylistModalDataCmd(m.PlaylistService, item)
+	if item == nil || m.PlaylistService == nil {
+		return m.notAvailableHere("Playlists (space)")
 	}
-	return m, nil
+	m.StatusMsg = "Loading playlists..."
+	return m, LoadPlaylistModalDataCmd(m.PlaylistService, item)
 }
 
 // handleDelete handles deletion of playlists or playlist items
@@ -403,10 +436,16 @@ func (m Model) handleDelete() (tea.Model, tea.Cmd) {
 			return m, RemoveFromPlaylistCmd(m.PlaylistService, m.currentPlaylistID, item.ID)
 		}
 	case components.ColumnTypePlaylists:
-		playlist := top.SelectedPlaylist()
-		if playlist != nil {
-			return m, DeletePlaylistCmd(m.PlaylistService, playlist.ID)
+		// Deleting a playlist is irreversible and server-side: confirm first
+		if playlist := top.SelectedPlaylist(); playlist != nil {
+			m.State = StateConfirmDeletePlaylist
+			m.pendingDeletePlaylistID = playlist.ID
+			m.pendingDeletePlaylistName = playlist.Title
+			return m, nil
 		}
+	default:
+		m.StatusMsg = "Remove (x) only works in playlists"
+		return m, ClearStatusCmd(3 * time.Second)
 	}
 	return m, nil
 }

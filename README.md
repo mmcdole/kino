@@ -41,19 +41,24 @@ You'll be prompted to enter your server URL. Kino automatically detects whether 
 |-----|--------|
 | `↑` `↓` `j` `k` | Navigate up/down |
 | `←` `→` `h` `l` | Navigate left/right (columns) |
-| `Enter` | Play/Select item |
+| `Backspace` | Back |
+| `Enter` | Play / drill in |
+| `p` | Play from start |
+| `w` / `u` | Mark watched / unwatched |
 | `Space` | Manage playlists |
+| `x` | Delete playlist / remove item (in playlists) |
 | `f` | Global search |
 | `/` | Local filter (current column) |
 | `s` | Sort options |
 | `i` | Toggle inspector panel |
-| `r` | Refresh current library |
+| `r` | Refresh current view |
 | `R` | Refresh all libraries |
-| `g` | Jump to top |
-| `G` | Jump to bottom |
-| `Ctrl+u` / `Ctrl+d` | Page up/down |
+| `g` / `G` | Jump to top / bottom |
+| `PgUp` / `PgDn` | Page up/down |
+| `Ctrl+u` / `Ctrl+d` | Half page up/down |
 | `?` | Show help |
-| `q` | Quit/Back |
+| `L` | Logout |
+| `q` / `Ctrl+c` | Quit |
 
 ## Configuration
 

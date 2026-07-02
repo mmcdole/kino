@@ -49,6 +49,7 @@ type ListColumn struct {
 	// Loading state
 	loading      bool
 	refreshing   bool // background refresh in progress; items stay visible
+	loadFailed   bool // last load errored; renders a retry hint instead of a spinner
 	spinnerFrame int
 
 	// Library sync states (for library column)
@@ -320,12 +321,20 @@ func (c *ListColumn) SetRefreshing(refreshing bool) {
 	c.refreshing = refreshing
 }
 
+// SetLoadFailed marks the column's load as failed, replacing the infinite
+// spinner with an actionable retry hint.
+func (c *ListColumn) SetLoadFailed() {
+	c.loading = false
+	c.loadFailed = true
+}
+
 func (c *ListColumn) IsRefreshing() bool {
 	return c.refreshing
 }
 
 func (c *ListColumn) SetItems(rawItems interface{}) {
 	c.loading = false
+	c.loadFailed = false
 	c.cursor = 0
 	c.offset = 0
 	c.clearFilter()
@@ -773,6 +782,13 @@ func (c *ListColumn) renderContent() string {
 		spinner := styles.SpinnerFrames[c.spinnerFrame%len(styles.SpinnerFrames)]
 		loadingLine := styles.DimStyle.Render(spinner + " Loading...")
 		return titleLine + "\n" + " " + "\n" + loadingLine + "\n" + " "
+	}
+
+	// Failed load: actionable dead-end instead of an infinite spinner
+	if c.loadFailed && len(c.items) == 0 {
+		failedLine := styles.ErrorStyle.Render("✗ Failed to load")
+		retryLine := styles.DimStyle.Render("press r to retry")
+		return titleLine + "\n" + " " + "\n" + failedLine + "\n" + retryLine
 	}
 
 	count := c.ItemCount()
@@ -1239,15 +1255,22 @@ func (c *ListColumn) columnSortable() bool {
 
 // Sort methods
 
-// ApplySort sets the sort field and direction, rebuilds sortedIdx, and resets view
+// ApplySort sets the sort field and direction and rebuilds sortedIdx.
+// An active filter survives the re-sort: sorting a filtered list must not
+// silently expand it back to everything.
 func (c *ListColumn) ApplySort(field SortField, dir SortDirection) {
 	c.sortField = field
 	c.sortDir = dir
-	c.clearFilter()
 	c.cursor = 0
 	c.offset = 0
 
 	c.buildSortedIdx()
+
+	if c.filterActive && c.filterQuery != "" {
+		c.applyFilter()
+	} else {
+		c.filteredIdx = nil
+	}
 }
 
 // SortState returns the current sort field and direction

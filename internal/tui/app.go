@@ -27,6 +27,7 @@ const (
 	StateBrowsing ApplicationState = iota
 	StateHelp
 	StateConfirmLogout
+	StateConfirmDeletePlaylist
 )
 
 // Layout proportions for Miller Columns
@@ -118,6 +119,10 @@ type Model struct {
 
 	// Playlist navigation context (when viewing playlist items)
 	currentPlaylistID string
+
+	// Pending playlist deletion awaiting confirmation
+	pendingDeletePlaylistID   string
+	pendingDeletePlaylistName string
 
 	// Navigation context for hierarchical cache keys (cascade invalidation)
 	currentLibID  string // Set when entering a library
@@ -375,7 +380,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case PlaybackStartedMsg:
 		m.StatusMsg = "Launched: " + msg.Item.Title
-		return m, nil
+		return m, ClearStatusCmd(3 * time.Second)
 
 	case MarkWatchedMsg:
 		m.StatusMsg = "Marked watched: " + msg.Title
@@ -393,9 +398,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clearNavPlan()
 		m.StatusIsErr = true
 		m.Loading = false
-		// A failed refresh must not leave the column spinner running
+		// A failed refresh must not leave the column spinner running, and a
+		// failed initial load must show a retry hint, not spin forever
 		if top := m.ColumnStack.Top(); top != nil {
 			top.SetRefreshing(false)
+			if top.IsLoading() {
+				top.SetLoadFailed()
+			}
 		}
 		if errors.Is(msg.Err, domain.ErrAuthFailed) {
 			// Actionable, persistent message: the token was revoked/expired
@@ -526,6 +535,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case PlaylistModalDataMsg:
+		m.StatusMsg = "" // clear the "Loading playlists..." pending status
 		m.PlaylistModal.Show(msg.Playlists, msg.Membership, msg.Item)
 		m.PlaylistModal.SetSize(m.Width, m.Height)
 		return m, nil

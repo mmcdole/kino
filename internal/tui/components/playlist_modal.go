@@ -204,14 +204,11 @@ func (m *PlaylistModal) View() string {
 
 	var lines []string
 
-	// Title
+	// Title: show which item the checkboxes affect — the modal opens async,
+	// so the cursor may have moved since it was requested
 	title := "Manage Playlists"
 	if m.item != nil {
-		itemTitle := m.item.Title
-		if len(itemTitle) > 25 {
-			itemTitle = itemTitle[:22] + "..."
-		}
-		title = "Add to Playlist"
+		title = "Add to Playlist: " + styles.Truncate(m.item.Title, 25)
 	}
 	titleLine := styles.ModalTitleStyle.Render(title)
 	lines = append(lines, titleLine)
