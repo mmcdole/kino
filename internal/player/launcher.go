@@ -52,6 +52,11 @@ var wslPlayers = []PlayerDef{
 	{Binary: "vlc.exe", SeekFlag: "--start-time=%d"},
 }
 
+func lookPathOK(binary string) bool {
+	_, err := exec.LookPath(binary)
+	return err == nil
+}
+
 // isWSL reports whether we are running inside Windows Subsystem for Linux.
 func isWSL() bool {
 	if os.Getenv("WSL_DISTRO_NAME") != "" || os.Getenv("WSL_INTEROP") != "" {
@@ -216,13 +221,17 @@ func (l *Launcher) launchDefault(url string) error {
 		// Linux and other Unix-like systems
 		if isWSL() {
 			// WSL distros usually have no xdg-open; hand the URL to Windows.
-			// wslview (from wslu) is purpose-built for this; explorer.exe
-			// opens the default handler and is always present.
-			for _, opener := range []string{"wslview", "explorer.exe"} {
-				if _, err := exec.LookPath(opener); err == nil {
-					cmd = exec.Command(opener, url)
-					break
-				}
+			// wslview (from wslu) is purpose-built for this. rundll32's
+			// FileProtocolHandler is the reliable built-in: explorer.exe
+			// chokes on URLs with query strings (?a=1&b=2) and silently
+			// opens the Documents folder instead.
+			switch {
+			case lookPathOK("wslview"):
+				cmd = exec.Command("wslview", url)
+			case lookPathOK("rundll32.exe"):
+				cmd = exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", url)
+			case lookPathOK("explorer.exe"):
+				cmd = exec.Command("explorer.exe", url)
 			}
 		}
 		if cmd == nil {

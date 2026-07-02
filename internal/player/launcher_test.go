@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func fakeBinary(t *testing.T, dir, name string) {
@@ -84,9 +85,45 @@ func TestDetectPlayerWSLPrefersLinuxPlayer(t *testing.T) {
 	}
 }
 
-// The system-default fallback on WSL uses wslview or explorer.exe instead of
-// the usually-absent xdg-open.
-func TestLaunchDefaultWSLUsesWindowsOpener(t *testing.T) {
+// The system-default fallback on WSL uses a Windows opener instead of the
+// usually-absent xdg-open, and prefers rundll32 over explorer.exe (which
+// mangles URLs containing query strings and opens Documents instead).
+func TestLaunchDefaultWSLPrefersRundll32(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("linux-only")
+	}
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args.txt")
+	script := "#!/bin/sh\necho \"$@\" > " + argsFile + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "rundll32.exe"), []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	fakeBinary(t, dir, "explorer.exe")
+	t.Setenv("PATH", dir)
+	forceWSL(t)
+
+	l := NewLauncher("", nil, "", nil)
+	url := "http://server:8096/stream.mkv?Static=true&api_key=x"
+	if err := l.launchDefault(url); err != nil {
+		t.Fatalf("launchDefault failed: %v", err)
+	}
+
+	// Wait for the fake opener to write its argv
+	var got []byte
+	for i := 0; i < 50; i++ {
+		if got, _ = os.ReadFile(argsFile); len(got) > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	want := "url.dll,FileProtocolHandler " + url
+	if strings.TrimSpace(string(got)) != want {
+		t.Fatalf("rundll32 args = %q, want %q", strings.TrimSpace(string(got)), want)
+	}
+}
+
+// explorer.exe remains the last-resort opener when rundll32 is absent.
+func TestLaunchDefaultWSLExplorerLastResort(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("linux-only")
 	}
