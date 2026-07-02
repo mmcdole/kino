@@ -19,27 +19,39 @@ import (
 const (
 	defaultTimeout = 30 * time.Second
 	userAgent      = "Kino/1.0"
-	clientID       = "kino-tui-client"
 )
+
+// normalizeClientID ensures a usable X-Plex-Client-Identifier.
+// The identifier must be unique per install: plex.tv tracks devices by it,
+// so a shared static ID makes every kino install look like the same device
+// and re-linking anywhere can invalidate previously issued tokens.
+func normalizeClientID(clientID string) string {
+	if clientID == "" {
+		return "kino-tui-client" // legacy fallback
+	}
+	return clientID
+}
 
 // Client implements domain.LibraryRepository, domain.SearchRepository,
 // domain.MetadataRepository, and domain.Scrobbler for Plex
 type Client struct {
 	baseURL           string
 	token             string
+	clientID          string // unique per-install X-Plex-Client-Identifier
 	machineIdentifier string // fetched from /identity on init
 	httpClient        *http.Client
 	logger            *slog.Logger
 }
 
 // NewClient creates a new Plex API client
-func NewClient(baseURL, token string, logger *slog.Logger) *Client {
+func NewClient(baseURL, token, clientID string, logger *slog.Logger) *Client {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Client{
-		baseURL: baseURL,
-		token:   token,
+		baseURL:  baseURL,
+		token:    token,
+		clientID: normalizeClientID(clientID),
 		httpClient: &http.Client{
 			Timeout: defaultTimeout,
 		},
@@ -93,7 +105,7 @@ func (c *Client) doRequest(ctx context.Context, method, path string, query url.V
 
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Token", c.token)
-	req.Header.Set("X-Plex-Client-Identifier", clientID)
+	req.Header.Set("X-Plex-Client-Identifier", c.clientID)
 	req.Header.Set("X-Plex-Product", "Kino")
 	req.Header.Set("X-Plex-Version", "1.0")
 	req.Header.Set("User-Agent", userAgent)
@@ -420,7 +432,7 @@ func (c *Client) CreatePlaylist(ctx context.Context, title string, itemIDs []str
 
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Token", c.token)
-	req.Header.Set("X-Plex-Client-Identifier", clientID)
+	req.Header.Set("X-Plex-Client-Identifier", c.clientID)
 	req.Header.Set("X-Plex-Product", "Kino")
 	req.Header.Set("X-Plex-Version", "1.0")
 	req.Header.Set("User-Agent", userAgent)
@@ -485,7 +497,7 @@ func (c *Client) AddToPlaylist(ctx context.Context, playlistID string, itemIDs [
 
 		req.Header.Set("Accept", "application/json")
 		req.Header.Set("X-Plex-Token", c.token)
-		req.Header.Set("X-Plex-Client-Identifier", clientID)
+		req.Header.Set("X-Plex-Client-Identifier", c.clientID)
 		req.Header.Set("X-Plex-Product", "Kino")
 		req.Header.Set("X-Plex-Version", "1.0")
 		req.Header.Set("User-Agent", userAgent)
@@ -544,7 +556,7 @@ func (c *Client) RemoveFromPlaylist(ctx context.Context, playlistID string, item
 
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Token", c.token)
-	req.Header.Set("X-Plex-Client-Identifier", clientID)
+	req.Header.Set("X-Plex-Client-Identifier", c.clientID)
 	req.Header.Set("X-Plex-Product", "Kino")
 	req.Header.Set("X-Plex-Version", "1.0")
 	req.Header.Set("User-Agent", userAgent)
@@ -575,7 +587,7 @@ func (c *Client) DeletePlaylist(ctx context.Context, playlistID string) error {
 
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Token", c.token)
-	req.Header.Set("X-Plex-Client-Identifier", clientID)
+	req.Header.Set("X-Plex-Client-Identifier", c.clientID)
 	req.Header.Set("X-Plex-Product", "Kino")
 	req.Header.Set("X-Plex-Version", "1.0")
 	req.Header.Set("User-Agent", userAgent)

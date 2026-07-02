@@ -34,16 +34,18 @@ const (
 
 // AuthClient handles Plex authentication
 type AuthClient struct {
+	clientID   string
 	httpClient *http.Client
 	logger     *slog.Logger
 }
 
 // NewAuthClient creates a new authentication client
-func NewAuthClient(logger *slog.Logger) *AuthClient {
+func NewAuthClient(clientID string, logger *slog.Logger) *AuthClient {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &AuthClient{
+		clientID: normalizeClientID(clientID),
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -58,7 +60,7 @@ func (a *AuthClient) GetPIN(ctx context.Context) (pin string, id int, err error)
 	data := url.Values{}
 	data.Set("strong", "false")
 	data.Set("X-Plex-Product", "Kino")
-	data.Set("X-Plex-Client-Identifier", clientID)
+	data.Set("X-Plex-Client-Identifier", a.clientID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, nil)
 	if err != nil {
@@ -66,7 +68,7 @@ func (a *AuthClient) GetPIN(ctx context.Context) (pin string, id int, err error)
 	}
 
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Plex-Client-Identifier", clientID)
+	req.Header.Set("X-Plex-Client-Identifier", a.clientID)
 	req.Header.Set("X-Plex-Product", "Kino")
 	req.Header.Set("X-Plex-Version", "1.0")
 	req.Header.Set("User-Agent", userAgent)
@@ -112,7 +114,7 @@ func (a *AuthClient) CheckPIN(ctx context.Context, pinID int) (token string, cla
 	}
 
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Plex-Client-Identifier", clientID)
+	req.Header.Set("X-Plex-Client-Identifier", a.clientID)
 	req.Header.Set("X-Plex-Product", "Kino")
 	req.Header.Set("X-Plex-Version", "1.0")
 	req.Header.Set("User-Agent", userAgent)
@@ -189,9 +191,9 @@ type AuthFlow struct {
 }
 
 // NewAuthFlow creates a new Plex authentication flow
-func NewAuthFlow(logger *slog.Logger) *AuthFlow {
+func NewAuthFlow(clientID string, logger *slog.Logger) *AuthFlow {
 	return &AuthFlow{
-		client: NewAuthClient(logger),
+		client: NewAuthClient(clientID, logger),
 	}
 }
 
