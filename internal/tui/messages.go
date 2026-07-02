@@ -24,6 +24,7 @@ func (e ErrMsg) Error() string {
 // LibrariesLoadedMsg signals that libraries have been loaded
 type LibrariesLoadedMsg struct {
 	Libraries []domain.Library
+	Refresh   bool // true for refresh-all: keep the navigation stack if possible
 }
 
 // MoviesLoadedMsg signals that movies have been loaded

@@ -198,21 +198,51 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.LibraryStates[playlistsLibraryID] = components.LibrarySyncState{Status: components.StatusSyncing}
 		m.SyncingCount = len(msg.Libraries) + 1 // +1 for playlists
 		m.MultiLibSync = true
+		m.Inspector.SetLibraryStates(m.LibraryStates)
+		m.Loading = true
 
-		// Create the library column as the root
+		syncCmds := []tea.Cmd{
+			SyncAllLibrariesCmd(m.LibraryService, msg.Libraries, m.SyncGen),
+			SyncPlaylistsCmd(m.PlaylistService, playlistsLibraryID, m.SyncGen),
+		}
+
+		// Refresh-all with the user somewhere deeper: keep their position.
+		// Update the root column in place and reload the top column's
+		// content in the background instead of resetting to the root.
+		if msg.Refresh && m.ColumnStack.Len() > 1 {
+			libCol := m.libraryColumn()
+			var drilledID string
+			if libCol != nil {
+				if sel := libCol.SelectedLibrary(); sel != nil {
+					drilledID = sel.ID
+				}
+				libCol.ReplaceItems(m.allLibraryEntries())
+				libCol.SetLibraryStates(m.LibraryStates)
+			}
+
+			// The library the user is inside may have been removed
+			// server-side — that's the one case where resetting is the
+			// only sane answer
+			if drilledID != "" && drilledID != playlistsLibraryID && m.findLibrary(drilledID) == nil {
+				m.StatusMsg = "Library no longer exists on server"
+				m.StatusIsErr = true
+				syncCmds = append(syncCmds, ClearStatusCmd(5*time.Second))
+			} else {
+				if reload := m.reloadTopColumnCmd(); reload != nil {
+					syncCmds = append(syncCmds, reload)
+				}
+				return m, tea.Batch(syncCmds...)
+			}
+		}
+
+		// Initial load (or unrecoverable refresh): build the root column
 		libCol := components.NewLibraryColumn(m.allLibraryEntries())
 		libCol.SetLibraryStates(m.LibraryStates)
 		libCol.SetShowWatchStatus(m.UIConfig.ShowWatchStatus)
 		libCol.SetShowLibraryCounts(m.UIConfig.ShowLibraryCounts)
-		m.Inspector.SetLibraryStates(m.LibraryStates)
 		m.ColumnStack.Reset(libCol)
 
-		// Start parallel sync of ALL libraries + playlists
-		m.Loading = true
-		return m, tea.Batch(
-			SyncAllLibrariesCmd(m.LibraryService, msg.Libraries, m.SyncGen),
-			SyncPlaylistsCmd(m.PlaylistService, playlistsLibraryID, m.SyncGen),
-		)
+		return m, tea.Batch(syncCmds...)
 
 	case MoviesLoadedMsg:
 		m.Loading = false
@@ -577,6 +607,58 @@ func (m *Model) updateLibraryStates() {
 		libCol.SetLibraryStates(m.LibraryStates)
 	}
 	m.Inspector.SetLibraryStates(m.LibraryStates)
+}
+
+// reloadTopColumnCmd returns a command reloading the top column's content
+// from the server, landing via ReplaceItems so the cursor and view state
+// survive. Used by refresh-all to freshen the visible view without
+// resetting navigation. Returns nil at the root (updated in place).
+func (m *Model) reloadTopColumnCmd() tea.Cmd {
+	top := m.ColumnStack.Top()
+	if top == nil {
+		return nil
+	}
+
+	lib := m.findLibrary(m.currentLibID)
+
+	switch top.ColumnType() {
+	case components.ColumnTypeMovies:
+		if lib != nil {
+			top.SetRefreshing(true)
+			return LoadMoviesCmd(m.LibraryService, *lib)
+		}
+	case components.ColumnTypeShows:
+		if lib != nil {
+			top.SetRefreshing(true)
+			return LoadShowsCmd(m.LibraryService, *lib)
+		}
+	case components.ColumnTypeMixed:
+		if lib != nil {
+			top.SetRefreshing(true)
+			return LoadMixedLibraryCmd(m.LibraryService, *lib)
+		}
+	case components.ColumnTypeSeasons:
+		if m.currentShowID != "" {
+			top.SetRefreshing(true)
+			return LoadSeasonsCmd(m.LibraryService, m.currentLibID, m.currentShowID)
+		}
+	case components.ColumnTypeEpisodes:
+		if seasonCol := m.ColumnStack.Get(m.ColumnStack.Len() - 2); seasonCol != nil {
+			if season := seasonCol.SelectedSeason(); season != nil {
+				top.SetRefreshing(true)
+				return LoadEpisodesCmd(m.LibraryService, m.currentLibID, m.currentShowID, season.ID)
+			}
+		}
+	case components.ColumnTypePlaylists:
+		top.SetRefreshing(true)
+		return LoadPlaylistsCmd(m.PlaylistService)
+	case components.ColumnTypePlaylistItems:
+		if m.currentPlaylistID != "" {
+			top.SetRefreshing(true)
+			return LoadPlaylistItemsCmd(m.PlaylistService, m.currentPlaylistID)
+		}
+	}
+	return nil
 }
 
 // applyWatchState patches an item's watch state in the cache and in every
