@@ -117,50 +117,27 @@ func (m Model) View() string {
 	return view
 }
 
-// renderFooter renders a single-line minimal footer
+// renderFooter renders a single-line minimal footer.
+//
+// Feedback scope rules (see docs/design-review.md and notice.go):
+//   - Row-scoped work (library sync) renders on the row; the footer only
+//     carries a compact activity segment on the right, never full-width text.
+//   - Column-scoped work (loads, refreshes, failures) renders in the column.
+//   - The footer's left side is exclusively the notification slot: transient
+//     events and persistent alerts.
 func (m Model) renderFooter() string {
-	// Left side: spinner + status when loading or status message active
+	// Left side: current notification, styled by kind
 	var left string
-	if m.Loading {
-		statusText := "Loading..."
-
-		if m.MultiLibSync {
-			// Multi-library: stable library completion fraction
-			syncingCount := 0
-			for _, state := range m.LibraryStates {
-				if state.Status == components.StatusSyncing {
-					syncingCount++
-				}
-			}
-			done := len(m.LibraryStates) - syncingCount
-			statusText = fmt.Sprintf("Syncing %d/%d libraries...", done, len(m.LibraryStates))
-		} else {
-			// Single library: show name + item progress
-			for id, state := range m.LibraryStates {
-				if state.Status == components.StatusSyncing {
-					libName := ""
-					for _, lib := range m.Libraries {
-						if lib.ID == id {
-							libName = lib.Name
-							break
-						}
-					}
-					if state.Total > 0 {
-						statusText = fmt.Sprintf("Syncing %s · %d/%d", libName, state.Loaded, state.Total)
-					} else if libName != "" {
-						statusText = fmt.Sprintf("Syncing %s...", libName)
-					}
-					break
-				}
-			}
-		}
-
-		left = RenderSpinner(m.SpinnerFrame) + " " + styles.DimStyle.Render(statusText)
-	} else if m.StatusMsg != "" {
-		if m.StatusIsErr {
-			left = styles.ErrorStyle.Render(m.StatusMsg)
-		} else {
-			left = styles.DimStyle.Render(m.StatusMsg)
+	if m.notice.Text != "" {
+		switch m.notice.Kind {
+		case NoticeAlert:
+			left = styles.AlertStyle.Render(m.notice.Text) + styles.DimStyle.Render("  esc to dismiss")
+		case NoticeError:
+			left = styles.ErrorStyle.Render(m.notice.Text)
+		case NoticeSuccess:
+			left = styles.SuccessStyle.Render(m.notice.Text)
+		default:
+			left = styles.DimStyle.Render(m.notice.Text)
 		}
 	}
 
@@ -175,8 +152,11 @@ func (m Model) renderFooter() string {
 		}
 	}
 
-	// Right side: "? help" hint
+	// Right side: compact background-sync segment + "? help" hint
 	right := styles.AccentStyle.Render("?") + styles.DimStyle.Render(" help")
+	if n := m.activeSyncCount(); n > 0 {
+		right = RenderSpinner(m.SpinnerFrame) + styles.DimStyle.Render(fmt.Sprintf(" %d syncing", n)) + "   " + right
+	}
 
 	// Layout: left + centered hints + right
 	leftWidth := lipgloss.Width(left)

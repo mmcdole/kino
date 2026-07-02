@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"time"
-
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/tui/components"
@@ -156,8 +154,12 @@ func (m Model) handleEscape() (tea.Model, tea.Cmd) {
 	}
 	if m.navPlan != nil {
 		m.clearNavPlan()
-		m.StatusMsg = "Navigation cancelled"
-		return m, ClearStatusCmd(2 * time.Second)
+		return m, m.notify(NoticeInfo, "Navigation cancelled")
+	}
+	// Esc dismisses a persistent alert once the user has read it
+	if m.notice.Kind == NoticeAlert && m.notice.Text != "" {
+		m.clearNotice()
+		return m, nil
 	}
 	return m, nil
 }
@@ -188,8 +190,10 @@ func (m Model) handleDrillIn() (tea.Model, tea.Cmd) {
 	}
 	if !top.CanDrillInto() {
 		if item := top.SelectedMediaItem(); item != nil {
-			m.StatusMsg = "Launching: " + item.Title
-			return m, PlayItemCmd(m.PlaybackSvc, *item, item.ShouldResume())
+			return m, tea.Batch(
+				m.notify(NoticeInfo, "Launching: "+item.Title),
+				PlayItemCmd(m.PlaybackSvc, *item, item.ShouldResume()),
+			)
 		}
 		return m, nil
 	}
@@ -207,8 +211,10 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 		return m.drillIntoSelection()
 	}
 	if item := top.SelectedMediaItem(); item != nil {
-		m.StatusMsg = "Launching: " + item.Title
-		return m, PlayItemCmd(m.PlaybackSvc, *item, item.ShouldResume())
+		return m, tea.Batch(
+			m.notify(NoticeInfo, "Launching: "+item.Title),
+			PlayItemCmd(m.PlaybackSvc, *item, item.ShouldResume()),
+		)
 	}
 	return m, nil
 }
@@ -261,9 +267,6 @@ func (m Model) handleRefresh() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
-		m.SyncingCount++
-		m.Loading = true
-		m.MultiLibSync = false
 		m.updateLibraryStates()
 		// Invalidate then sync
 		m.LibraryService.InvalidateLibrary(lib.ID)
@@ -276,7 +279,6 @@ func (m Model) handleRefresh() (tea.Model, tea.Cmd) {
 		// Refresh current show's seasons (invalidate seasons + episodes, re-fetch seasons)
 		m.LibraryService.InvalidateShow(m.currentLibID, m.currentShowID)
 		top.SetRefreshing(true)
-		m.Loading = true
 		return m, LoadSeasonsCmd(m.LibraryService, m.currentLibID, m.currentShowID)
 
 	case components.ColumnTypeEpisodes:
@@ -291,13 +293,11 @@ func (m Model) handleRefresh() (tea.Model, tea.Cmd) {
 		}
 		m.LibraryService.InvalidateSeason(m.currentLibID, m.currentShowID, season.ID)
 		top.SetRefreshing(true)
-		m.Loading = true
 		return m, LoadEpisodesCmd(m.LibraryService, m.currentLibID, m.currentShowID, season.ID)
 
 	case components.ColumnTypePlaylists:
 		// Refresh playlists
 		top.SetRefreshing(true)
-		m.Loading = true
 		return m, LoadPlaylistsCmd(m.PlaylistService)
 
 	case components.ColumnTypePlaylistItems:
@@ -306,7 +306,6 @@ func (m Model) handleRefresh() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		top.SetRefreshing(true)
-		m.Loading = true
 		return m, LoadPlaylistItemsCmd(m.PlaylistService, m.currentPlaylistID)
 	}
 
@@ -325,7 +324,6 @@ func (m Model) refreshLibraryContent(top *components.ListColumn) (Model, tea.Cmd
 	}
 	m.LibraryService.InvalidateLibrary(lib.ID)
 	top.SetRefreshing(true)
-	m.Loading = true
 
 	switch lib.Type {
 	case "movie":
@@ -342,8 +340,6 @@ func (m Model) refreshLibraryContent(top *components.ListColumn) (Model, tea.Cmd
 // in place and reloads the visible view, only resetting when the library the
 // user is inside no longer exists.
 func (m Model) handleRefreshAll() (tea.Model, tea.Cmd) {
-	m.Loading = true
-
 	m.LibraryService.InvalidateAll()
 	m.PlaylistService.InvalidatePlaylists()
 	return m, RefreshLibrariesCmd(m.LibraryService)
@@ -385,15 +381,16 @@ func (m Model) handlePlay() (tea.Model, tea.Cmd) {
 	if item == nil {
 		return m.notAvailableHere("Play (p)")
 	}
-	m.StatusMsg = "Launching: " + item.Title
-	return m, PlayItemCmd(m.PlaybackSvc, *item, false)
+	return m, tea.Batch(
+		m.notify(NoticeInfo, "Launching: "+item.Title),
+		PlayItemCmd(m.PlaybackSvc, *item, false),
+	)
 }
 
 // notAvailableHere emits a short status explaining that a key does nothing
 // for the current selection, instead of silently ignoring it
 func (m Model) notAvailableHere(action string) (tea.Model, tea.Cmd) {
-	m.StatusMsg = action + " is not available for this item"
-	return m, ClearStatusCmd(3 * time.Second)
+	return m, m.notify(NoticeInfo, action+" is not available for this item")
 }
 
 // handleToggleInspector toggles the inspector panel visibility
@@ -419,8 +416,10 @@ func (m Model) handlePlaylistModal() (tea.Model, tea.Cmd) {
 	if item == nil || m.PlaylistService == nil {
 		return m.notAvailableHere("Playlists (space)")
 	}
-	m.StatusMsg = "Loading playlists..."
-	return m, LoadPlaylistModalDataCmd(m.PlaylistService, item)
+	return m, tea.Batch(
+		m.notify(NoticeInfo, "Loading playlists..."),
+		LoadPlaylistModalDataCmd(m.PlaylistService, item),
+	)
 }
 
 // handleDelete handles deletion of playlists or playlist items
@@ -444,8 +443,7 @@ func (m Model) handleDelete() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	default:
-		m.StatusMsg = "Remove (x) only works in playlists"
-		return m, ClearStatusCmd(3 * time.Second)
+		return m, m.notify(NoticeInfo, "Remove (x) only works in playlists")
 	}
 	return m, nil
 }
