@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/mmcdole/kino/internal/domain"
 )
 
 // AuthResult contains the result of a successful Plex authentication
@@ -23,8 +25,6 @@ type AuthResult struct {
 var (
 	// ErrPINExpired indicates the authentication PIN has expired
 	ErrPINExpired = errors.New("authentication PIN has expired")
-	// ErrServerOffline indicates the media server is unreachable
-	ErrServerOffline = errors.New("media server is unreachable")
 )
 
 const (
@@ -81,7 +81,7 @@ func (a *AuthClient) GetPIN(ctx context.Context) (pin string, id int, err error)
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		a.logger.Error("PIN request failed", "error", err)
-		return "", 0, ErrServerOffline
+		return "", 0, fmt.Errorf("%w: %v", domain.ErrServerOffline, err)
 	}
 	defer resp.Body.Close()
 
@@ -122,7 +122,7 @@ func (a *AuthClient) CheckPIN(ctx context.Context, pinID int) (token string, cla
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		a.logger.Error("PIN check failed", "error", err)
-		return "", false, ErrServerOffline
+		return "", false, fmt.Errorf("%w: %v", domain.ErrServerOffline, err)
 	}
 	defer resp.Body.Close()
 
