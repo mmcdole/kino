@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,6 +15,8 @@ import (
 	"time"
 
 	"golang.org/x/term"
+
+	"github.com/mmcdole/kino/internal/domain"
 )
 
 // AuthResult contains the result of a successful Jellyfin authentication
@@ -25,13 +26,6 @@ type AuthResult struct {
 	Username string
 }
 
-// Jellyfin auth errors
-var (
-	// ErrServerOffline indicates the media server is unreachable
-	ErrServerOffline = errors.New("media server is unreachable")
-	// ErrAuthFailed indicates authentication failed
-	ErrAuthFailed = errors.New("authentication failed")
-)
 
 const (
 	authTimeout = 30 * time.Second
@@ -126,7 +120,7 @@ func (f *AuthFlow) authenticate(ctx context.Context, serverURL, username, passwo
 	resp, err := f.httpClient.Do(req)
 	if err != nil {
 		f.logger.Error("Jellyfin auth request failed", "error", err)
-		return nil, ErrServerOffline
+		return nil, fmt.Errorf("%w: %v", domain.ErrServerOffline, err)
 	}
 	defer resp.Body.Close()
 
@@ -136,7 +130,7 @@ func (f *AuthFlow) authenticate(ctx context.Context, serverURL, username, passwo
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, ErrAuthFailed
+		return nil, fmt.Errorf("%w: check username and password", domain.ErrAuthFailed)
 	}
 
 	if resp.StatusCode != http.StatusOK {

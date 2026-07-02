@@ -244,8 +244,9 @@ func mapEpisode(m Metadata, serverURL string) domain.MediaItem {
 	return item
 }
 
-// MapOnDeck converts Plex metadata to domain media items for On Deck
-func MapOnDeck(metadata []Metadata, serverURL string) []*domain.MediaItem {
+// MapVideoItems converts Plex metadata to playable domain media items
+// (movies and episodes)
+func MapVideoItems(metadata []Metadata, serverURL string) []*domain.MediaItem {
 	items := make([]*domain.MediaItem, 0, len(metadata))
 	for _, m := range metadata {
 		switch m.Type {
@@ -255,6 +256,36 @@ func MapOnDeck(metadata []Metadata, serverURL string) []*domain.MediaItem {
 		case "episode":
 			item := mapEpisode(m, serverURL)
 			items = append(items, &item)
+		}
+	}
+	return items
+}
+
+// MapSearchResults converts Plex search metadata to domain media items.
+// Unlike MapVideoItems it includes TV shows, mirroring the Jellyfin backend
+// so global search finds shows on both.
+func MapSearchResults(metadata []Metadata, serverURL string) []*domain.MediaItem {
+	items := make([]*domain.MediaItem, 0, len(metadata))
+	for _, m := range metadata {
+		switch m.Type {
+		case "movie":
+			item := mapMovie(m, serverURL)
+			items = append(items, &item)
+		case "episode":
+			item := mapEpisode(m, serverURL)
+			items = append(items, &item)
+		case "show":
+			items = append(items, &domain.MediaItem{
+				ID:        m.RatingKey,
+				Title:     m.Title,
+				SortTitle: m.TitleSort,
+				Summary:   m.Summary,
+				Year:      m.Year,
+				AddedAt:   m.AddedAt,
+				UpdatedAt: m.UpdatedAt,
+				Rating:    m.AudienceRating,
+				Type:      domain.MediaTypeShow,
+			})
 		}
 	}
 	return items

@@ -18,6 +18,8 @@ import (
 
 const (
 	defaultTimeout = 30 * time.Second
+	maxRetries     = 3
+	baseRetryDelay = 500 * time.Millisecond
 	userAgent      = "Kino/1.0"
 )
 
@@ -49,7 +51,7 @@ func NewClient(baseURL, token, clientID string, logger *slog.Logger) *Client {
 		logger = slog.Default()
 	}
 	return &Client{
-		baseURL:  baseURL,
+		baseURL:  strings.TrimRight(baseURL, "/"),
 		token:    token,
 		clientID: normalizeClientID(clientID),
 		httpClient: &http.Client{
@@ -91,49 +93,106 @@ func (c *Client) FetchIdentity(ctx context.Context) error {
 	return nil
 }
 
-// doRequest performs an authenticated HTTP request
-func (c *Client) doRequest(ctx context.Context, method, path string, query url.Values) ([]byte, error) {
-	reqURL := fmt.Sprintf("%s%s", c.baseURL, path)
-	if query != nil {
-		reqURL = fmt.Sprintf("%s?%s", reqURL, query.Encode())
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, reqURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
+// setHeaders applies the standard Plex request headers
+func (c *Client) setHeaders(req *http.Request) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Token", c.token)
 	req.Header.Set("X-Plex-Client-Identifier", c.clientID)
 	req.Header.Set("X-Plex-Product", "Kino")
 	req.Header.Set("X-Plex-Version", "1.0")
 	req.Header.Set("User-Agent", userAgent)
+}
 
-	c.logger.Debug("plex request", "method", method, "url", reqURL)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		c.logger.Error("plex request failed", "error", err)
-		return nil, domain.ErrServerOffline
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+// do performs an authenticated HTTP request to the Plex server. All error
+// mapping lives here: 401 → domain.ErrAuthFailed, transport failures →
+// domain.ErrServerOffline (wrapped with the cause), any 2xx → success.
+// Idempotent requests (retry=true) are retried on network errors and 5xx
+// responses with exponential backoff.
+func (c *Client) do(ctx context.Context, method, path string, query url.Values, retry bool) ([]byte, error) {
+	reqURL := fmt.Sprintf("%s%s", c.baseURL, path)
+	if query != nil {
+		reqURL = fmt.Sprintf("%s?%s", reqURL, query.Encode())
 	}
 
-	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, domain.ErrAuthFailed
+	attempts := 1
+	if retry {
+		attempts = maxRetries + 1
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		c.logger.Error("plex request error", "status", resp.StatusCode, "body", string(body))
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	var lastErr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
+		if attempt > 0 {
+			delay := baseRetryDelay * time.Duration(1<<(attempt-1)) // 500ms, 1s, 2s
+			c.logger.Debug("retrying request", "attempt", attempt, "delay", delay, "path", path)
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+
+		req, err := http.NewRequestWithContext(ctx, method, reqURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+		c.setHeaders(req)
+
+		c.logger.Debug("plex request", "method", method, "path", path, "attempt", attempt)
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("%w: %v", domain.ErrServerOffline, err)
+			c.logger.Warn("plex request failed", "error", err, "method", method, "path", path, "attempt", attempt)
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read response: %w", err)
+		}
+
+		switch {
+		case resp.StatusCode == http.StatusUnauthorized:
+			return nil, domain.ErrAuthFailed
+		case resp.StatusCode >= 500:
+			lastErr = fmt.Errorf("server error: %d - %s", resp.StatusCode, truncateForLog(body))
+			c.logger.Warn("plex server error",
+				"status", resp.StatusCode,
+				"attempt", attempt,
+				"method", method,
+				"path", path,
+			)
+			continue
+		case resp.StatusCode >= 200 && resp.StatusCode < 300:
+			return body, nil
+		default:
+			c.logger.Error("plex request error", "status", resp.StatusCode, "path", path, "body", truncateForLog(body))
+			return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		}
 	}
 
-	return body, nil
+	c.logger.Error("plex request failed", "error", lastErr, "method", method, "path", path)
+	return nil, lastErr
+}
+
+// doRequest performs an idempotent (retried) GET-style request
+func (c *Client) doRequest(ctx context.Context, method, path string, query url.Values) ([]byte, error) {
+	return c.do(ctx, method, path, query, true)
+}
+
+// truncateForLog bounds response bodies before they reach the log file
+// (a reverse proxy's 502 page can be arbitrarily large)
+func truncateForLog(body []byte) string {
+	const max = 512
+	if len(body) > max {
+		return string(body[:max]) + "...(truncated)"
+	}
+	return string(body)
 }
 
 // parseResponse parses a JSON response into APIResponse
@@ -311,6 +370,7 @@ func (c *Client) GetEpisodes(ctx context.Context, seasonID string) ([]*domain.Me
 func (c *Client) Search(ctx context.Context, query string) ([]*domain.MediaItem, error) {
 	params := url.Values{}
 	params.Set("query", query)
+	params.Set("limit", "50") // match the Jellyfin backend's result cap
 
 	body, err := c.doRequest(ctx, http.MethodGet, "/search", params)
 	if err != nil {
@@ -322,7 +382,7 @@ func (c *Client) Search(ctx context.Context, query string) ([]*domain.MediaItem,
 		return nil, err
 	}
 
-	return MapOnDeck(container.Metadata, c.baseURL), nil
+	return MapSearchResults(container.Metadata, c.baseURL), nil
 }
 
 // ResolvePlayableURL returns a direct playback URL for an item
@@ -382,6 +442,7 @@ func (c *Client) GetMediaItem(ctx context.Context, itemID string) (*domain.Media
 func (c *Client) MarkPlayed(ctx context.Context, itemID string) error {
 	query := url.Values{}
 	query.Set("key", itemID)
+	query.Set("identifier", "com.plexapp.plugins.library") // required by some PMS versions
 
 	_, err := c.doRequest(ctx, http.MethodGet, "/:/scrobble", query)
 	return err
@@ -391,6 +452,7 @@ func (c *Client) MarkPlayed(ctx context.Context, itemID string) error {
 func (c *Client) MarkUnplayed(ctx context.Context, itemID string) error {
 	query := url.Values{}
 	query.Set("key", itemID)
+	query.Set("identifier", "com.plexapp.plugins.library") // required by some PMS versions
 
 	_, err := c.doRequest(ctx, http.MethodGet, "/:/unscrobble", query)
 	return err
@@ -424,7 +486,7 @@ func (c *Client) GetPlaylistItems(ctx context.Context, playlistID string) ([]*do
 		return nil, err
 	}
 
-	return MapOnDeck(container.Metadata, c.baseURL), nil
+	return MapVideoItems(container.Metadata, c.baseURL), nil
 }
 
 // CreatePlaylist creates a new playlist with the given title and initial items.
@@ -445,35 +507,9 @@ func (c *Client) CreatePlaylist(ctx context.Context, title string, itemIDs []str
 	query.Set("smart", "0")
 	query.Set("uri", uri)
 
-	reqURL := fmt.Sprintf("%s/playlists?%s", c.baseURL, query.Encode())
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, nil)
+	respBody, err := c.do(ctx, http.MethodPost, "/playlists", query, false)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Plex-Token", c.token)
-	req.Header.Set("X-Plex-Client-Identifier", c.clientID)
-	req.Header.Set("X-Plex-Product", "Kino")
-	req.Header.Set("X-Plex-Version", "1.0")
-	req.Header.Set("User-Agent", userAgent)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		c.logger.Error("plex create playlist failed", "error", err)
-		return nil, domain.ErrServerOffline
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		c.logger.Error("plex create playlist error", "status", resp.StatusCode, "body", string(respBody))
-		return nil, fmt.Errorf("failed to create playlist: status %d", resp.StatusCode)
+		return nil, fmt.Errorf("failed to create playlist: %w", err)
 	}
 
 	container, err := c.parseResponse(respBody)
@@ -510,29 +546,8 @@ func (c *Client) AddToPlaylist(ctx context.Context, playlistID string, itemIDs [
 		query := url.Values{}
 		query.Set("uri", uri)
 
-		reqURL := fmt.Sprintf("%s%s?%s", c.baseURL, path, query.Encode())
-
-		req, err := http.NewRequestWithContext(ctx, http.MethodPut, reqURL, nil)
-		if err != nil {
-			return fmt.Errorf("failed to create request: %w", err)
-		}
-
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("X-Plex-Token", c.token)
-		req.Header.Set("X-Plex-Client-Identifier", c.clientID)
-		req.Header.Set("X-Plex-Product", "Kino")
-		req.Header.Set("X-Plex-Version", "1.0")
-		req.Header.Set("User-Agent", userAgent)
-
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			c.logger.Error("plex add to playlist failed", "error", err)
-			return domain.ErrServerOffline
-		}
-		resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-			return fmt.Errorf("failed to add item to playlist: status %d", resp.StatusCode)
+		if _, err := c.do(ctx, http.MethodPut, path, query, false); err != nil {
+			return fmt.Errorf("failed to add item to playlist: %w", err)
 		}
 	}
 
@@ -569,61 +584,17 @@ func (c *Client) RemoveFromPlaylist(ctx context.Context, playlistID string, item
 	}
 
 	deletePath := fmt.Sprintf("/playlists/%s/items/%d", playlistID, entryID)
-	reqURL := fmt.Sprintf("%s%s", c.baseURL, deletePath)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, reqURL, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+	if _, err := c.do(ctx, http.MethodDelete, deletePath, nil, false); err != nil {
+		return fmt.Errorf("failed to remove item from playlist: %w", err)
 	}
-
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Plex-Token", c.token)
-	req.Header.Set("X-Plex-Client-Identifier", c.clientID)
-	req.Header.Set("X-Plex-Product", "Kino")
-	req.Header.Set("X-Plex-Version", "1.0")
-	req.Header.Set("User-Agent", userAgent)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		c.logger.Error("plex remove from playlist failed", "error", err)
-		return domain.ErrServerOffline
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("failed to remove item from playlist: status %d", resp.StatusCode)
-	}
-
 	return nil
 }
 
 // DeletePlaylist deletes a playlist
 func (c *Client) DeletePlaylist(ctx context.Context, playlistID string) error {
 	path := fmt.Sprintf("/playlists/%s", playlistID)
-	reqURL := fmt.Sprintf("%s%s", c.baseURL, path)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, reqURL, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+	if _, err := c.do(ctx, http.MethodDelete, path, nil, false); err != nil {
+		return fmt.Errorf("failed to delete playlist: %w", err)
 	}
-
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Plex-Token", c.token)
-	req.Header.Set("X-Plex-Client-Identifier", c.clientID)
-	req.Header.Set("X-Plex-Product", "Kino")
-	req.Header.Set("X-Plex-Version", "1.0")
-	req.Header.Set("User-Agent", userAgent)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		c.logger.Error("plex delete playlist failed", "error", err)
-		return domain.ErrServerOffline
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("failed to delete playlist: status %d", resp.StatusCode)
-	}
-
 	return nil
 }
