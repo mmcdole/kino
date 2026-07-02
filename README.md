@@ -61,6 +61,8 @@ Config file: `~/.config/kino/config.yaml` (created on first run).
 
 Kino auto-detects video players (mpv, VLC, IINA, Celluloid, etc.) with resume support. See `config.example.yaml` for custom player setup and all options.
 
+On WSL, Windows-side players are detected too (PotPlayer, mpv.exe, VLC), and links fall back to `wslview`/`explorer.exe` instead of `xdg-open`.
+
 ## License
 
 MIT
