@@ -264,6 +264,38 @@ func (c *Client) GetMixedContent(ctx context.Context, libID string, offset, limi
 	return items, resp.TotalRecordCount, nil
 }
 
+// GetLibraryItemCount returns the total item count for a library without
+// fetching the items. Limit=1 keeps the response tiny while still populating
+// TotalRecordCount.
+func (c *Client) GetLibraryItemCount(ctx context.Context, libID, libType string) (int, error) {
+	query := url.Values{}
+	query.Set("ParentId", libID)
+	switch libType {
+	case "movie":
+		query.Set("IncludeItemTypes", "Movie")
+	case "show":
+		query.Set("IncludeItemTypes", "Series")
+	default: // mixed
+		query.Set("IncludeItemTypes", "Movie,Series")
+	}
+	query.Set("Recursive", "true")
+	query.Set("Limit", "1")
+	query.Set("EnableTotalRecordCount", "true")
+
+	path := fmt.Sprintf("/Users/%s/Items", c.userID)
+	body, err := c.doRequest(ctx, http.MethodGet, path, query)
+	if err != nil {
+		return 0, err
+	}
+
+	var resp ItemsResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return 0, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return resp.TotalRecordCount, nil
+}
+
 // GetSeasons returns all seasons for a TV show
 func (c *Client) GetSeasons(ctx context.Context, showID string) ([]*domain.Season, error) {
 	query := url.Values{}

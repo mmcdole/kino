@@ -223,6 +223,28 @@ func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) 
 	return MapShows(container.Metadata, c.baseURL), totalSize, nil
 }
 
+// GetLibraryItemCount returns the total item count for a library section
+// without fetching the items (X-Plex-Container-Size=0 returns only totalSize).
+// libType is unused: /all already returns the section's native item type.
+func (c *Client) GetLibraryItemCount(ctx context.Context, libID, libType string) (int, error) {
+	query := url.Values{}
+	query.Set("X-Plex-Container-Start", "0")
+	query.Set("X-Plex-Container-Size", "0")
+
+	path := fmt.Sprintf("/library/sections/%s/all", libID)
+	body, err := c.doRequest(ctx, http.MethodGet, path, query)
+	if err != nil {
+		return 0, err
+	}
+
+	container, err := c.parseResponse(body)
+	if err != nil {
+		return 0, err
+	}
+
+	return container.TotalSize, nil
+}
+
 // GetMixedContent returns paginated content (movies AND shows) from a library.
 // Note: Plex doesn't truly support "mixed" libraries at the API level like Jellyfin,
 // so this method fetches all items and returns both types. For pure movie or show
