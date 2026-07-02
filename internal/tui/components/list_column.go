@@ -48,6 +48,7 @@ type ListColumn struct {
 
 	// Loading state
 	loading      bool
+	refreshing   bool // background refresh in progress; items stay visible
 	spinnerFrame int
 
 	// Library sync states (for library column)
@@ -313,6 +314,16 @@ func (c *ListColumn) IsLoading() bool {
 	return c.loading
 }
 
+// SetRefreshing marks a background refresh: items remain visible and
+// navigable, with a spinner shown next to the column title.
+func (c *ListColumn) SetRefreshing(refreshing bool) {
+	c.refreshing = refreshing
+}
+
+func (c *ListColumn) IsRefreshing() bool {
+	return c.refreshing
+}
+
 func (c *ListColumn) SetItems(rawItems interface{}) {
 	c.loading = false
 	c.cursor = 0
@@ -366,6 +377,55 @@ func (c *ListColumn) SetItems(rawItems interface{}) {
 		c.sortField = SortDefault
 		c.sortDir = SortAsc
 		c.sortedIdx = nil
+	}
+}
+
+// ReplaceItems swaps the column's content while preserving the user's view
+// state: cursor (matched by item ID), sort, and filter all survive the swap.
+// Background refreshes use this so the list doesn't jump; on a column with no
+// prior content it behaves exactly like SetItems.
+func (c *ListColumn) ReplaceItems(rawItems interface{}) {
+	c.refreshing = false
+
+	if len(c.items) == 0 {
+		c.SetItems(rawItems)
+		return
+	}
+
+	// Capture view state
+	var selectedID string
+	if idx := c.mapIndex(c.cursor); c.cursor < c.ItemCount() && idx < len(c.items) {
+		selectedID = c.items[idx].GetID()
+	}
+	prevCursor := c.cursor
+	sortField, sortDir := c.sortField, c.sortDir
+	filterActive := c.filterActive
+	filterQuery := c.filterInput.Value()
+	filterTyping := c.filterInput.Focused()
+
+	c.SetItems(rawItems)
+
+	// Restore sort
+	if c.columnSortable() && sortField != SortDefault {
+		c.sortField = sortField
+		c.sortDir = sortDir
+		c.buildSortedIdx()
+	}
+
+	// Restore filter
+	if filterActive {
+		c.filterActive = true
+		c.filterInput.SetValue(filterQuery)
+		if filterTyping {
+			c.filterInput.Focus()
+		}
+		c.recalcMaxVisible()
+		c.applyFilter()
+	}
+
+	// Restore cursor: by ID first, clamped index as fallback
+	if selectedID == "" || !c.SetSelectedByID(selectedID) {
+		c.SetSelectedIndex(prevCursor)
 	}
 }
 
@@ -646,8 +706,13 @@ func (c *ListColumn) renderContent() string {
 		itemWidth = 10
 	}
 
-	// Title line (styled, truncated to fit column width)
-	titleLine := styles.AccentStyle.Render(styles.Truncate(c.title, itemWidth))
+	// Title line (styled, truncated to fit column width); background
+	// refreshes show a spinner next to the title while items stay visible
+	title := c.title
+	if c.refreshing {
+		title = c.title + " " + styles.SpinnerFrames[c.spinnerFrame%len(styles.SpinnerFrames)]
+	}
+	titleLine := styles.AccentStyle.Render(styles.Truncate(title, itemWidth))
 
 	// Loading state
 	if c.loading {

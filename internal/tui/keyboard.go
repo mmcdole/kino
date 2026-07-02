@@ -243,8 +243,7 @@ func (m Model) handleRefresh() (tea.Model, tea.Cmd) {
 	case components.ColumnTypeSeasons:
 		// Refresh current show's seasons (invalidate seasons + episodes, re-fetch seasons)
 		m.LibraryService.InvalidateShow(m.currentLibID, m.currentShowID)
-		top.SetItems(nil)
-		top.SetLoading(true)
+		top.SetRefreshing(true)
 		m.Loading = true
 		return m, LoadSeasonsCmd(m.LibraryService, m.currentLibID, m.currentShowID)
 
@@ -259,15 +258,13 @@ func (m Model) handleRefresh() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.LibraryService.InvalidateSeason(m.currentLibID, m.currentShowID, season.ID)
-		top.SetItems(nil)
-		top.SetLoading(true)
+		top.SetRefreshing(true)
 		m.Loading = true
 		return m, LoadEpisodesCmd(m.LibraryService, m.currentLibID, m.currentShowID, season.ID)
 
 	case components.ColumnTypePlaylists:
 		// Refresh playlists
-		top.SetItems(nil)
-		top.SetLoading(true)
+		top.SetRefreshing(true)
 		m.Loading = true
 		return m, LoadPlaylistsCmd(m.PlaylistService)
 
@@ -276,8 +273,7 @@ func (m Model) handleRefresh() (tea.Model, tea.Cmd) {
 		if m.currentPlaylistID == "" {
 			return m, nil
 		}
-		top.SetItems(nil)
-		top.SetLoading(true)
+		top.SetRefreshing(true)
 		m.Loading = true
 		return m, LoadPlaylistItemsCmd(m.PlaylistService, m.currentPlaylistID)
 	}
@@ -296,8 +292,7 @@ func (m Model) refreshLibraryContent(top *components.ListColumn) (Model, tea.Cmd
 		return m, nil
 	}
 	m.LibraryService.InvalidateLibrary(lib.ID)
-	top.SetItems(nil)
-	top.SetLoading(true)
+	top.SetRefreshing(true)
 	m.Loading = true
 
 	switch lib.Type {
