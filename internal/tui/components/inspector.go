@@ -389,7 +389,10 @@ func (i Inspector) renderShowInspector(show domain.Show, width int) inspectorCon
 	header.WriteString("\n")
 
 	watched := show.EpisodeCount - show.UnwatchedCount
-	progress := float64(watched) / float64(show.EpisodeCount) * 100
+	progress := 0.0
+	if show.EpisodeCount > 0 {
+		progress = float64(watched) / float64(show.EpisodeCount) * 100
+	}
 	header.WriteString(styles.DimStyle.Render(fmt.Sprintf("Progress: %.0f%% (%d/%d)", progress, watched, show.EpisodeCount)))
 
 	// Body: summary
@@ -425,7 +428,10 @@ func (i Inspector) renderSeasonInspector(season domain.Season, width int) string
 
 	// Progress
 	watched := season.EpisodeCount - season.UnwatchedCount
-	progress := float64(watched) / float64(season.EpisodeCount) * 100
+	progress := 0.0
+	if season.EpisodeCount > 0 {
+		progress = float64(watched) / float64(season.EpisodeCount) * 100
+	}
 	b.WriteString(styles.DimStyle.Render(fmt.Sprintf("Progress: %.0f%% (%d/%d)", progress, watched, season.EpisodeCount)))
 
 	return b.String()

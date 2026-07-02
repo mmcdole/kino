@@ -331,18 +331,30 @@ func (c *ListColumn) SetItems(rawItems interface{}) {
 	c.clearFilter()
 	c.sortedIdx = nil
 
+	if rawItems == nil {
+		c.items = nil
+		c.sortField = SortDefault
+		c.sortDir = SortAsc
+		return
+	}
+
 	switch v := rawItems.(type) {
 	case []domain.Library:
 		c.items = WrapLibraries(v)
 		c.columnType = ColumnTypeLibraries
 	case []*domain.MediaItem:
-		// Could be movies, episodes, or playlist items - preserve column type if already set
-		if c.columnType == ColumnTypePlaylistItems {
+		// Could be movies, episodes, or playlist items. An already-typed
+		// column keeps its identity — an empty episode list must not turn
+		// the column into a movies column.
+		switch {
+		case c.columnType == ColumnTypePlaylistItems:
 			c.items = WrapPlaylistItems(v)
-		} else if len(v) > 0 && v[0].Type == domain.MediaTypeEpisode {
+		case c.columnType == ColumnTypeEpisodes:
+			c.items = WrapEpisodes(v)
+		case len(v) > 0 && v[0].Type == domain.MediaTypeEpisode:
 			c.items = WrapEpisodes(v)
 			c.columnType = ColumnTypeEpisodes
-		} else {
+		default:
 			c.items = WrapMovies(v)
 			c.columnType = ColumnTypeMovies
 		}
