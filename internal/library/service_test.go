@@ -48,7 +48,7 @@ func (f *fakeClient) GetLibraryItemCount(ctx context.Context, libID, libType str
 
 func newTestService(t *testing.T, client *fakeClient) (*Service, domain.Store) {
 	t.Helper()
-	st, err := store.NewLibraryStore("", "") // memory-only
+	st, err := store.NewLibraryStore("", "", "") // memory-only
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,6 +127,80 @@ func TestSyncLibraryTimestampInvalidates(t *testing.T) {
 	if client.countCalls != countCallsBefore {
 		t.Fatal("count check should be skipped when timestamp already invalidates")
 	}
+}
+
+// pagedClient serves distinct pages so pagination behavior is testable.
+type pagedClient struct {
+	fakeClient
+	pages [][]*domain.MediaItem
+	total int
+}
+
+func (p *pagedClient) GetMovies(ctx context.Context, libID string, offset, limit int) ([]*domain.MediaItem, int, error) {
+	idx := offset / limit
+	if idx >= len(p.pages) {
+		return nil, p.total, nil
+	}
+	return p.pages[idx], p.total, nil
+}
+
+// Offset pagination under concurrent server mutation can repeat items across
+// pages; duplicates must not be cached as truth.
+func TestFetchMoviesDeduplicatesAcrossPages(t *testing.T) {
+	client := &pagedClient{
+		pages: [][]*domain.MediaItem{
+			{movie("a"), movie("b")},
+			{movie("b"), movie("c")}, // "b" repeated by a page shift
+		},
+		total: 4,
+	}
+	svc := NewService(client, mustStore(t), nil)
+
+	movies, err := svc.FetchMovies(context.Background(), "lib1", 100, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(movies) != 3 {
+		t.Fatalf("got %d movies, want 3 deduplicated", len(movies))
+	}
+	seen := map[string]bool{}
+	for _, m := range movies {
+		if seen[m.ID] {
+			t.Fatalf("duplicate item %s cached", m.ID)
+		}
+		seen[m.ID] = true
+	}
+}
+
+// A server reporting total=0 alongside non-empty pages must still be fully
+// paginated instead of stopping after one page.
+func TestFetchMoviesZeroTotalStillPaginates(t *testing.T) {
+	client := &pagedClient{
+		pages: [][]*domain.MediaItem{
+			{movie("a"), movie("b")},
+			{movie("c")},
+		},
+		total: 0,
+	}
+	svc := NewService(client, mustStore(t), nil)
+
+	movies, err := svc.FetchMovies(context.Background(), "lib1", 100, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(movies) != 3 {
+		t.Fatalf("got %d movies, want 3 (stopped early on total=0?)", len(movies))
+	}
+}
+
+func mustStore(t *testing.T) domain.Store {
+	t.Helper()
+	st, err := store.NewLibraryStore("", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	return st
 }
 
 // TestSyncLibraryCountCheckFailureServesCache verifies we degrade gracefully:

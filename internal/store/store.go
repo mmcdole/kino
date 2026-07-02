@@ -43,7 +43,11 @@ type LibraryStore struct {
 	cache map[string][]byte
 }
 
-func NewLibraryStore(baseCacheDir, serverURL string) (*LibraryStore, error) {
+// NewLibraryStore opens (or creates) the cache for one server+user pair.
+// The user ID is part of the cache key: watch status, view offsets, and
+// playlists are per-user, so two accounts on the same server must not share
+// a cache. (Plex configs have no user ID; those stay keyed by URL alone.)
+func NewLibraryStore(baseCacheDir, serverURL, userID string) (*LibraryStore, error) {
 	if baseCacheDir == "" {
 		// Memory-only mode (no persistence)
 		return &LibraryStore{cache: make(map[string][]byte)}, nil
@@ -51,7 +55,7 @@ func NewLibraryStore(baseCacheDir, serverURL string) (*LibraryStore, error) {
 
 	dir := baseCacheDir
 	if serverURL != "" {
-		dir = filepath.Join(baseCacheDir, hashServerURL(serverURL))
+		dir = filepath.Join(baseCacheDir, hashServerURL(serverURL+"|"+userID))
 	}
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
@@ -291,16 +295,50 @@ func (s *LibraryStore) SaveMixedContent(libID string, items []domain.ListItem, s
 
 // === Seasons (hierarchical key: lib:{libID}:show:{showID}) ===
 
+// tvCacheTTL bounds staleness of the TV hierarchy caches. Unlike libraries
+// (which have a server timestamp plus an item-count check), seasons and
+// episodes expose no server-side freshness signal at all, so without a TTL
+// they would be served stale forever — new episodes never appearing until a
+// manual refresh.
+const tvCacheTTL = 6 * time.Hour
+
+// timestamped wraps hierarchical cache payloads with their fetch time.
+// Pre-TTL cache entries fail to decode into this wrapper and simply read as
+// cache misses.
+type timestamped struct {
+	FetchedAt int64           `json:"fetched_at"`
+	Data      json.RawMessage `json:"data"`
+}
+
+func (s *LibraryStore) getWithTTL(bucket []byte, key string, dest interface{}) bool {
+	var wrapper timestamped
+	if !s.get(bucket, key, &wrapper) {
+		return false
+	}
+	if time.Now().Unix()-wrapper.FetchedAt > int64(tvCacheTTL.Seconds()) {
+		return false
+	}
+	return json.Unmarshal(wrapper.Data, dest) == nil
+}
+
+func (s *LibraryStore) setWithTTL(bucket []byte, key string, value interface{}) error {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	return s.set(bucket, key, timestamped{FetchedAt: time.Now().Unix(), Data: data})
+}
+
 func (s *LibraryStore) GetSeasons(libID, showID string) ([]*domain.Season, bool) {
 	var seasons []*domain.Season
 	key := fmt.Sprintf("lib:%s:show:%s", libID, showID)
-	ok := s.get(bucketSeasons, key, &seasons)
+	ok := s.getWithTTL(bucketSeasons, key, &seasons)
 	return seasons, ok
 }
 
 func (s *LibraryStore) SaveSeasons(libID, showID string, seasons []*domain.Season) error {
 	key := fmt.Sprintf("lib:%s:show:%s", libID, showID)
-	return s.set(bucketSeasons, key, seasons)
+	return s.setWithTTL(bucketSeasons, key, seasons)
 }
 
 // === Episodes (hierarchical key: lib:{libID}:show:{showID}:season:{seasonID}) ===
@@ -308,13 +346,13 @@ func (s *LibraryStore) SaveSeasons(libID, showID string, seasons []*domain.Seaso
 func (s *LibraryStore) GetEpisodes(libID, showID, seasonID string) ([]*domain.MediaItem, bool) {
 	var episodes []*domain.MediaItem
 	key := fmt.Sprintf("lib:%s:show:%s:season:%s", libID, showID, seasonID)
-	ok := s.get(bucketEpisodes, key, &episodes)
+	ok := s.getWithTTL(bucketEpisodes, key, &episodes)
 	return episodes, ok
 }
 
 func (s *LibraryStore) SaveEpisodes(libID, showID, seasonID string, episodes []*domain.MediaItem) error {
 	key := fmt.Sprintf("lib:%s:show:%s:season:%s", libID, showID, seasonID)
-	return s.set(bucketEpisodes, key, episodes)
+	return s.setWithTTL(bucketEpisodes, key, episodes)
 }
 
 // === Validation ===
@@ -376,7 +414,7 @@ func (s *LibraryStore) SetWatchState(itemID string, played bool) {
 		return out
 	}
 
-	s.updateEach(bucketEpisodes, nil, patchItemList)
+	s.updateEach(bucketEpisodes, nil, wrapped(patchItemList))
 	s.updateEach(bucketContent, keySuffix(":movies"), patchItemList)
 	s.updateEach(bucketPlaylists, keyPrefix("items:"), patchItemList)
 	s.updateEach(bucketContent, keySuffix(":mixed"), func(key string, data []byte) []byte {
@@ -409,7 +447,7 @@ func (s *LibraryStore) SetWatchState(itemID string, played bool) {
 		delta = -1
 	}
 
-	s.updateEach(bucketSeasons, nil, func(key string, data []byte) []byte {
+	s.updateEach(bucketSeasons, nil, wrapped(func(key string, data []byte) []byte {
 		var seasons []*domain.Season
 		if json.Unmarshal(data, &seasons) != nil {
 			return nil
@@ -429,7 +467,7 @@ func (s *LibraryStore) SetWatchState(itemID string, played bool) {
 			return nil
 		}
 		return out
-	})
+	}))
 
 	adjustShow := func(show *domain.Show) bool {
 		if show == nil || show.ID != showID {
@@ -492,6 +530,27 @@ func clampCount(n, max int) int {
 
 func keySuffix(suffix string) func(string) bool {
 	return func(k string) bool { return strings.HasSuffix(k, suffix) }
+}
+
+// wrapped adapts a payload transform to values stored inside the timestamped
+// TTL wrapper (seasons/episodes), preserving the original fetch time.
+func wrapped(transform func(key string, data []byte) []byte) func(key string, data []byte) []byte {
+	return func(key string, data []byte) []byte {
+		var w timestamped
+		if json.Unmarshal(data, &w) != nil || w.Data == nil {
+			return nil
+		}
+		newData := transform(key, w.Data)
+		if newData == nil {
+			return nil
+		}
+		w.Data = newData
+		out, err := json.Marshal(w)
+		if err != nil {
+			return nil
+		}
+		return out
+	}
 }
 
 func keyPrefix(prefix string) func(string) bool {
