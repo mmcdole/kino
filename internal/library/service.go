@@ -43,11 +43,23 @@ func (s *Service) SyncLibrary(
 	lib domain.Library,
 	onProgress domain.ProgressFunc,
 ) (domain.SyncResult, error) {
-	// 1. Freshness check
+	// 1. Freshness check. The library timestamp alone is not enough: servers
+	// don't reliably bump it when items are added (Jellyfin's Views only
+	// expose the library's creation date), so also verify the item count
+	// with a cheap metadata-only request.
 	if s.store.IsValid(lib.ID, lib.UpdatedAt) {
 		count := s.getCachedCount(lib)
-		s.logger.Debug("cache fresh", "libID", lib.ID, "count", count)
-		return domain.SyncResult{LibraryID: lib.ID, FromCache: true, Count: count}, nil
+		serverCount, err := s.client.GetLibraryItemCount(ctx, lib.ID, lib.Type)
+		if err != nil {
+			// Can't verify; serve cache rather than fail or refetch blindly
+			s.logger.Warn("item count check failed, serving cache", "libID", lib.ID, "error", err)
+			return domain.SyncResult{LibraryID: lib.ID, FromCache: true, Count: count}, nil
+		}
+		if serverCount == count {
+			s.logger.Debug("cache fresh", "libID", lib.ID, "count", count)
+			return domain.SyncResult{LibraryID: lib.ID, FromCache: true, Count: count}, nil
+		}
+		s.logger.Debug("item count changed", "libID", lib.ID, "cached", count, "server", serverCount)
 	}
 
 	// 2. Fetch based on library type
