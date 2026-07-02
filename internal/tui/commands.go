@@ -34,44 +34,44 @@ func LoadLibrariesCmd(svc *library.Service) tea.Cmd {
 }
 
 // LoadMoviesCmd loads movies from a library
-func LoadMoviesCmd(svc *library.Service, libID string) tea.Cmd {
+func LoadMoviesCmd(svc *library.Service, lib domain.Library) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		movies, err := svc.FetchMovies(ctx, libID, nil)
+		movies, err := svc.FetchMovies(ctx, lib.ID, lib.UpdatedAt, nil)
 		if err != nil {
 			return ErrMsg{Err: err, Context: "loading movies"}
 		}
-		return MoviesLoadedMsg{Movies: movies, LibraryID: libID}
+		return MoviesLoadedMsg{Movies: movies, LibraryID: lib.ID}
 	}
 }
 
 // LoadShowsCmd loads TV shows from a library
-func LoadShowsCmd(svc *library.Service, libID string) tea.Cmd {
+func LoadShowsCmd(svc *library.Service, lib domain.Library) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		shows, err := svc.FetchShows(ctx, libID, nil)
+		shows, err := svc.FetchShows(ctx, lib.ID, lib.UpdatedAt, nil)
 		if err != nil {
 			return ErrMsg{Err: err, Context: "loading shows"}
 		}
-		return ShowsLoadedMsg{Shows: shows, LibraryID: libID}
+		return ShowsLoadedMsg{Shows: shows, LibraryID: lib.ID}
 	}
 }
 
 // LoadMixedLibraryCmd loads content (movies AND shows) from a mixed library
-func LoadMixedLibraryCmd(svc *library.Service, libID string) tea.Cmd {
+func LoadMixedLibraryCmd(svc *library.Service, lib domain.Library) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		items, err := svc.FetchMixedContent(ctx, libID, nil)
+		items, err := svc.FetchMixedContent(ctx, lib.ID, lib.UpdatedAt, nil)
 		if err != nil {
 			return ErrMsg{Err: err, Context: "loading library content"}
 		}
-		return MixedLibraryLoadedMsg{Items: items, LibraryID: libID}
+		return MixedLibraryLoadedMsg{Items: items, LibraryID: lib.ID}
 	}
 }
 

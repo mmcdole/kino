@@ -68,4 +68,3 @@ func WrapPlaylistItems(items []*domain.MediaItem) []domain.ListItem {
 	}
 	return result
 }
-

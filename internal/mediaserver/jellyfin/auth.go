@@ -26,7 +26,6 @@ type AuthResult struct {
 	Username string
 }
 
-
 const (
 	authTimeout = 30 * time.Second
 )

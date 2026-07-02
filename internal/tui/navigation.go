@@ -126,7 +126,7 @@ func (m *Model) navigateToMixedLibraryItem(lib *domain.Library, targets []NavTar
 	m.ColumnStack.Push(mixedCol, 0)
 	m.Loading = true
 	m.updateLayout()
-	return LoadMixedLibraryCmd(m.LibraryService, lib.ID)
+	return LoadMixedLibraryCmd(m.LibraryService, *lib)
 }
 
 // NavigationContext contains information needed to navigate to an item
@@ -229,7 +229,7 @@ func (m *Model) drillSelected() *drillResult {
 					}
 					return nil
 				},
-				loadCmd: LoadMoviesCmd(m.LibraryService, v.ID),
+				loadCmd: LoadMoviesCmd(m.LibraryService, v),
 			}
 		case "show":
 			spec = columnLoadSpec{
@@ -243,7 +243,7 @@ func (m *Model) drillSelected() *drillResult {
 					}
 					return nil
 				},
-				loadCmd: LoadShowsCmd(m.LibraryService, v.ID),
+				loadCmd: LoadShowsCmd(m.LibraryService, v),
 			}
 		case "mixed":
 			spec = columnLoadSpec{
@@ -257,7 +257,7 @@ func (m *Model) drillSelected() *drillResult {
 					}
 					return nil
 				},
-				loadCmd: LoadMixedLibraryCmd(m.LibraryService, v.ID),
+				loadCmd: LoadMixedLibraryCmd(m.LibraryService, v),
 			}
 		default:
 			// Unknown library type - treat as mixed
@@ -272,7 +272,7 @@ func (m *Model) drillSelected() *drillResult {
 					}
 					return nil
 				},
-				loadCmd: LoadMixedLibraryCmd(m.LibraryService, v.ID),
+				loadCmd: LoadMixedLibraryCmd(m.LibraryService, v),
 			}
 		}
 		return m.pushAndLoadColumn(spec, cursor)
@@ -537,7 +537,7 @@ func (m *Model) navigateToTypedLibraryItem(lib *domain.Library, navCtx Navigatio
 				}
 				return nil
 			},
-			loadCmd: LoadMoviesCmd(m.LibraryService, navCtx.LibraryID),
+			loadCmd: LoadMoviesCmd(m.LibraryService, *lib),
 		}
 	} else {
 		// Shows and episodes both start from the shows column
@@ -558,7 +558,7 @@ func (m *Model) navigateToTypedLibraryItem(lib *domain.Library, navCtx Navigatio
 				}
 				return nil
 			},
-			loadCmd: LoadShowsCmd(m.LibraryService, navCtx.LibraryID),
+			loadCmd: LoadShowsCmd(m.LibraryService, *lib),
 		}
 	}
 

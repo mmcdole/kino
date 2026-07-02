@@ -305,11 +305,11 @@ func (m Model) refreshLibraryContent(top *components.ListColumn) (Model, tea.Cmd
 
 	switch lib.Type {
 	case "movie":
-		return m, LoadMoviesCmd(m.LibraryService, lib.ID)
+		return m, LoadMoviesCmd(m.LibraryService, *lib)
 	case "show":
-		return m, LoadShowsCmd(m.LibraryService, lib.ID)
+		return m, LoadShowsCmd(m.LibraryService, *lib)
 	default:
-		return m, LoadMixedLibraryCmd(m.LibraryService, lib.ID)
+		return m, LoadMixedLibraryCmd(m.LibraryService, *lib)
 	}
 }
 
