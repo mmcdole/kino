@@ -19,11 +19,6 @@ type MediaSource interface {
 	domain.PlaybackClient // Playback: ResolvePlayableURL, MarkPlayed/Unplayed
 	domain.SearchClient   // Search: Search(query) across all libraries
 	domain.PlaylistClient // Playlists: GetPlaylists, CreatePlaylist, AddToPlaylist, etc.
-
-	// GetMediaItem fetches full metadata for a single item.
-	// Kept on MediaSource (not in a domain interface) as it's only used
-	// by specific features that need detailed item metadata.
-	GetMediaItem(ctx context.Context, itemID string) (*domain.MediaItem, error)
 }
 
 // NewClient creates a new MediaSource based on the server type.

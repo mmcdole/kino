@@ -3,8 +3,8 @@ package components
 import (
 	"fmt"
 	"strings"
+	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mmcdole/kino/internal/domain"
 	"github.com/mmcdole/kino/internal/tui/styles"
@@ -60,16 +60,6 @@ func (i *Inspector) SetSize(width, height int) {
 	if i.maxVisible < 1 {
 		i.maxVisible = 1
 	}
-}
-
-// HasItem returns true if there is an item to display
-func (i Inspector) HasItem() bool {
-	return i.item != nil
-}
-
-// Update handles messages (currently no-op, inspector is not focusable)
-func (i Inspector) Update(_ tea.Msg) (Inspector, tea.Cmd) {
-	return i, nil
 }
 
 // View renders the component
@@ -532,22 +522,8 @@ func splitLines(s string) []string {
 }
 
 // formatDuration formats a duration as HH:MM:SS or MM:SS
-func formatDuration(d interface{}) string {
-	var totalSeconds int64
-
-	switch v := d.(type) {
-	case int64:
-		totalSeconds = v / 1000 // assuming milliseconds
-	case int:
-		totalSeconds = int64(v) / 1000
-	default:
-		// Try to handle time.Duration
-		if dur, ok := d.(interface{ Seconds() float64 }); ok {
-			totalSeconds = int64(dur.Seconds())
-		} else {
-			return "00:00"
-		}
-	}
+func formatDuration(d time.Duration) string {
+	totalSeconds := int64(d.Seconds())
 
 	hours := totalSeconds / 3600
 	minutes := (totalSeconds % 3600) / 60

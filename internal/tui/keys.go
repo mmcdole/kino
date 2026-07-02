@@ -5,17 +5,9 @@ import "github.com/charmbracelet/bubbles/key"
 // KeyMap defines all key bindings for the application
 type KeyMap struct {
 	// Navigation
-	Up       key.Binding
-	Down     key.Binding
-	Right    key.Binding
-	Enter    key.Binding
-	Back     key.Binding
-	HalfUp   key.Binding
-	HalfDown key.Binding
-	PageUp   key.Binding
-	PageDown key.Binding
-	Home     key.Binding
-	End      key.Binding
+	Right key.Binding
+	Enter key.Binding
+	Back  key.Binding
 
 	// Actions
 	Quit            key.Binding
@@ -44,14 +36,6 @@ type KeyMap struct {
 func DefaultKeyMap() KeyMap {
 	return KeyMap{
 		// Navigation
-		Up: key.NewBinding(
-			key.WithKeys("k", "up"),
-			key.WithHelp("k/↑", "up"),
-		),
-		Down: key.NewBinding(
-			key.WithKeys("j", "down"),
-			key.WithHelp("j/↓", "down"),
-		),
 		Right: key.NewBinding(
 			key.WithKeys("l", "right"),
 			key.WithHelp("l/→", "expand"),
@@ -63,30 +47,6 @@ func DefaultKeyMap() KeyMap {
 		Back: key.NewBinding(
 			key.WithKeys("h", "left", "backspace"),
 			key.WithHelp("h/←", "back"),
-		),
-		HalfUp: key.NewBinding(
-			key.WithKeys("ctrl+u"),
-			key.WithHelp("C-u", "half page up"),
-		),
-		HalfDown: key.NewBinding(
-			key.WithKeys("ctrl+d"),
-			key.WithHelp("C-d", "half page down"),
-		),
-		PageUp: key.NewBinding(
-			key.WithKeys("pgup"),
-			key.WithHelp("PgUp", "page up"),
-		),
-		PageDown: key.NewBinding(
-			key.WithKeys("pgdown"),
-			key.WithHelp("PgDn", "page down"),
-		),
-		Home: key.NewBinding(
-			key.WithKeys("g", "home"),
-			key.WithHelp("g", "go to top"),
-		),
-		End: key.NewBinding(
-			key.WithKeys("G", "end"),
-			key.WithHelp("G", "go to bottom"),
 		),
 
 		// Actions

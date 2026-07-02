@@ -105,25 +105,9 @@ func (cs *ColumnStack) Reset(col *components.ListColumn) {
 	cs.columns = append(cs.columns, col)
 }
 
-// Parent returns the parent column (second from top), or nil if at root
-func (cs *ColumnStack) Parent() *components.ListColumn {
-	if len(cs.columns) < 2 {
-		return nil
-	}
-	return cs.columns[len(cs.columns)-2]
-}
-
 // CanGoBack returns true if we can navigate back (not at root)
 func (cs *ColumnStack) CanGoBack() bool {
 	return len(cs.columns) > 1
-}
-
-// Depth returns the navigation depth (0 = root, 1 = first drill, etc.)
-func (cs *ColumnStack) Depth() int {
-	if len(cs.columns) == 0 {
-		return 0
-	}
-	return len(cs.columns) - 1
 }
 
 // UpdateTop replaces the top column with the given column.

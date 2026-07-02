@@ -457,15 +457,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				// Trigger delayed cleanup
 				cmds = append(cmds, ClearLibraryStatusCmd(msg.LibraryID, 2*time.Second))
-
-				// If we're at library level and this is selected library, show its content
-				if m.ColumnStack.Len() == 1 {
-					if libCol := m.ColumnStack.Top(); libCol != nil {
-						if lib := libCol.SelectedLibrary(); lib != nil && lib.ID == msg.LibraryID {
-							// Don't auto-drill; user must press l/Enter
-						}
-					}
-				}
 			}
 		}
 

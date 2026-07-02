@@ -417,27 +417,6 @@ func (c *Client) ResolvePlayableURL(ctx context.Context, itemID string) (string,
 	return fmt.Sprintf("%s%s?X-Plex-Token=%s", c.baseURL, mediaPath, c.token), nil
 }
 
-// GetMediaItem returns detailed metadata for a specific item
-func (c *Client) GetMediaItem(ctx context.Context, itemID string) (*domain.MediaItem, error) {
-	path := fmt.Sprintf("/library/metadata/%s", itemID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	container, err := c.parseResponse(body)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(container.Metadata) == 0 {
-		return nil, domain.ErrItemNotFound
-	}
-
-	item := MapMediaItem(container.Metadata[0], c.baseURL)
-	return &item, nil
-}
-
 // MarkPlayed marks an item as fully watched
 func (c *Client) MarkPlayed(ctx context.Context, itemID string) error {
 	query := url.Values{}

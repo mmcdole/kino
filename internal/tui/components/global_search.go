@@ -22,7 +22,6 @@ type GlobalSearch struct {
 	visible   bool
 	width     int
 	height    int
-	loading   bool
 	prevQuery string
 }
 
@@ -52,7 +51,6 @@ func (o *GlobalSearch) Show() {
 	o.results = nil
 	o.cursor = 0
 	o.offset = 0
-	o.loading = false
 	o.prevQuery = ""
 }
 
@@ -72,7 +70,6 @@ func (o *GlobalSearch) SetResults(results []search.FilterResult) {
 	o.results = results
 	o.cursor = 0
 	o.offset = 0
-	o.loading = false
 }
 
 // SetSize updates the component dimensions
@@ -199,11 +196,7 @@ func (o GlobalSearch) View() string {
 	b.WriteString("\n\n")
 
 	// Results
-	if o.loading {
-		b.WriteString(styles.SpinnerStyle.Render("Searching..."))
-	} else {
-		o.renderResults(&b, modalWidth, maxResults)
-	}
+	o.renderResults(&b, modalWidth, maxResults)
 
 	// Center the modal
 	content := lipgloss.NewStyle().

@@ -413,35 +413,6 @@ func (c *Client) ResolvePlayableURL(ctx context.Context, itemID string) (string,
 	return streamURL, nil
 }
 
-// GetMediaItem returns detailed metadata for a specific item
-func (c *Client) GetMediaItem(ctx context.Context, itemID string) (*domain.MediaItem, error) {
-	query := url.Values{}
-	query.Set("Fields", "Overview,MediaSources,MediaStreams,DateCreated")
-
-	path := fmt.Sprintf("/Users/%s/Items/%s", c.userID, itemID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, query)
-	if err != nil {
-		return nil, err
-	}
-
-	var item Item
-	if err := json.Unmarshal(body, &item); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	var result domain.MediaItem
-	switch item.Type {
-	case "Movie":
-		result = mapMovie(item, c.baseURL)
-	case "Episode":
-		result = mapEpisode(item, c.baseURL)
-	default:
-		return nil, domain.ErrItemNotFound
-	}
-
-	return &result, nil
-}
-
 // MarkPlayed marks an item as fully watched
 func (c *Client) MarkPlayed(ctx context.Context, itemID string) error {
 	path := fmt.Sprintf("/Users/%s/PlayedItems/%s", c.userID, itemID)
