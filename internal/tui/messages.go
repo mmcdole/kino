@@ -77,15 +77,6 @@ type MarkUnwatchedMsg struct {
 // TickMsg is a general tick message for animations
 type TickMsg struct{}
 
-// ClearStatusMsg clears the status bar message
-type ClearStatusMsg struct{}
-
-// StatusMsg sets a temporary status message
-type StatusMsg struct {
-	Message string
-	IsError bool
-}
-
 // LibrarySyncProgressMsg sent for each chunk during streaming sync
 type LibrarySyncProgressMsg struct {
 	LibraryID   string

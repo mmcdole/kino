@@ -45,6 +45,15 @@ var (
 
 	ErrorStyle = lipgloss.NewStyle().
 			Foreground(Red)
+
+	// AlertStyle marks persistent, actionable notices (bold to stand apart
+	// from transient errors)
+	AlertStyle = lipgloss.NewStyle().
+			Foreground(Red).
+			Bold(true)
+
+	SuccessStyle = lipgloss.NewStyle().
+			Foreground(Green)
 )
 
 // Raw watch status characters (unstyled)

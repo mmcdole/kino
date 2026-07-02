@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/domain"
@@ -92,7 +91,6 @@ func (m *Model) pushAndLoadColumn(spec columnLoadSpec, cursor int) *drillResult 
 	}
 
 	col.SetLoading(true)
-	m.Loading = true
 	return &drillResult{
 		AwaitKind: spec.awaitKind,
 		AwaitID:   spec.awaitID,
@@ -124,7 +122,6 @@ func (m *Model) navigateToMixedLibraryItem(lib *domain.Library, targets []NavTar
 
 	mixedCol.SetLoading(true)
 	m.ColumnStack.Push(mixedCol, 0)
-	m.Loading = true
 	m.updateLayout()
 	return LoadMixedLibraryCmd(m.LibraryService, *lib)
 }
@@ -203,7 +200,6 @@ func (m *Model) drillSelected() *drillResult {
 			}
 
 			col.SetLoading(true)
-			m.Loading = true
 			return &drillResult{
 				AwaitKind: AwaitNone,
 				Cmd:       LoadPlaylistsCmd(m.PlaylistService),
@@ -340,7 +336,6 @@ func (m *Model) drillSelected() *drillResult {
 		}
 
 		col.SetLoading(true)
-		m.Loading = true
 		return &drillResult{
 			AwaitKind: AwaitNone, // Playlists don't use the NavPlan system
 			AwaitID:   v.ID,
@@ -427,9 +422,7 @@ func (m *Model) advanceNavPlanAfterLoad(kind NavAwaitKind, id string) tea.Cmd {
 	if target.ID != "" {
 		if !top.SetSelectedByID(target.ID) {
 			m.clearNavPlan()
-			m.StatusMsg = "Item not found (library may have changed)"
-			m.StatusIsErr = true
-			return ClearStatusCmd(5 * time.Second)
+			return m.notify(NoticeError, "Item not found (library may have changed)")
 		}
 	}
 
@@ -445,9 +438,7 @@ func (m *Model) advanceNavPlanAfterLoad(kind NavAwaitKind, id string) tea.Cmd {
 	result := m.drillSelected()
 	if result == nil {
 		m.clearNavPlan()
-		m.StatusMsg = "Navigation failed"
-		m.StatusIsErr = true
-		return ClearStatusCmd(5 * time.Second)
+		return m.notify(NoticeError, "Navigation failed")
 	}
 	// Update navPlan with await info for next load
 	m.navPlan.AwaitKind = result.AwaitKind

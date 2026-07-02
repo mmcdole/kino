@@ -168,13 +168,6 @@ func TickCmd(delay time.Duration) tea.Cmd {
 	})
 }
 
-// ClearStatusCmd returns a command that clears status after a delay
-func ClearStatusCmd(delay time.Duration) tea.Cmd {
-	return tea.Tick(delay, func(t time.Time) tea.Msg {
-		return ClearStatusMsg{}
-	})
-}
-
 // ClearLibraryStatusCmd returns a command that clears library status after delay
 func ClearLibraryStatusCmd(libID string, delay time.Duration) tea.Cmd {
 	return tea.Tick(delay, func(t time.Time) tea.Msg {

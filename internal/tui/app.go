@@ -102,16 +102,15 @@ type Model struct {
 	Height int
 
 	// UI state
-	StatusMsg     string
-	StatusIsErr   bool
-	Loading       bool
 	SpinnerFrame  int
 	ShowInspector bool // Toggle inspector visibility (default true)
 
+	// Footer notification (single slot; see notice.go for the rules)
+	notice    Notice
+	noticeSeq int
+
 	// Sync state
 	LibraryStates map[string]components.LibrarySyncState // Tracks progress per library
-	SyncingCount  int                                    // Libraries still syncing
-	MultiLibSync  bool                                   // True when syncing multiple libraries (R / startup)
 	SyncGen       int                                    // Current sync generation; messages from older generations are dropped
 
 	// Navigation plan for deep linking
@@ -201,10 +200,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
 		}
 		m.LibraryStates[playlistsLibraryID] = components.LibrarySyncState{Status: components.StatusSyncing}
-		m.SyncingCount = len(msg.Libraries) + 1 // +1 for playlists
-		m.MultiLibSync = true
 		m.Inspector.SetLibraryStates(m.LibraryStates)
-		m.Loading = true
 
 		syncCmds := []tea.Cmd{
 			SyncAllLibrariesCmd(m.LibraryService, msg.Libraries, m.SyncGen),
@@ -229,9 +225,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// server-side — that's the one case where resetting is the
 			// only sane answer
 			if drilledID != "" && drilledID != playlistsLibraryID && m.findLibrary(drilledID) == nil {
-				m.StatusMsg = "Library no longer exists on server"
-				m.StatusIsErr = true
-				syncCmds = append(syncCmds, ClearStatusCmd(5*time.Second))
+				// Alert: it explains why navigation just reset; stays until
+				// the user dismisses it with Esc
+				m.notify(NoticeAlert, "Library no longer exists on server — navigation reset")
 			} else {
 				if reload := m.reloadTopColumnCmd(); reload != nil {
 					syncCmds = append(syncCmds, reload)
@@ -250,7 +246,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(syncCmds...)
 
 	case MoviesLoadedMsg:
-		m.Loading = false
 
 		// If manual load succeeded and library was in error state, clear it
 		if state, ok := m.LibraryStates[msg.LibraryID]; ok && state.Status == components.StatusError {
@@ -279,7 +274,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case ShowsLoadedMsg:
-		m.Loading = false
 
 		// If manual load succeeded and library was in error state, clear it
 		if state, ok := m.LibraryStates[msg.LibraryID]; ok && state.Status == components.StatusError {
@@ -308,7 +302,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case MixedLibraryLoadedMsg:
-		m.Loading = false
 
 		// If manual load succeeded and library was in error state, clear it
 		if state, ok := m.LibraryStates[msg.LibraryID]; ok && state.Status == components.StatusError {
@@ -337,7 +330,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case SeasonsLoadedMsg:
-		m.Loading = false
 
 		// Validate content ID to prevent race condition
 		if !m.validateContentID(msg.ShowID) {
@@ -358,7 +350,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case EpisodesLoadedMsg:
-		m.Loading = false
 
 		// Validate content ID to prevent race condition
 		if !m.validateContentID(msg.SeasonID) {
@@ -379,25 +370,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case PlaybackStartedMsg:
-		m.StatusMsg = "Launched: " + msg.Item.Title
-		return m, ClearStatusCmd(3 * time.Second)
+		return m, m.notify(NoticeSuccess, "Launched: "+msg.Item.Title)
 
 	case MarkWatchedMsg:
-		m.StatusMsg = "Marked watched: " + msg.Title
 		m.applyWatchState(msg.ItemID, true)
-		cmds = append(cmds, ClearStatusCmd(3*time.Second))
-		return m, tea.Batch(cmds...)
+		return m, m.notify(NoticeSuccess, "Marked watched: "+msg.Title)
 
 	case MarkUnwatchedMsg:
-		m.StatusMsg = "Marked unwatched: " + msg.Title
 		m.applyWatchState(msg.ItemID, false)
-		cmds = append(cmds, ClearStatusCmd(3*time.Second))
-		return m, tea.Batch(cmds...)
+		return m, m.notify(NoticeSuccess, "Marked unwatched: "+msg.Title)
 
 	case ErrMsg:
 		m.clearNavPlan()
-		m.StatusIsErr = true
-		m.Loading = false
 		// A failed refresh must not leave the column spinner running, and a
 		// failed initial load must show a retry hint, not spin forever
 		if top := m.ColumnStack.Top(); top != nil {
@@ -407,24 +391,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if errors.Is(msg.Err, domain.ErrAuthFailed) {
-			// Actionable, persistent message: the token was revoked/expired
-			// and the user must re-authenticate
-			m.StatusMsg = authFailedStatusMsg
+			// The token was revoked/expired and the user must re-authenticate
+			m.notify(NoticeAlert, authFailedStatusMsg)
 			return m, nil
 		}
-		m.StatusMsg = msg.Error()
-		cmds = append(cmds, ClearStatusCmd(5*time.Second))
-		return m, tea.Batch(cmds...)
+		return m, m.notify(NoticeError, msg.Error())
 
-	case StatusMsg:
-		m.StatusMsg = msg.Message
-		m.StatusIsErr = msg.IsError
-		cmds = append(cmds, ClearStatusCmd(3*time.Second))
-		return m, tea.Batch(cmds...)
-
-	case ClearStatusMsg:
-		m.StatusMsg = ""
-		m.StatusIsErr = false
+	case ClearNoticeMsg:
+		m.expireNotice(msg.Seq)
 		return m, nil
 
 	case LibrarySyncProgressMsg:
@@ -440,11 +414,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Error != nil {
 			state.Status = components.StatusError
 			state.Error = msg.Error
-			m.SyncingCount--
 			slog.Error("library sync failed", "libraryID", msg.LibraryID, "error", msg.Error)
 			if errors.Is(msg.Error, domain.ErrAuthFailed) {
-				m.StatusMsg = authFailedStatusMsg
-				m.StatusIsErr = true
+				m.notify(NoticeAlert, authFailedStatusMsg)
+			} else {
+				// The row's ✗ glyph may be off-screen; name the scope so the
+				// failure is visible wherever the user is
+				name := msg.LibraryID
+				if lib := m.findLibrary(msg.LibraryID); lib != nil {
+					name = lib.Name
+				} else if msg.LibraryID == playlistsLibraryID {
+					name = "Playlists"
+				}
+				cmds = append(cmds, m.notify(NoticeError, fmt.Sprintf("Sync failed: %s — r to retry", name)))
 			}
 		} else {
 			state.Loaded = msg.Loaded
@@ -453,7 +435,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if msg.Done {
 				state.Status = components.StatusSynced
-				m.SyncingCount--
 
 				// Trigger delayed cleanup
 				cmds = append(cmds, ClearLibraryStatusCmd(msg.LibraryID, 2*time.Second))
@@ -466,11 +447,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// If there's a continuation command, run it
 		if msg.NextCmd != nil {
 			cmds = append(cmds, msg.NextCmd)
-		}
-
-		// Check if all done
-		if m.SyncingCount == 0 {
-			m.Loading = false
 		}
 
 		return m, tea.Batch(cmds...)
@@ -487,16 +463,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case LogoutCompleteMsg:
 		if msg.Error != nil {
-			m.StatusMsg = fmt.Sprintf("Logout failed: %v", msg.Error)
-			m.StatusIsErr = true
 			m.State = StateBrowsing
-			return m, ClearStatusCmd(5 * time.Second)
+			return m, m.notify(NoticeError, fmt.Sprintf("Logout failed: %v", msg.Error))
 		}
 		// Logout successful - quit the application
 		return m, tea.Quit
 
 	case PlaylistsLoadedMsg:
-		m.Loading = false
 
 		// Validate content ID like every other load handler: a slow playlist
 		// fetch must not clobber whatever column the user navigated to since
@@ -511,7 +484,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case PlaylistItemsLoadedMsg:
-		m.Loading = false
 
 		// Validate content ID to prevent race condition
 		if !m.validateContentID(msg.PlaylistID) {
@@ -526,51 +498,44 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case PlaylistModalDataMsg:
-		m.StatusMsg = "" // clear the "Loading playlists..." pending status
+		// Clear the "Loading playlists..." pending notice (never an alert)
+		if m.notice.Kind == NoticeInfo {
+			m.clearNotice()
+		}
 		m.PlaylistModal.Show(msg.Playlists, msg.Membership, msg.Item)
 		m.PlaylistModal.SetSize(m.Width, m.Height)
 		return m, nil
 
 	case PlaylistUpdatedMsg:
 		if msg.Error != nil {
-			m.StatusMsg = fmt.Sprintf("Playlist update failed: %v", msg.Error)
-			m.StatusIsErr = true
-		} else {
-			m.StatusMsg = "Playlist updated"
-			// Refresh playlist items if viewing a playlist
-			if m.currentPlaylistID != "" {
-				return m, LoadPlaylistItemsCmd(m.PlaylistService, m.currentPlaylistID)
-			}
+			return m, m.notify(NoticeError, fmt.Sprintf("Playlist update failed: %v", msg.Error))
 		}
-		cmds = append(cmds, ClearStatusCmd(3*time.Second))
+		cmds = append(cmds, m.notify(NoticeSuccess, "Playlist updated"))
+		// Refresh playlist items if viewing a playlist
+		if m.currentPlaylistID != "" {
+			cmds = append(cmds, LoadPlaylistItemsCmd(m.PlaylistService, m.currentPlaylistID))
+		}
 		return m, tea.Batch(cmds...)
 
 	case PlaylistCreatedMsg:
 		if msg.Error != nil {
-			m.StatusMsg = fmt.Sprintf("Failed to create playlist: %v", msg.Error)
-			m.StatusIsErr = true
-		} else {
-			m.StatusMsg = fmt.Sprintf("Created playlist: %s", msg.Playlist.Title)
-			// Refresh playlists if viewing playlists
-			if top := m.ColumnStack.Top(); top != nil && top.ColumnType() == components.ColumnTypePlaylists {
-				return m, LoadPlaylistsCmd(m.PlaylistService)
-			}
+			return m, m.notify(NoticeError, fmt.Sprintf("Failed to create playlist: %v", msg.Error))
 		}
-		cmds = append(cmds, ClearStatusCmd(3*time.Second))
+		cmds = append(cmds, m.notify(NoticeSuccess, fmt.Sprintf("Created playlist: %s", msg.Playlist.Title)))
+		// Refresh playlists if viewing playlists
+		if top := m.ColumnStack.Top(); top != nil && top.ColumnType() == components.ColumnTypePlaylists {
+			cmds = append(cmds, LoadPlaylistsCmd(m.PlaylistService))
+		}
 		return m, tea.Batch(cmds...)
 
 	case PlaylistDeletedMsg:
 		if msg.Error != nil {
-			m.StatusMsg = fmt.Sprintf("Failed to delete playlist: %v", msg.Error)
-			m.StatusIsErr = true
-			cmds = append(cmds, ClearStatusCmd(3*time.Second))
-		} else {
-			m.StatusMsg = "Playlist deleted"
-			// Clear current playlist ID and refresh the playlists
-			m.currentPlaylistID = ""
-			cmds = append(cmds, LoadPlaylistsCmd(m.PlaylistService))
-			cmds = append(cmds, ClearStatusCmd(3*time.Second))
+			return m, m.notify(NoticeError, fmt.Sprintf("Failed to delete playlist: %v", msg.Error))
 		}
+		cmds = append(cmds, m.notify(NoticeSuccess, "Playlist deleted"))
+		// Clear current playlist ID and refresh the playlists
+		m.currentPlaylistID = ""
+		cmds = append(cmds, LoadPlaylistsCmd(m.PlaylistService))
 		return m, tea.Batch(cmds...)
 	}
 
@@ -588,6 +553,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+// activeSyncCount returns how many libraries are currently syncing, for the
+// footer's compact background-activity segment
+func (m Model) activeSyncCount() int {
+	n := 0
+	for _, state := range m.LibraryStates {
+		if state.Status == components.StatusSyncing {
+			n++
+		}
+	}
+	return n
 }
 
 // libraryColumn returns the library column (index 0) or nil if not available
