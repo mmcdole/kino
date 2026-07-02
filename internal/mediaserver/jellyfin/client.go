@@ -26,19 +26,21 @@ type Client struct {
 	baseURL    string
 	token      string
 	userID     string
+	deviceID   string
 	httpClient *http.Client
 	logger     *slog.Logger
 }
 
 // NewClient creates a new Jellyfin API client
-func NewClient(baseURL, token, userID string, logger *slog.Logger) *Client {
+func NewClient(baseURL, token, userID, deviceID string, logger *slog.Logger) *Client {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Client{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		token:   token,
-		userID:  userID,
+		baseURL:  strings.TrimRight(baseURL, "/"),
+		token:    token,
+		userID:   userID,
+		deviceID: deviceID,
 		httpClient: &http.Client{
 			Timeout: defaultTimeout,
 		},
@@ -79,7 +81,7 @@ func (c *Client) doRequest(ctx context.Context, method, path string, query url.V
 
 		// Set Jellyfin auth headers
 		req.Header.Set("Accept", "application/json")
-		req.Header.Set("X-Emby-Authorization", buildAuthHeader(c.token))
+		req.Header.Set("X-Emby-Authorization", buildAuthHeader(c.token, c.deviceID))
 
 		c.logger.Debug("jellyfin request", "method", method, "url", reqURL, "attempt", attempt)
 
@@ -407,7 +409,7 @@ func (c *Client) MarkPlayed(ctx context.Context, itemID string) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("X-Emby-Authorization", buildAuthHeader(c.token))
+	req.Header.Set("X-Emby-Authorization", buildAuthHeader(c.token, c.deviceID))
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -431,7 +433,7 @@ func (c *Client) MarkUnplayed(ctx context.Context, itemID string) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("X-Emby-Authorization", buildAuthHeader(c.token))
+	req.Header.Set("X-Emby-Authorization", buildAuthHeader(c.token, c.deviceID))
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -522,7 +524,7 @@ func (c *Client) CreatePlaylist(ctx context.Context, title string, itemIDs []str
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Emby-Authorization", buildAuthHeader(c.token))
+	req.Header.Set("X-Emby-Authorization", buildAuthHeader(c.token, c.deviceID))
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -573,7 +575,7 @@ func (c *Client) AddToPlaylist(ctx context.Context, playlistID string, itemIDs [
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("X-Emby-Authorization", buildAuthHeader(c.token))
+	req.Header.Set("X-Emby-Authorization", buildAuthHeader(c.token, c.deviceID))
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -600,7 +602,7 @@ func (c *Client) RemoveFromPlaylist(ctx context.Context, playlistID string, item
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("X-Emby-Authorization", buildAuthHeader(c.token))
+	req.Header.Set("X-Emby-Authorization", buildAuthHeader(c.token, c.deviceID))
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -624,7 +626,7 @@ func (c *Client) DeletePlaylist(ctx context.Context, playlistID string) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("X-Emby-Authorization", buildAuthHeader(c.token))
+	req.Header.Set("X-Emby-Authorization", buildAuthHeader(c.token, c.deviceID))
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

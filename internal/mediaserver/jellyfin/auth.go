@@ -39,17 +39,19 @@ const (
 
 // AuthFlow handles Jellyfin username/password authentication
 type AuthFlow struct {
+	deviceID   string
 	logger     *slog.Logger
 	httpClient *http.Client
 }
 
 // NewAuthFlow creates a new Jellyfin authentication flow
-func NewAuthFlow(logger *slog.Logger) *AuthFlow {
+func NewAuthFlow(deviceID string, logger *slog.Logger) *AuthFlow {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &AuthFlow{
-		logger: logger,
+		deviceID: deviceID,
+		logger:   logger,
 		httpClient: &http.Client{
 			Timeout: authTimeout,
 		},
@@ -119,7 +121,7 @@ func (f *AuthFlow) authenticate(ctx context.Context, serverURL, username, passwo
 
 	// Set required headers
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Emby-Authorization", buildAuthHeader("")) // No token yet
+	req.Header.Set("X-Emby-Authorization", buildAuthHeader("", f.deviceID)) // No token yet
 
 	resp, err := f.httpClient.Do(req)
 	if err != nil {
@@ -154,12 +156,18 @@ func (f *AuthFlow) authenticate(ctx context.Context, serverURL, username, passwo
 	}, nil
 }
 
-// buildAuthHeader constructs the X-Emby-Authorization header
-func buildAuthHeader(token string) string {
+// buildAuthHeader constructs the X-Emby-Authorization header.
+// The device ID must be unique per install: Jellyfin revokes existing
+// tokens when a new login reuses the same device ID, so a shared static
+// ID causes intermittent token invalidation across installs.
+func buildAuthHeader(token, deviceID string) string {
+	if deviceID == "" {
+		deviceID = "kino-tui-client" // legacy fallback
+	}
 	parts := []string{
 		`MediaBrowser Client="Kino"`,
 		`Device="CLI"`,
-		`DeviceId="kino-tui-client"`,
+		fmt.Sprintf(`DeviceId="%s"`, deviceID),
 		`Version="1.0.0"`,
 	}
 

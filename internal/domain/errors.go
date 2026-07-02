@@ -10,6 +10,6 @@ var (
 	// ErrServerOffline indicates the media server is unreachable
 	ErrServerOffline = errors.New("media server is unreachable")
 
-	// ErrAuthFailed indicates authentication failed
-	ErrAuthFailed = errors.New("authentication token is invalid")
+	// ErrAuthFailed indicates the server rejected our token (revoked or expired)
+	ErrAuthFailed = errors.New("authentication token is invalid or expired")
 )

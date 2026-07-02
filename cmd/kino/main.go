@@ -157,7 +157,7 @@ func runSetupFlow(cfg *config.Config, logger *slog.Logger) error {
 	cfg.Server.Type = serverType
 
 	// Run the appropriate auth flow
-	authFlow, err := mediaserver.NewAuthFlow(serverType, logger)
+	authFlow, err := mediaserver.NewAuthFlow(serverType, cfg.Server.DeviceID, logger)
 	if err != nil {
 		return fmt.Errorf("failed to create auth flow: %w", err)
 	}

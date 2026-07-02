@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -14,6 +15,10 @@ import (
 	"github.com/mmcdole/kino/internal/search"
 	"github.com/mmcdole/kino/internal/tui/components"
 )
+
+// authFailedStatusMsg tells the user how to recover from a revoked/expired
+// token. Shown persistently (not auto-cleared) since action is required.
+const authFailedStatusMsg = "Session expired or revoked — press L to log out, then run kino to sign in again"
 
 // ApplicationState represents the current state of the application
 type ApplicationState int
@@ -353,9 +358,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ErrMsg:
 		m.clearNavPlan()
-		m.StatusMsg = msg.Error()
 		m.StatusIsErr = true
 		m.Loading = false
+		if errors.Is(msg.Err, domain.ErrAuthFailed) {
+			// Actionable, persistent message: the token was revoked/expired
+			// and the user must re-authenticate
+			m.StatusMsg = authFailedStatusMsg
+			return m, nil
+		}
+		m.StatusMsg = msg.Error()
 		cmds = append(cmds, ClearStatusCmd(5*time.Second))
 		return m, tea.Batch(cmds...)
 
@@ -378,6 +389,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			state.Error = msg.Error
 			m.SyncingCount--
 			slog.Error("library sync failed", "libraryID", msg.LibraryID, "error", msg.Error)
+			if errors.Is(msg.Error, domain.ErrAuthFailed) {
+				m.StatusMsg = authFailedStatusMsg
+				m.StatusIsErr = true
+			}
 		} else {
 			state.Loaded = msg.Loaded
 			state.Total = msg.Total

@@ -31,13 +31,14 @@ type AuthFlow interface {
 // NewAuthFlow creates the appropriate AuthFlow based on server type.
 // - Plex: PIN-based OAuth flow (display PIN -> user visits plex.tv/link -> poll for token)
 // - Jellyfin: Username/password authentication
-func NewAuthFlow(serverType config.SourceType, logger *slog.Logger) (AuthFlow, error) {
+// The deviceID uniquely identifies this install to the server.
+func NewAuthFlow(serverType config.SourceType, deviceID string, logger *slog.Logger) (AuthFlow, error) {
 	switch serverType {
 	case config.SourceTypePlex:
-		return &plexAuthAdapter{inner: plex.NewAuthFlow(logger)}, nil
+		return &plexAuthAdapter{inner: plex.NewAuthFlow(deviceID, logger)}, nil
 
 	case config.SourceTypeJellyfin:
-		return &jellyfinAuthAdapter{inner: jellyfin.NewAuthFlow(logger)}, nil
+		return &jellyfinAuthAdapter{inner: jellyfin.NewAuthFlow(deviceID, logger)}, nil
 
 	default:
 		return nil, fmt.Errorf("unknown server type: %s", serverType)
