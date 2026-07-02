@@ -3,6 +3,7 @@ package playlist
 import (
 	"context"
 	"log/slog"
+	"sync"
 
 	"github.com/mmcdole/kino/internal/domain"
 )
@@ -129,27 +130,46 @@ func (s *Service) GetPlaylistMembership(ctx context.Context, itemID string) (map
 		}
 	}
 
-	membership := make(map[string]bool)
+	// Check each playlist's items concurrently: uncached playlists each cost
+	// a network round-trip, and doing them serially under the modal's single
+	// timeout made the playlist modal time out on large collections
+	const maxConcurrent = 4
+	sem := make(chan struct{}, maxConcurrent)
 
-	// Check each playlist's items, fetching from server if not cached
+	var (
+		mu         sync.Mutex
+		wg         sync.WaitGroup
+		membership = make(map[string]bool)
+	)
+
 	for _, p := range playlists {
-		items, ok := s.store.GetPlaylistItems(p.ID)
-		if !ok {
-			var err error
-			items, err = s.FetchPlaylistItems(ctx, p.ID)
-			if err != nil {
-				s.logger.Error("failed to fetch playlist items for membership check", "error", err, "playlistID", p.ID)
-				continue
-			}
-		}
+		wg.Add(1)
+		go func(p *domain.Playlist) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 
-		for _, item := range items {
-			if item.ID == itemID {
-				membership[p.ID] = true
-				break
+			items, ok := s.store.GetPlaylistItems(p.ID)
+			if !ok {
+				var err error
+				items, err = s.FetchPlaylistItems(ctx, p.ID)
+				if err != nil {
+					s.logger.Error("failed to fetch playlist items for membership check", "error", err, "playlistID", p.ID)
+					return
+				}
 			}
-		}
+
+			for _, item := range items {
+				if item.ID == itemID {
+					mu.Lock()
+					membership[p.ID] = true
+					mu.Unlock()
+					return
+				}
+			}
+		}(p)
 	}
+	wg.Wait()
 
 	return membership, nil
 }

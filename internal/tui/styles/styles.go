@@ -15,7 +15,6 @@ var (
 	White      = lipgloss.Color("#F9FAFB")
 	Green      = lipgloss.Color("#10B981")
 	Red        = lipgloss.Color("#EF4444")
-	Blue       = lipgloss.Color("#3B82F6")
 )
 
 // Borders
@@ -27,9 +26,6 @@ var (
 	InactiveBorder = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(DimGray)
-
-	NoBorder = lipgloss.NewStyle().
-			Border(lipgloss.HiddenBorder())
 )
 
 // Text styles
@@ -49,14 +45,6 @@ var (
 
 	ErrorStyle = lipgloss.NewStyle().
 			Foreground(Red)
-
-	SuccessStyle = lipgloss.NewStyle().
-			Foreground(Green)
-
-	HighlightStyle = lipgloss.NewStyle().
-			Foreground(White).
-			Background(PlexOrange).
-			Padding(0, 1)
 )
 
 // Raw watch status characters (unstyled)
@@ -73,13 +61,6 @@ var (
 	PlayedStyle     = lipgloss.NewStyle().Foreground(Green)
 )
 
-// Pre-rendered watch status indicators (for non-selection contexts)
-var (
-	UnplayedDot   = UnplayedStyle.Render(UnplayedChar)
-	InProgressDot = InProgressStyle.Render(InProgressChar)
-	PlayedCheck   = PlayedStyle.Render(PlayedChar)
-)
-
 // List item styles
 var (
 	SelectedItemStyle = lipgloss.NewStyle().
@@ -90,11 +71,6 @@ var (
 	NormalItemStyle = lipgloss.NewStyle().
 			Foreground(LightGray).
 			Padding(0, 1)
-
-	FocusedItemStyle = lipgloss.NewStyle().
-				Foreground(PlexOrange).
-				Bold(true).
-				Padding(0, 1)
 )
 
 // Modal styles
@@ -111,35 +87,12 @@ var (
 			MarginBottom(1)
 )
 
-// Help styles
-var (
-	HelpKeyStyle = lipgloss.NewStyle().
-			Foreground(PlexOrange)
-
-	HelpDescStyle = lipgloss.NewStyle().
-			Foreground(DimGray)
-)
-
-// Progress bar styles
-var (
-	ProgressFullStyle = lipgloss.NewStyle().
-				Foreground(PlexOrange)
-
-	ProgressEmptyStyle = lipgloss.NewStyle().
-				Foreground(DimGray)
-)
-
 // Badge styles
 var (
-	BadgeStyle = lipgloss.NewStyle().
-			Foreground(White).
-			Background(PlexOrange).
-			Padding(0, 1)
-
 	DimBadgeStyle = lipgloss.NewStyle().
-			Foreground(LightGray).
-			Background(SlateLight).
-			Padding(0, 1)
+		Foreground(LightGray).
+		Background(SlateLight).
+		Padding(0, 1)
 )
 
 // Spinner style
@@ -159,18 +112,6 @@ var (
 	FilterPromptStyle = lipgloss.NewStyle().
 				Foreground(PlexOrange).
 				Bold(true)
-)
-
-// Match highlight styles for search results
-var (
-	MatchHighlightStyle = lipgloss.NewStyle().
-				Foreground(PlexOrange).
-				Bold(true)
-
-	MatchHighlightSelectedStyle = lipgloss.NewStyle().
-					Foreground(PlexOrange).
-					Background(SlateLight).
-					Bold(true)
 )
 
 // Helper functions
@@ -208,28 +149,6 @@ func spaces(n int) string {
 		b[i] = ' '
 	}
 	return string(b)
-}
-
-// RenderProgressBar renders a progress bar
-func RenderProgressBar(percent float64, width int) string {
-	if width < 3 {
-		return ""
-	}
-
-	filled := int(float64(width) * percent / 100)
-	if filled > width {
-		filled = width
-	}
-
-	bar := ""
-	for i := 0; i < filled; i++ {
-		bar += ProgressFullStyle.Render("█")
-	}
-	for i := filled; i < width; i++ {
-		bar += ProgressEmptyStyle.Render("░")
-	}
-
-	return bar
 }
 
 // RenderListRow renders a complete list row with uniform background when selected.

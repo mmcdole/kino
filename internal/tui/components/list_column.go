@@ -227,14 +227,6 @@ func (c *ListColumn) SetSize(width, height int) {
 	c.ensureVisible() // Scroll to show selected item now that we know the size
 }
 
-func (c *ListColumn) Width() int {
-	return c.width
-}
-
-func (c *ListColumn) Height() int {
-	return c.height
-}
-
 func (c *ListColumn) SetFocused(focused bool) {
 	c.focused = focused
 }
@@ -301,10 +293,6 @@ func (c *ListColumn) CanDrillInto() bool {
 		return false
 	}
 	return c.items[idx].CanDrillDown()
-}
-
-func (c *ListColumn) IsEmpty() bool {
-	return c.ItemCount() == 0
 }
 
 func (c *ListColumn) SetLoading(loading bool) {
@@ -601,19 +589,6 @@ func (c *ListColumn) SelectedPlaylist() *domain.Playlist {
 		return nil
 	}
 	return item.(*domain.Playlist)
-}
-
-// FindIndexByID finds the index of an item by its ID. Returns -1 if not found.
-func (c *ListColumn) FindIndexByID(id string) int {
-	if id == "" {
-		return -1
-	}
-	for i, item := range c.items {
-		if item.GetID() == id {
-			return i
-		}
-	}
-	return -1
 }
 
 // SetSelectedByID finds an item by ID and selects it. Returns true on success.

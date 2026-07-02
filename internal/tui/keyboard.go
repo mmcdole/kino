@@ -450,13 +450,13 @@ func (m Model) handleDelete() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleNewPlaylist shows hint about creating playlists
+// handleNewPlaylist opens the new-playlist name input (playlists column only)
 func (m Model) handleNewPlaylist() (tea.Model, tea.Cmd) {
 	top := m.ColumnStack.Top()
-	if top != nil && top.ColumnType() == components.ColumnTypePlaylists {
-		m.StatusMsg = "Use Space on an item to create a playlist"
-		return m, ClearStatusCmd(3 * time.Second)
+	if top == nil || top.ColumnType() != components.ColumnTypePlaylists {
+		return m, nil
 	}
+	m.InputModal.Show("New Playlist")
 	return m, nil
 }
 

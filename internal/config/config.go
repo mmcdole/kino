@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -103,9 +104,23 @@ func LoadConfig() (*Config, error) {
 	// The config file contains the server token: never world-readable
 	viper.SetConfigPermissions(0o600)
 
-	// Environment variable overrides
+	// Environment variable overrides. Both pieces are required for nested
+	// keys to actually work: the replacer maps server.token →
+	// KINO_SERVER_TOKEN, and explicit BindEnv registers each key so
+	// Unmarshal sees env-only values (AutomaticEnv alone is invisible to
+	// Unmarshal for keys absent from defaults/config).
 	viper.SetEnvPrefix("KINO")
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
+	for _, key := range []string{
+		"server.type", "server.url", "server.token", "server.user_id",
+		"server.username", "server.device_id",
+		"player.command", "player.start_flag",
+		"ui.show_watch_status", "ui.show_library_counts",
+		"logging.file", "logging.level",
+	} {
+		_ = viper.BindEnv(key)
+	}
 
 	// Read config file if it exists
 	if err := viper.ReadInConfig(); err != nil {
@@ -153,13 +168,17 @@ func generateDeviceID() string {
 	return "kino-" + hex.EncodeToString(buf)
 }
 
-// SaveConfig saves the current configuration to file
+// SaveConfig saves the current configuration, writing back to the file that
+// was loaded (a ./config.yaml stays in place instead of forking a stale copy
+// into the default path) or to the default path for fresh installs.
 func SaveConfig(cfg *Config) error {
-	configPath := defaultConfigPath()
-
-	// Ensure config directory exists
-	if err := os.MkdirAll(configPath, 0755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
+	configFile := viper.ConfigFileUsed()
+	if configFile == "" {
+		configPath := defaultConfigPath()
+		if err := os.MkdirAll(configPath, 0755); err != nil {
+			return fmt.Errorf("failed to create config directory: %w", err)
+		}
+		configFile = filepath.Join(configPath, "config.yaml")
 	}
 
 	viper.SetConfigPermissions(0o600)
@@ -185,7 +204,6 @@ func SaveConfig(cfg *Config) error {
 	viper.Set("logging.file", cfg.Logging.File)
 	viper.Set("logging.level", cfg.Logging.Level)
 
-	configFile := filepath.Join(configPath, "config.yaml")
 	if err := viper.WriteConfigAs(configFile); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
@@ -219,13 +237,19 @@ func ClearServerConfig() error {
 	viper.Set("server.user_id", "")
 	viper.Set("server.username", "")
 
-	configPath := defaultConfigPath()
-	if err := os.MkdirAll(configPath, 0755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
+	// Write back to the loaded config file: clearing credentials in a copy
+	// at the default path while a ./config.yaml still holds the token would
+	// be a sign-out that doesn't sign out
+	configFile := viper.ConfigFileUsed()
+	if configFile == "" {
+		configPath := defaultConfigPath()
+		if err := os.MkdirAll(configPath, 0755); err != nil {
+			return fmt.Errorf("failed to create config directory: %w", err)
+		}
+		configFile = filepath.Join(configPath, "config.yaml")
 	}
 
 	viper.SetConfigPermissions(0o600)
-	configFile := filepath.Join(configPath, "config.yaml")
 	if err := viper.WriteConfigAs(configFile); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}

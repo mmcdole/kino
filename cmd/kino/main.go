@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
 	"strings"
 	"time"
 
@@ -66,7 +67,11 @@ func run() error {
 
 	// Check if configured
 	if !cfg.IsConfigured() {
-		return runSetupFlow(cfg, logger)
+		if err := runSetupFlow(cfg, logger); err != nil {
+			return err
+		}
+		// Fall through into normal startup with the fresh credentials —
+		// no need to make the user run kino a second time
 	}
 
 	// Create media source client
@@ -138,6 +143,12 @@ func runSetupFlow(cfg *config.Config, logger *slog.Logger) error {
 			continue
 		}
 
+		// Scheme-less input ("192.168.1.100:32400") would otherwise die with
+		// a cryptic "unsupported protocol scheme" error
+		if !strings.HasPrefix(serverURL, "http://") && !strings.HasPrefix(serverURL, "https://") {
+			serverURL = "http://" + serverURL
+		}
+
 		// Detect server type with spinner
 		fmt.Println()
 		detectedType, err := detectServerWithSpinner(serverURL)
@@ -162,7 +173,10 @@ func runSetupFlow(cfg *config.Config, logger *slog.Logger) error {
 		return fmt.Errorf("failed to create auth flow: %w", err)
 	}
 
-	ctx := context.Background()
+	// Ctrl+C during the (up to 5-minute) PIN wait should cancel cleanly
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
 	result, err := authFlow.Run(ctx, serverURL)
 	if err != nil {
 		return fmt.Errorf("authentication failed: %w", err)
@@ -178,9 +192,7 @@ func runSetupFlow(cfg *config.Config, logger *slog.Logger) error {
 	}
 
 	fmt.Println()
-	fmt.Println("✓ Configuration saved!")
-	fmt.Println()
-	fmt.Println("Run kino again to start the application.")
+	fmt.Println("✓ Configuration saved! Starting kino...")
 
 	return nil
 }

@@ -7,6 +7,27 @@ import (
 	"testing"
 )
 
+// KINO_* environment overrides must reach the unmarshaled config — they were
+// previously dead (no env key replacer, no BindEnv registration).
+func TestEnvVarOverrides(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("APPDATA", home)
+	t.Setenv("KINO_SERVER_TOKEN", "env-token")
+	t.Setenv("KINO_LOGGING_LEVEL", "DEBUG")
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Server.Token != "env-token" {
+		t.Fatalf("KINO_SERVER_TOKEN ignored: token = %q", cfg.Server.Token)
+	}
+	if cfg.Logging.Level != "DEBUG" {
+		t.Fatalf("KINO_LOGGING_LEVEL ignored: level = %q", cfg.Logging.Level)
+	}
+}
+
 // TestLoadConfigGeneratesDeviceID verifies that an already-configured install
 // without a device_id (pre-existing config.yaml) gets a unique ID generated
 // and persisted, so the ID stays stable across runs.
