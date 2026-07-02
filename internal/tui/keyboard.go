@@ -313,16 +313,16 @@ func (m Model) refreshLibraryContent(top *components.ListColumn) (Model, tea.Cmd
 	}
 }
 
-// handleRefreshAll refreshes all libraries and resets to library view
+// handleRefreshAll refreshes all libraries. Unlike before, the navigation
+// stack is preserved: the LibrariesLoadedMsg handler updates the root column
+// in place and reloads the visible view, only resetting when the library the
+// user is inside no longer exists.
 func (m Model) handleRefreshAll() (tea.Model, tea.Cmd) {
 	m.Loading = true
 
-	// Invalidate all cached data, then re-fetch libraries from the server.
-	// This goes through LoadLibrariesCmd -> LibrariesLoadedMsg which rebuilds
-	// the full library list and triggers SyncAllLibrariesCmd with fresh data.
 	m.LibraryService.InvalidateAll()
 	m.PlaylistService.InvalidatePlaylists()
-	return m, LoadLibrariesCmd(m.LibraryService)
+	return m, RefreshLibrariesCmd(m.LibraryService)
 }
 
 // handleMarkWatched marks the selected item as watched

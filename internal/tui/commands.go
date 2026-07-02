@@ -20,6 +20,16 @@ const syncChannelSize = 100
 
 // LoadLibrariesCmd loads all available libraries
 func LoadLibrariesCmd(svc *library.Service) tea.Cmd {
+	return loadLibrariesCmd(svc, false)
+}
+
+// RefreshLibrariesCmd reloads libraries for refresh-all, signaling the
+// handler to preserve the navigation stack where possible
+func RefreshLibrariesCmd(svc *library.Service) tea.Cmd {
+	return loadLibrariesCmd(svc, true)
+}
+
+func loadLibrariesCmd(svc *library.Service, refresh bool) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -29,7 +39,7 @@ func LoadLibrariesCmd(svc *library.Service) tea.Cmd {
 			slog.Error("failed to load libraries", "error", err)
 			return ErrMsg{Err: err, Context: "loading libraries"}
 		}
-		return LibrariesLoadedMsg{Libraries: libraries}
+		return LibrariesLoadedMsg{Libraries: libraries, Refresh: refresh}
 	}
 }
 
