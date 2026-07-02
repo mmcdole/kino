@@ -58,6 +58,7 @@ type Item struct {
 	IndexNumber        int           `json:"IndexNumber,omitempty"`        // Episode number
 	ChildCount         int           `json:"ChildCount,omitempty"`         // Number of child items (seasons for show, episodes for season)
 	RecursiveItemCount int           `json:"RecursiveItemCount,omitempty"` // Total items recursively (episodes for show)
+	PlaylistItemID     string        `json:"PlaylistItemId,omitempty"` // Per-entry ID within a playlist
 	UserData           *UserData     `json:"UserData,omitempty"`
 	MediaSources       []MediaSource `json:"MediaSources,omitempty"`
 	Container          string        `json:"Container,omitempty"`

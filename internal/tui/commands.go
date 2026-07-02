@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -107,7 +106,10 @@ func LoadEpisodesCmd(svc *library.Service, libID, showID, seasonID string) tea.C
 // PlayItemCmd starts playback of an item
 func PlayItemCmd(svc *player.Service, item domain.MediaItem, resume bool) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
+		// URL resolution is a network round-trip; a hung server must not
+		// wedge the command goroutine forever
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
 
 		var err error
 		if resume {
@@ -170,12 +172,18 @@ func ClearLibraryStatusCmd(libID string, delay time.Duration) tea.Cmd {
 	})
 }
 
-// SyncLibraryCmd performs smart sync with streaming progress updates
-func SyncLibraryCmd(svc *library.Service, lib domain.Library) tea.Cmd {
+// SyncLibraryCmd performs smart sync with streaming progress updates.
+// The generation tags every message so the model can drop chains superseded
+// by a newer library reload (refresh-all during a running sync).
+func SyncLibraryCmd(svc *library.Service, lib domain.Library, generation int) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 
 		progressCh := make(chan syncProgress, syncChannelSize)
+		// Dedicated 1-slot channel for the terminal message: progress updates
+		// may be dropped under load, but the done/error result must not be —
+		// and the buffered slot means a superseded goroutine never blocks.
+		doneCh := make(chan syncProgress, 1)
 
 		go func() {
 			defer cancel()
@@ -190,20 +198,16 @@ func SyncLibraryCmd(svc *library.Service, lib domain.Library) tea.Cmd {
 
 			result, err := svc.SyncLibrary(ctx, lib, onProgress)
 
-			// Send final message
-			select {
-			case progressCh <- syncProgress{
+			doneCh <- syncProgress{
 				loaded:    result.Count,
 				total:     result.Count,
 				done:      true,
 				fromCache: result.FromCache,
 				err:       err,
-			}:
-			default:
 			}
 		}()
 
-		return readSyncProgress(lib, progressCh)
+		return readSyncProgress(lib, generation, progressCh, doneCh)
 	}
 }
 
@@ -216,102 +220,74 @@ type syncProgress struct {
 	err       error
 }
 
-// readSyncProgress reads one message from the channel and creates a LibrarySyncProgressMsg
-func readSyncProgress(lib domain.Library, progressCh <-chan syncProgress) tea.Msg {
-	progress, ok := <-progressCh
-	if !ok {
+// readSyncProgress reads the next progress or terminal message and converts
+// it to a LibrarySyncProgressMsg. The terminal message comes from the
+// dedicated done channel, which is buffered and therefore never lost.
+func readSyncProgress(lib domain.Library, generation int, progressCh <-chan syncProgress, doneCh <-chan syncProgress) tea.Msg {
+	makeMsg := func(p syncProgress) LibrarySyncProgressMsg {
 		return LibrarySyncProgressMsg{
 			LibraryID:   lib.ID,
 			LibraryType: lib.Type,
-			Done:        true,
-			Error:       fmt.Errorf("sync cancelled"),
+			Generation:  generation,
+			Loaded:      p.loaded,
+			Total:       p.total,
+			Done:        p.done,
+			FromCache:   p.fromCache,
+			Error:       p.err,
 		}
 	}
 
-	msg := LibrarySyncProgressMsg{
-		LibraryID:   lib.ID,
-		LibraryType: lib.Type,
-		Loaded:      progress.loaded,
-		Total:       progress.total,
-		Done:        progress.done,
-		FromCache:   progress.fromCache,
-		Error:       progress.err,
+	select {
+	case p := <-doneCh:
+		return makeMsg(p)
+	case p, ok := <-progressCh:
+		if !ok {
+			// Progress channel closed: the terminal message is guaranteed to
+			// already be in doneCh (sent before the deferred close runs)
+			return makeMsg(<-doneCh)
+		}
+		msg := makeMsg(p)
+		if !p.done && p.err == nil {
+			msg.NextCmd = listenToSyncCmd(lib, generation, progressCh, doneCh)
+		}
+		return msg
 	}
-
-	if !progress.done && progress.err == nil {
-		msg.NextCmd = listenToSyncCmd(lib, progressCh)
-	}
-
-	return msg
 }
 
 // listenToSyncCmd returns a command that reads the next message from the progress channel
-func listenToSyncCmd(lib domain.Library, progressCh <-chan syncProgress) tea.Cmd {
+func listenToSyncCmd(lib domain.Library, generation int, progressCh <-chan syncProgress, doneCh <-chan syncProgress) tea.Cmd {
 	return func() tea.Msg {
-		return readSyncProgress(lib, progressCh)
+		return readSyncProgress(lib, generation, progressCh, doneCh)
 	}
 }
 
 // SyncAllLibrariesCmd syncs all libraries in parallel
-func SyncAllLibrariesCmd(svc *library.Service, libraries []domain.Library) tea.Cmd {
+func SyncAllLibrariesCmd(svc *library.Service, libraries []domain.Library, generation int) tea.Cmd {
 	teaCmds := make([]tea.Cmd, len(libraries))
 	for i, lib := range libraries {
-		teaCmds[i] = SyncLibraryCmd(svc, lib)
+		teaCmds[i] = SyncLibraryCmd(svc, lib, generation)
 	}
 	return tea.Batch(teaCmds...)
 }
 
 // SyncPlaylistsCmd syncs playlists and their items (two levels deep, like library sync).
-func SyncPlaylistsCmd(svc *playlist.Service, playlistsID string) tea.Cmd {
+func SyncPlaylistsCmd(svc *playlist.Service, playlistsID string, generation int) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
 
-		progressCh := make(chan syncProgress, syncChannelSize)
+		// SyncPlaylists fetches playlists AND items for each
+		playlists, err := svc.SyncPlaylists(ctx)
 
-		go func() {
-			defer cancel()
-			defer close(progressCh)
-
-			// SyncPlaylists fetches playlists AND items for each
-			playlists, err := svc.SyncPlaylists(ctx)
-
-			// Send final message
-			select {
-			case progressCh <- syncProgress{
-				loaded:    len(playlists),
-				total:     len(playlists),
-				done:      true,
-				fromCache: false,
-				err:       err,
-			}:
-			default:
-			}
-		}()
-
-		return readPlaylistSyncProgress(playlistsID, progressCh)
-	}
-}
-
-// readPlaylistSyncProgress reads sync progress for playlists
-func readPlaylistSyncProgress(playlistsID string, progressCh <-chan syncProgress) tea.Msg {
-	progress, ok := <-progressCh
-	if !ok {
 		return LibrarySyncProgressMsg{
 			LibraryID:   playlistsID,
 			LibraryType: "playlist",
+			Generation:  generation,
+			Loaded:      len(playlists),
+			Total:       len(playlists),
 			Done:        true,
-			Error:       fmt.Errorf("sync cancelled"),
+			Error:       err,
 		}
-	}
-
-	return LibrarySyncProgressMsg{
-		LibraryID:   playlistsID,
-		LibraryType: "playlist",
-		Loaded:      progress.loaded,
-		Total:       progress.total,
-		Done:        progress.done,
-		FromCache:   progress.fromCache,
-		Error:       progress.err,
 	}
 }
 

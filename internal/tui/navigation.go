@@ -191,6 +191,7 @@ func (m *Model) drillSelected() *drillResult {
 		if v.ID == playlistsLibraryID {
 			col := components.NewListColumn(components.ColumnTypePlaylists, "Playlists")
 			col.SetShowWatchStatus(m.UIConfig.ShowWatchStatus)
+			col.SetContentID(playlistsLibraryID)
 			m.ColumnStack.Push(col, cursor)
 			m.updateLayout()
 
@@ -360,6 +361,8 @@ func (m Model) drillIntoSelection() (tea.Model, tea.Cmd) {
 
 // handleBack handles navigation back (h/backspace)
 func (m Model) handleBack() (tea.Model, tea.Cmd) {
+	// Manual navigation cancels any pending search-navigation plan
+	m.clearNavPlan()
 	if !m.ColumnStack.CanGoBack() {
 		return m, nil
 	}

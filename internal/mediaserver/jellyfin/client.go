@@ -622,10 +622,18 @@ func (c *Client) AddToPlaylist(ctx context.Context, playlistID string, itemIDs [
 	return nil
 }
 
-// RemoveFromPlaylist removes an item from a playlist
+// RemoveFromPlaylist removes an item from a playlist.
+// Jellyfin's EntryIds parameter takes the playlist-specific entry ID
+// (PlaylistItemId), not the media item's ID — passing an item ID is silently
+// ignored (204 with no change). Resolve the entry ID first.
 func (c *Client) RemoveFromPlaylist(ctx context.Context, playlistID string, itemID string) error {
+	entryID, err := c.resolvePlaylistEntryID(ctx, playlistID, itemID)
+	if err != nil {
+		return err
+	}
+
 	query := url.Values{}
-	query.Set("EntryIds", itemID)
+	query.Set("EntryIds", entryID)
 
 	path := fmt.Sprintf("/Playlists/%s/Items?%s", playlistID, query.Encode())
 
@@ -647,6 +655,37 @@ func (c *Client) RemoveFromPlaylist(ctx context.Context, playlistID string, item
 	}
 
 	return nil
+}
+
+// resolvePlaylistEntryID fetches the playlist's items and returns the
+// playlist entry ID (PlaylistItemId) for the given media item ID.
+func (c *Client) resolvePlaylistEntryID(ctx context.Context, playlistID, itemID string) (string, error) {
+	query := url.Values{}
+	query.Set("UserId", c.userID)
+
+	path := fmt.Sprintf("/Playlists/%s/Items", playlistID)
+	body, err := c.doRequest(ctx, http.MethodGet, path, query)
+	if err != nil {
+		return "", err
+	}
+
+	var resp ItemsResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	for _, item := range resp.Items {
+		if item.ID == itemID {
+			if item.PlaylistItemID != "" {
+				return item.PlaylistItemID, nil
+			}
+			// Very old servers predate PlaylistItemId; fall back to the
+			// item ID, which those versions accepted
+			return itemID, nil
+		}
+	}
+
+	return "", fmt.Errorf("item %s not found in playlist %s", itemID, playlistID)
 }
 
 // DeletePlaylist deletes a playlist

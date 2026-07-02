@@ -158,6 +158,9 @@ func (m Model) handleGlobalSearch() (tea.Model, tea.Cmd) {
 
 // handleDrillIn handles drilling into the selected item (l key)
 func (m Model) handleDrillIn() (tea.Model, tea.Cmd) {
+	// Manual navigation cancels any pending search-navigation plan; a stale
+	// plan resuming on a later load would teleport the user
+	m.clearNavPlan()
 	top := m.ColumnStack.Top()
 	if top == nil {
 		return m, nil
@@ -173,6 +176,7 @@ func (m Model) handleDrillIn() (tea.Model, tea.Cmd) {
 
 // handleEnter handles the enter key press
 func (m Model) handleEnter() (tea.Model, tea.Cmd) {
+	m.clearNavPlan()
 	top := m.ColumnStack.Top()
 	if top == nil {
 		return m, nil
@@ -228,6 +232,10 @@ func (m Model) handleRefresh() (tea.Model, tea.Cmd) {
 		if lib == nil || lib.ID == playlistsLibraryID {
 			return m, nil
 		}
+		// Already syncing: don't start a second chain or double-count
+		if state, ok := m.LibraryStates[lib.ID]; ok && state.Status == components.StatusSyncing {
+			return m, nil
+		}
 		m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
 		m.SyncingCount++
 		m.Loading = true
@@ -235,7 +243,7 @@ func (m Model) handleRefresh() (tea.Model, tea.Cmd) {
 		m.updateLibraryStates()
 		// Invalidate then sync
 		m.LibraryService.InvalidateLibrary(lib.ID)
-		return m, SyncLibraryCmd(m.LibraryService, *lib)
+		return m, SyncLibraryCmd(m.LibraryService, *lib, m.SyncGen)
 
 	case components.ColumnTypeMovies, components.ColumnTypeMixed, components.ColumnTypeShows:
 		return m.refreshLibraryContent(top)

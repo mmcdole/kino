@@ -89,6 +89,7 @@ type StatusMsg struct {
 type LibrarySyncProgressMsg struct {
 	LibraryID   string
 	LibraryType string
+	Generation  int // Sync generation; stale generations are dropped
 	Loaded      int
 	Total       int
 	Done        bool
