@@ -327,6 +327,236 @@ func (s *LibraryStore) IsValid(libID string, serverTS int64) bool {
 	return storedTS >= serverTS
 }
 
+// === In-place watch state updates ===
+
+// SetWatchState patches a media item's watch state in place everywhere it is
+// cached (library lists, episode lists, mixed content, playlist items) and
+// adjusts the containing season/show unwatched counters. Cached data stays
+// warm — nothing is invalidated; the next real sync reconciles with the
+// server.
+func (s *LibraryStore) SetWatchState(itemID string, played bool) {
+	var flipped bool
+	var showID, seasonID string
+
+	patch := func(m *domain.MediaItem) bool {
+		if m == nil || m.ID != itemID {
+			return false
+		}
+		if m.IsPlayed != played {
+			flipped = true
+			if m.ShowID != "" {
+				showID = m.ShowID
+				seasonID = m.ParentID
+			}
+		}
+		m.IsPlayed = played
+		m.ViewOffset = 0
+		return true
+	}
+
+	// []*MediaItem payloads: movie lists, episode lists, playlist items
+	patchItemList := func(key string, data []byte) []byte {
+		var items []*domain.MediaItem
+		if json.Unmarshal(data, &items) != nil {
+			return nil
+		}
+		changed := false
+		for _, m := range items {
+			if patch(m) {
+				changed = true
+			}
+		}
+		if !changed {
+			return nil
+		}
+		out, err := json.Marshal(items)
+		if err != nil {
+			return nil
+		}
+		return out
+	}
+
+	s.updateEach(bucketEpisodes, nil, patchItemList)
+	s.updateEach(bucketContent, keySuffix(":movies"), patchItemList)
+	s.updateEach(bucketPlaylists, keyPrefix("items:"), patchItemList)
+	s.updateEach(bucketContent, keySuffix(":mixed"), func(key string, data []byte) []byte {
+		var wrappers []listItemWrapper
+		if json.Unmarshal(data, &wrappers) != nil {
+			return nil
+		}
+		changed := false
+		for i := range wrappers {
+			if patch(wrappers[i].Movie) {
+				changed = true
+			}
+		}
+		if !changed {
+			return nil
+		}
+		out, err := json.Marshal(wrappers)
+		if err != nil {
+			return nil
+		}
+		return out
+	})
+
+	// Adjust unwatched counters on the containing season and show
+	if !flipped || showID == "" {
+		return
+	}
+	delta := 1
+	if played {
+		delta = -1
+	}
+
+	s.updateEach(bucketSeasons, nil, func(key string, data []byte) []byte {
+		var seasons []*domain.Season
+		if json.Unmarshal(data, &seasons) != nil {
+			return nil
+		}
+		changed := false
+		for _, season := range seasons {
+			if season != nil && season.ID == seasonID {
+				season.UnwatchedCount = clampCount(season.UnwatchedCount+delta, season.EpisodeCount)
+				changed = true
+			}
+		}
+		if !changed {
+			return nil
+		}
+		out, err := json.Marshal(seasons)
+		if err != nil {
+			return nil
+		}
+		return out
+	})
+
+	adjustShow := func(show *domain.Show) bool {
+		if show == nil || show.ID != showID {
+			return false
+		}
+		show.UnwatchedCount = clampCount(show.UnwatchedCount+delta, show.EpisodeCount)
+		return true
+	}
+	s.updateEach(bucketContent, keySuffix(":shows"), func(key string, data []byte) []byte {
+		var shows []*domain.Show
+		if json.Unmarshal(data, &shows) != nil {
+			return nil
+		}
+		changed := false
+		for _, show := range shows {
+			if adjustShow(show) {
+				changed = true
+			}
+		}
+		if !changed {
+			return nil
+		}
+		out, err := json.Marshal(shows)
+		if err != nil {
+			return nil
+		}
+		return out
+	})
+	s.updateEach(bucketContent, keySuffix(":mixed"), func(key string, data []byte) []byte {
+		var wrappers []listItemWrapper
+		if json.Unmarshal(data, &wrappers) != nil {
+			return nil
+		}
+		changed := false
+		for i := range wrappers {
+			if adjustShow(wrappers[i].Show) {
+				changed = true
+			}
+		}
+		if !changed {
+			return nil
+		}
+		out, err := json.Marshal(wrappers)
+		if err != nil {
+			return nil
+		}
+		return out
+	})
+}
+
+func clampCount(n, max int) int {
+	if n < 0 {
+		return 0
+	}
+	if max > 0 && n > max {
+		return max
+	}
+	return n
+}
+
+func keySuffix(suffix string) func(string) bool {
+	return func(k string) bool { return strings.HasSuffix(k, suffix) }
+}
+
+func keyPrefix(prefix string) func(string) bool {
+	return func(k string) bool { return strings.HasPrefix(k, prefix) }
+}
+
+// updateEach applies transform to every key in a bucket (optionally filtered);
+// a non-nil result is written back to both BoltDB and the memory cache.
+func (s *LibraryStore) updateEach(bucket []byte, keyFilter func(string) bool, transform func(key string, data []byte) []byte) {
+	type kv struct {
+		k string
+		v []byte
+	}
+	var pairs []kv
+
+	if s.db != nil {
+		s.db.View(func(tx *bolt.Tx) error {
+			b := tx.Bucket(bucket)
+			if b == nil {
+				return nil
+			}
+			return b.ForEach(func(k, v []byte) error {
+				key := string(k)
+				if keyFilter != nil && !keyFilter(key) {
+					return nil
+				}
+				data := make([]byte, len(v))
+				copy(data, v)
+				pairs = append(pairs, kv{key, data})
+				return nil
+			})
+		})
+	} else {
+		// Memory-only mode: enumerate the cache map
+		cachePrefix := string(bucket) + ":"
+		s.mu.RLock()
+		for k, v := range s.cache {
+			if !strings.HasPrefix(k, cachePrefix) {
+				continue
+			}
+			key := strings.TrimPrefix(k, cachePrefix)
+			if keyFilter != nil && !keyFilter(key) {
+				continue
+			}
+			pairs = append(pairs, kv{key, v})
+		}
+		s.mu.RUnlock()
+	}
+
+	for _, p := range pairs {
+		newData := transform(p.k, p.v)
+		if newData == nil {
+			continue
+		}
+		s.mu.Lock()
+		s.cache[string(bucket)+":"+p.k] = newData
+		s.mu.Unlock()
+		if s.db != nil {
+			s.db.Update(func(tx *bolt.Tx) error {
+				return tx.Bucket(bucket).Put([]byte(p.k), newData)
+			})
+		}
+	}
+}
+
 // === Cascade Invalidation (hierarchical prefix deletion) ===
 
 // InvalidateLibrary wipes library content + ALL seasons + ALL episodes in that library

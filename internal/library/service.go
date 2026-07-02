@@ -172,6 +172,13 @@ func (s *Service) FetchEpisodes(ctx context.Context, libID, showID, seasonID str
 	return episodes, nil
 }
 
+// SetWatchState patches the cached watch state for an item in place,
+// avoiding cache invalidation. The next sync reconciles with the server.
+func (s *Service) SetWatchState(itemID string, played bool) {
+	s.store.SetWatchState(itemID, played)
+	s.logger.Debug("patched cached watch state", "itemID", itemID, "played", played)
+}
+
 func (s *Service) InvalidateLibrary(libID string) {
 	s.store.InvalidateLibrary(libID)
 	s.logger.Info("invalidated library cache", "libID", libID)

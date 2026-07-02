@@ -63,12 +63,14 @@ type PlaybackStartedMsg struct {
 
 // MarkWatchedMsg signals a request to mark an item as watched
 type MarkWatchedMsg struct {
-	Title string
+	ItemID string
+	Title  string
 }
 
 // MarkUnwatchedMsg signals a request to mark an item as unwatched
 type MarkUnwatchedMsg struct {
-	Title string
+	ItemID string
+	Title  string
 }
 
 // TickMsg is a general tick message for animations

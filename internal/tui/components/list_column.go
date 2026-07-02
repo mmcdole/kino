@@ -429,6 +429,48 @@ func (c *ListColumn) ReplaceItems(rawItems interface{}) {
 	}
 }
 
+// ApplyWatchState patches a media item's watch state in this column's items.
+// Returns the patched item (nil if not present) and whether the played flag
+// actually changed.
+func (c *ListColumn) ApplyWatchState(itemID string, played bool) (*domain.MediaItem, bool) {
+	for _, item := range c.items {
+		if m, ok := item.(*domain.MediaItem); ok && m.ID == itemID {
+			flipped := m.IsPlayed != played
+			m.IsPlayed = played
+			m.ViewOffset = 0
+			return m, flipped
+		}
+	}
+	return nil, false
+}
+
+// AdjustUnwatchedCounts shifts the unwatched counter on matching show and
+// season rows (used when an episode's watch state is toggled in place).
+func (c *ListColumn) AdjustUnwatchedCounts(showID, seasonID string, delta int) {
+	for _, item := range c.items {
+		switch v := item.(type) {
+		case *domain.Show:
+			if v.ID == showID {
+				v.UnwatchedCount = clampUnwatched(v.UnwatchedCount+delta, v.EpisodeCount)
+			}
+		case *domain.Season:
+			if v.ID == seasonID {
+				v.UnwatchedCount = clampUnwatched(v.UnwatchedCount+delta, v.EpisodeCount)
+			}
+		}
+	}
+}
+
+func clampUnwatched(n, max int) int {
+	if n < 0 {
+		return 0
+	}
+	if max > 0 && n > max {
+		return max
+	}
+	return n
+}
+
 // Additional methods
 
 // ColumnType returns the column's content type
