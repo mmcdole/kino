@@ -227,7 +227,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Update top column with movies
 		if top := m.ColumnStack.Top(); top != nil {
-			top.SetItems(msg.Movies)
+			top.ReplaceItems(msg.Movies)
 		}
 
 		m.updateInspector()
@@ -256,7 +256,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Update top column with shows
 		if top := m.ColumnStack.Top(); top != nil {
-			top.SetItems(msg.Shows)
+			top.ReplaceItems(msg.Shows)
 		}
 
 		m.updateInspector()
@@ -285,7 +285,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Update top column with mixed content
 		if top := m.ColumnStack.Top(); top != nil {
-			top.SetItems(msg.Items)
+			top.ReplaceItems(msg.Items)
 		}
 
 		m.updateInspector()
@@ -306,7 +306,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Update top column with seasons
 		if top := m.ColumnStack.Top(); top != nil {
-			top.SetItems(msg.Seasons)
+			top.ReplaceItems(msg.Seasons)
 		}
 
 		m.updateInspector()
@@ -327,7 +327,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Update top column with episodes
 		if top := m.ColumnStack.Top(); top != nil {
-			top.SetItems(msg.Episodes)
+			top.ReplaceItems(msg.Episodes)
 		}
 
 		m.updateInspector()
@@ -360,6 +360,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clearNavPlan()
 		m.StatusIsErr = true
 		m.Loading = false
+		// A failed refresh must not leave the column spinner running
+		if top := m.ColumnStack.Top(); top != nil {
+			top.SetRefreshing(false)
+		}
 		if errors.Is(msg.Err, domain.ErrAuthFailed) {
 			// Actionable, persistent message: the token was revoked/expired
 			// and the user must re-authenticate
@@ -454,7 +458,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case PlaylistsLoadedMsg:
 		m.Loading = false
 		if top := m.ColumnStack.Top(); top != nil {
-			top.SetItems(msg.Playlists)
+			top.ReplaceItems(msg.Playlists)
 		}
 		m.updateInspector()
 		return m, nil
@@ -469,7 +473,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.currentPlaylistID = msg.PlaylistID
 		if top := m.ColumnStack.Top(); top != nil {
-			top.SetItems(msg.Items)
+			top.ReplaceItems(msg.Items)
 		}
 		m.updateInspector()
 		return m, nil
