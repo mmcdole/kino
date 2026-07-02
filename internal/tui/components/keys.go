@@ -159,9 +159,12 @@ func DefaultSortModalKeyMap() SortModalKeyMap {
 			key.WithKeys("j", "down"),
 			key.WithHelp("j/↓", "down"),
 		),
+		// "h" deliberately excluded from Left: everywhere else in the app
+		// h means back/cancel, so here it closes the modal instead of
+		// silently applying an ascending sort
 		Left: key.NewBinding(
-			key.WithKeys("h", "left"),
-			key.WithHelp("←/h", "asc"),
+			key.WithKeys("left"),
+			key.WithHelp("←", "asc"),
 		),
 		Right: key.NewBinding(
 			key.WithKeys("l", "right"),
@@ -176,7 +179,7 @@ func DefaultSortModalKeyMap() SortModalKeyMap {
 			key.WithHelp("esc", "cancel"),
 		),
 		Close: key.NewBinding(
-			key.WithKeys("s"),
+			key.WithKeys("s", "h"),
 			key.WithHelp("s", "close"),
 		),
 	}

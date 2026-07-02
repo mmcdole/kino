@@ -30,6 +30,10 @@ func (m Model) View() string {
 		return m.renderLogoutConfirmation()
 	}
 
+	if m.State == StateConfirmDeletePlaylist {
+		return m.renderDeletePlaylistConfirmation()
+	}
+
 	contentHeight := m.Height - ChromeHeight
 	stackLen := m.ColumnStack.Len()
 	layout := m.calculateColumnLayout(m.Width)
@@ -201,18 +205,19 @@ func (m Model) renderHelp() string {
 NAVIGATION                      PLAYBACK
   j/k        Up/down               Enter  Play/resume
   h/l        Back/drill in         p      Play from start
-  g/Home     First item            w      Mark watched
-  G/End      Last item             u      Mark unwatched
-  PgUp/PgDn  Scroll page
-  Ctrl+u/d   Scroll half page
-
-SEARCH & VIEW                   OTHER
-  /          Filter                r      Refresh library
-  f          Global search         R      Refresh all
-  s          Sort                  q      Quit
-  i          Toggle inspector      ?      This help
-  Space      Manage playlists      Esc    Close / Cancel
+  Backspace  Back                  w      Mark watched
+  g/Home     First item            u      Mark unwatched
+  G/End      Last item
+  PgUp/PgDn  Scroll page         PLAYLISTS
+  Ctrl+u/d   Scroll half page      Space  Add/remove item
+                                   x      Delete / remove
+SEARCH & VIEW
+  /          Filter              OTHER
+  f          Global search         r      Refresh view
+  s          Sort                  R      Refresh all
+  i          Toggle inspector      q      Quit
                                    L      Logout
+                                   Esc    Close / Cancel
 
 Press any key to return...
 `
@@ -232,6 +237,24 @@ func (m Model) renderLogoutConfirmation() string {
 
         [Y] Yes      [N] No
 `
+
+	return lipgloss.Place(m.Width, m.Height,
+		lipgloss.Center, lipgloss.Center,
+		styles.ModalStyle.Render(modal))
+}
+
+// renderDeletePlaylistConfirmation renders the playlist delete confirmation
+func (m Model) renderDeletePlaylistConfirmation() string {
+	name := styles.Truncate(m.pendingDeletePlaylistName, 30)
+	modal := fmt.Sprintf(`
+        Delete Playlist?
+
+  %q
+  will be permanently deleted
+  from the server.
+
+      [Y] Yes      [N] No
+`, name)
 
 	return lipgloss.Place(m.Width, m.Height,
 		lipgloss.Center, lipgloss.Center,

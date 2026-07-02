@@ -1,6 +1,9 @@
 package styles
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
+)
 
 // Color palette
 var (
@@ -172,29 +175,28 @@ var (
 
 // Helper functions
 
-// Truncate truncates a string to the given width with ellipsis
+// Truncate truncates a string to the given display width with ellipsis.
+// Display-width aware: byte slicing splits multibyte runes (mojibake) and
+// miscounts CJK/emoji cell widths.
 func Truncate(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	if len(s) <= width {
+	if runewidth.StringWidth(s) <= width {
 		return s
 	}
 	if width <= 3 {
-		if width > len(s) {
-			return s
-		}
-		return s[:width]
+		return runewidth.Truncate(s, width, "")
 	}
-	return s[:width-3] + "..."
+	return runewidth.Truncate(s, width, "...")
 }
 
-// Pad pads a string to the given width
+// Pad pads a string to the given display width
 func Pad(s string, width int) string {
-	if len(s) >= width {
-		return s[:width]
+	if runewidth.StringWidth(s) >= width {
+		return runewidth.Truncate(s, width, "")
 	}
-	return s + spaces(width-len(s))
+	return runewidth.FillRight(s, width)
 }
 
 func spaces(n int) string {
