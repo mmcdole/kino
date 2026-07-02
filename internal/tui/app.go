@@ -344,15 +344,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case MarkWatchedMsg:
 		m.StatusMsg = "Marked watched: " + msg.Title
-		// Refresh to update watch status indicators
-		cmds = append(cmds, m.refreshCurrentView())
+		m.applyWatchState(msg.ItemID, true)
 		cmds = append(cmds, ClearStatusCmd(3*time.Second))
 		return m, tea.Batch(cmds...)
 
 	case MarkUnwatchedMsg:
 		m.StatusMsg = "Marked unwatched: " + msg.Title
-		// Refresh to update watch status indicators
-		cmds = append(cmds, m.refreshCurrentView())
+		m.applyWatchState(msg.ItemID, false)
 		cmds = append(cmds, ClearStatusCmd(3*time.Second))
 		return m, tea.Batch(cmds...)
 
@@ -562,53 +560,38 @@ func (m *Model) updateLibraryStates() {
 	m.Inspector.SetLibraryStates(m.LibraryStates)
 }
 
-// refreshCurrentView refreshes the current view
-func (m *Model) refreshCurrentView() tea.Cmd {
-	m.LibraryService.InvalidateAll()
-	m.Loading = true
+// applyWatchState patches an item's watch state in the cache and in every
+// visible column. This replaces the old invalidate-everything-and-refetch
+// approach: the UI updates instantly and no network requests are issued.
+func (m *Model) applyWatchState(itemID string, played bool) {
+	m.LibraryService.SetWatchState(itemID, played)
 
-	top := m.ColumnStack.Top()
-	if top == nil {
-		return LoadLibrariesCmd(m.LibraryService)
-	}
-
-	// Get context from column stack to reload
-	switch top.ColumnType() {
-	case components.ColumnTypeMovies:
-		if libCol := m.libraryColumn(); libCol != nil {
-			if lib := libCol.SelectedLibrary(); lib != nil {
-				return LoadMoviesCmd(m.LibraryService, lib.ID)
-			}
-		}
-	case components.ColumnTypeShows:
-		if libCol := m.libraryColumn(); libCol != nil {
-			if lib := libCol.SelectedLibrary(); lib != nil {
-				return LoadShowsCmd(m.LibraryService, lib.ID)
-			}
-		}
-	case components.ColumnTypeSeasons:
-		// Get show from parent column - needs libID for hierarchical cache
-		if showCol := m.ColumnStack.Get(m.ColumnStack.Len() - 2); showCol != nil {
-			if show := showCol.SelectedShow(); show != nil {
-				return LoadSeasonsCmd(m.LibraryService, m.currentLibID, show.ID)
-			}
-		}
-	case components.ColumnTypeEpisodes:
-		// Get season from parent column - needs full ancestry for hierarchical cache
-		if seasonCol := m.ColumnStack.Get(m.ColumnStack.Len() - 2); seasonCol != nil {
-			if season := seasonCol.SelectedSeason(); season != nil {
-				return LoadEpisodesCmd(m.LibraryService, m.currentLibID, m.currentShowID, season.ID)
-			}
-		}
-	case components.ColumnTypeMixed:
-		if libCol := m.libraryColumn(); libCol != nil {
-			if lib := libCol.SelectedLibrary(); lib != nil {
-				return LoadMixedLibraryCmd(m.LibraryService, lib.ID)
+	// Patch the item wherever a column renders it, and adjust unwatched
+	// counters on visible show/season rows if an episode flipped state.
+	var patched *domain.MediaItem
+	flipped := false
+	for i := 0; i < m.ColumnStack.Len(); i++ {
+		if col := m.ColumnStack.Get(i); col != nil {
+			if item, f := col.ApplyWatchState(itemID, played); item != nil {
+				patched = item
+				flipped = flipped || f
 			}
 		}
 	}
 
-	return LoadLibrariesCmd(m.LibraryService)
+	if flipped && patched != nil && patched.ShowID != "" {
+		delta := 1
+		if played {
+			delta = -1
+		}
+		for i := 0; i < m.ColumnStack.Len(); i++ {
+			if col := m.ColumnStack.Get(i); col != nil {
+				col.AdjustUnwatchedCounts(patched.ShowID, patched.ParentID, delta)
+			}
+		}
+	}
+
+	m.updateInspector()
 }
 
 // findLibrary finds a library by ID

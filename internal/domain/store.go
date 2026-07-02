@@ -34,6 +34,12 @@ type Store interface {
 	// === Freshness ===
 	IsValid(libID string, serverTS int64) bool
 
+	// === In-place updates ===
+	// SetWatchState patches a media item's watch state everywhere it is
+	// cached (and adjusts season/show unwatched counters) without
+	// invalidating anything.
+	SetWatchState(itemID string, played bool)
+
 	// === Invalidation ===
 	InvalidateLibrary(libID string)
 	InvalidateShow(libID, showID string)
