@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -40,6 +41,24 @@ var darwinPlayers = []PlayerDef{
 	{Binary: "iina", SeekFlag: "--mpv-start=%d"},
 	{Binary: "mpv", SeekFlag: "--start=%d"},
 	{Binary: "vlc", SeekFlag: "--start-time=%d"},
+}
+
+// Windows-side players reachable from WSL via interop. Probed after the
+// native Linux list so a Linux install (e.g. via WSLg) still wins.
+var wslPlayers = []PlayerDef{
+	{Binary: "PotPlayerMini64.exe", SeekFlag: "/seek=%d"},
+	{Binary: "PotPlayerMini.exe", SeekFlag: "/seek=%d"},
+	{Binary: "mpv.exe", SeekFlag: "--start=%d"},
+	{Binary: "vlc.exe", SeekFlag: "--start-time=%d"},
+}
+
+// isWSL reports whether we are running inside Windows Subsystem for Linux.
+func isWSL() bool {
+	if os.Getenv("WSL_DISTRO_NAME") != "" || os.Getenv("WSL_INTEROP") != "" {
+		return true
+	}
+	data, err := os.ReadFile("/proc/sys/kernel/osrelease")
+	return err == nil && strings.Contains(strings.ToLower(string(data)), "microsoft")
 }
 
 // NewLauncher creates a new Launcher
@@ -90,6 +109,11 @@ func (l *Launcher) detectPlayer() (PlayerDef, bool) {
 		candidates = darwinPlayers
 	case "linux":
 		candidates = linuxPlayers
+		if isWSL() {
+			// WSL can execute Windows binaries via interop; a Windows-side
+			// mpv/vlc on PATH is a perfectly good player
+			candidates = append(append([]PlayerDef{}, linuxPlayers...), wslPlayers...)
+		}
 	default:
 		return PlayerDef{}, false
 	}
@@ -158,14 +182,11 @@ func (l *Launcher) launchConfigured(url string, offsetSecs int) error {
 
 // lookupSeekFlag finds the seek flag for a known player binary
 func (l *Launcher) lookupSeekFlag(binary string) string {
-	for _, p := range linuxPlayers {
-		if p.Binary == binary {
-			return p.SeekFlag
-		}
-	}
-	for _, p := range darwinPlayers {
-		if p.Binary == binary {
-			return p.SeekFlag
+	for _, table := range [][]PlayerDef{linuxPlayers, darwinPlayers, wslPlayers} {
+		for _, p := range table {
+			if p.Binary == binary {
+				return p.SeekFlag
+			}
 		}
 	}
 	return ""
@@ -193,10 +214,26 @@ func (l *Launcher) launchDefault(url string) error {
 		cmd = exec.Command("open", url)
 	default:
 		// Linux and other Unix-like systems
-		cmd = exec.Command("xdg-open", url)
+		if isWSL() {
+			// WSL distros usually have no xdg-open; hand the URL to Windows.
+			// wslview (from wslu) is purpose-built for this; explorer.exe
+			// opens the default handler and is always present.
+			for _, opener := range []string{"wslview", "explorer.exe"} {
+				if _, err := exec.LookPath(opener); err == nil {
+					cmd = exec.Command(opener, url)
+					break
+				}
+			}
+		}
+		if cmd == nil {
+			if _, err := exec.LookPath("xdg-open"); err != nil {
+				return fmt.Errorf("no media player found — install mpv (or vlc), or set player.command in config.yaml")
+			}
+			cmd = exec.Command("xdg-open", url)
+		}
 	}
 
-	l.logger.Debug("launching with system default", "os", runtime.GOOS, "url", url)
+	l.logger.Debug("launching with system default", "os", runtime.GOOS, "command", cmd.Path)
 	return cmd.Start()
 }
 
