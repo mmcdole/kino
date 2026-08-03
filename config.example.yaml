@@ -25,8 +25,8 @@ player:
   # Arguments passed to the player
   args:
     - "--no-terminal"
-  # Flag for specifying start time (e.g., "--start=" for mpv)
-  # start_flag: "--start="
+  # Flag for specifying start time; %d is replaced with elapsed seconds
+  # start_flag: "--start=%d"
 
 # User Interface Configuration
 ui:

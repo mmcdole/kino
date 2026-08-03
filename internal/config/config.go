@@ -42,7 +42,7 @@ type ServerConfig struct {
 type PlayerConfig struct {
 	Command   string   `mapstructure:"command"`
 	Args      []string `mapstructure:"args"`
-	StartFlag string   `mapstructure:"start_flag"` // e.g., "--start=" or "--start-time="
+	StartFlag string   `mapstructure:"start_flag"` // e.g., "--start=%d" or "--start-time=%d"
 }
 
 // UIConfig holds UI configuration
