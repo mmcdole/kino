@@ -38,15 +38,15 @@ type Store interface {
 	// SetWatchState patches a media item's watch state everywhere it is
 	// cached (and adjusts season/show unwatched counters) without
 	// invalidating anything.
-	SetWatchState(itemID string, played bool)
+	SetWatchState(itemID string, played bool) error
 
 	// === Invalidation ===
-	InvalidateLibrary(libID string)
-	InvalidateShow(libID, showID string)
-	InvalidateSeason(libID, showID, seasonID string)
-	InvalidatePlaylists()
-	InvalidatePlaylistItems(playlistID string)
-	InvalidateAll()
+	InvalidateLibrary(libID string) error
+	InvalidateShow(libID, showID string) error
+	InvalidateSeason(libID, showID, seasonID string) error
+	InvalidatePlaylists() error
+	InvalidatePlaylistItems(playlistID string) error
+	InvalidateAll() error
 
 	Close() error
 }
