@@ -320,7 +320,7 @@ func (c *ListColumn) IsRefreshing() bool {
 	return c.refreshing
 }
 
-func (c *ListColumn) SetItems(rawItems interface{}) {
+func (c *ListColumn) SetItems(items []domain.ListItem) {
 	c.loading = false
 	c.loadFailed = false
 	c.cursor = 0
@@ -328,49 +328,7 @@ func (c *ListColumn) SetItems(rawItems interface{}) {
 	c.clearFilter()
 	c.sortedIdx = nil
 
-	if rawItems == nil {
-		c.items = nil
-		c.sortField = SortDefault
-		c.sortDir = SortAsc
-		return
-	}
-
-	switch v := rawItems.(type) {
-	case []domain.Library:
-		c.items = WrapLibraries(v)
-		c.columnType = ColumnTypeLibraries
-	case []*domain.MediaItem:
-		// Could be movies, episodes, or playlist items. An already-typed
-		// column keeps its identity — an empty episode list must not turn
-		// the column into a movies column.
-		switch {
-		case c.columnType == ColumnTypePlaylistItems:
-			c.items = WrapPlaylistItems(v)
-		case c.columnType == ColumnTypeEpisodes:
-			c.items = WrapEpisodes(v)
-		case len(v) > 0 && v[0].Type == domain.MediaTypeEpisode:
-			c.items = WrapEpisodes(v)
-			c.columnType = ColumnTypeEpisodes
-		default:
-			c.items = WrapMovies(v)
-			c.columnType = ColumnTypeMovies
-		}
-	case []*domain.Show:
-		c.items = WrapShows(v)
-		c.columnType = ColumnTypeShows
-	case []*domain.Season:
-		c.items = WrapSeasons(v)
-		c.columnType = ColumnTypeSeasons
-	case []*domain.Playlist:
-		c.items = WrapPlaylists(v)
-		c.columnType = ColumnTypePlaylists
-	case []domain.ListItem:
-		c.items = v
-		// columnType should already be set, default to mixed if not
-		if c.columnType == 0 {
-			c.columnType = ColumnTypeMixed
-		}
-	}
+	c.items = append([]domain.ListItem(nil), items...)
 
 	// Apply default sort for sortable column types
 	if c.columnSortable() {
@@ -393,11 +351,11 @@ func (c *ListColumn) SetItems(rawItems interface{}) {
 // state: cursor (matched by item ID), sort, and filter all survive the swap.
 // Background refreshes use this so the list doesn't jump; on a column with no
 // prior content it behaves exactly like SetItems.
-func (c *ListColumn) ReplaceItems(rawItems interface{}) {
+func (c *ListColumn) ReplaceItems(items []domain.ListItem) {
 	c.refreshing = false
 
 	if len(c.items) == 0 {
-		c.SetItems(rawItems)
+		c.SetItems(items)
 		return
 	}
 
@@ -412,7 +370,7 @@ func (c *ListColumn) ReplaceItems(rawItems interface{}) {
 	filterQuery := c.filterInput.Value()
 	filterTyping := c.filterInput.Focused()
 
-	c.SetItems(rawItems)
+	c.SetItems(items)
 
 	// Restore sort
 	if c.columnSortable() && sortField != SortDefault {

@@ -64,7 +64,7 @@ type columnLoadSpec struct {
 	name      string
 	awaitKind NavAwaitKind
 	awaitID   string
-	getCached func() interface{} // Returns nil if not cached, otherwise a slice for SetItems
+	getCached func() []domain.ListItem // Returns nil if not cached, otherwise a slice for SetItems
 	loadCmd   tea.Cmd
 }
 
@@ -78,7 +78,7 @@ func (m *Model) pushAndLoadColumn(spec columnLoadSpec, cursor int) *drillResult 
 	m.updateLayout()
 
 	if cached := spec.getCached(); cached != nil {
-		col.SetItems(cached)
+		col.SetItems(components.WrapItems(cached))
 		m.updateInspector()
 		if m.navPlan != nil {
 			return &drillResult{
@@ -194,7 +194,7 @@ func (m *Model) drillSelected() *drillResult {
 
 			// Check cache first
 			if cached, ok := m.Store.GetPlaylists(); ok {
-				col.SetItems(cached)
+				col.SetItems(components.WrapItems(cached))
 				m.updateInspector()
 				return &drillResult{AwaitKind: AwaitNone}
 			}
@@ -219,9 +219,9 @@ func (m *Model) drillSelected() *drillResult {
 				name:      v.Name,
 				awaitKind: AwaitMovies,
 				awaitID:   v.ID,
-				getCached: func() interface{} {
+				getCached: func() []domain.ListItem {
 					if c, ok := m.Store.GetMovies(v.ID); ok {
-						return c
+						return components.WrapItems(c)
 					}
 					return nil
 				},
@@ -233,9 +233,9 @@ func (m *Model) drillSelected() *drillResult {
 				name:      v.Name,
 				awaitKind: AwaitShows,
 				awaitID:   v.ID,
-				getCached: func() interface{} {
+				getCached: func() []domain.ListItem {
 					if c, ok := m.Store.GetShows(v.ID); ok {
-						return c
+						return components.WrapItems(c)
 					}
 					return nil
 				},
@@ -247,9 +247,9 @@ func (m *Model) drillSelected() *drillResult {
 				name:      v.Name,
 				awaitKind: AwaitMixed,
 				awaitID:   v.ID,
-				getCached: func() interface{} {
+				getCached: func() []domain.ListItem {
 					if c, ok := m.Store.GetMixedContent(v.ID); ok {
-						return c
+						return components.WrapItems(c)
 					}
 					return nil
 				},
@@ -262,9 +262,9 @@ func (m *Model) drillSelected() *drillResult {
 				name:      v.Name,
 				awaitKind: AwaitMixed,
 				awaitID:   v.ID,
-				getCached: func() interface{} {
+				getCached: func() []domain.ListItem {
 					if c, ok := m.Store.GetMixedContent(v.ID); ok {
-						return c
+						return components.WrapItems(c)
 					}
 					return nil
 				},
@@ -284,9 +284,9 @@ func (m *Model) drillSelected() *drillResult {
 			name:      v.Title,
 			awaitKind: AwaitSeasons,
 			awaitID:   v.ID,
-			getCached: func() interface{} {
+			getCached: func() []domain.ListItem {
 				if c, ok := m.Store.GetSeasons(libID, showID); ok {
-					return c
+					return components.WrapItems(c)
 				}
 				return nil
 			},
@@ -310,9 +310,9 @@ func (m *Model) drillSelected() *drillResult {
 			name:      title,
 			awaitKind: AwaitEpisodes,
 			awaitID:   v.ID,
-			getCached: func() interface{} {
+			getCached: func() []domain.ListItem {
 				if c, ok := m.Store.GetEpisodes(libID, showID, seasonID); ok {
-					return c
+					return components.WrapItems(c)
 				}
 				return nil
 			},
@@ -330,7 +330,7 @@ func (m *Model) drillSelected() *drillResult {
 
 		// Check cache first
 		if cached, ok := m.Store.GetPlaylistItems(v.ID); ok {
-			col.SetItems(cached)
+			col.SetItems(components.WrapItems(cached))
 			m.updateInspector()
 			return &drillResult{AwaitKind: AwaitNone}
 		}
@@ -522,9 +522,9 @@ func (m *Model) navigateToTypedLibraryItem(lib *domain.Library, navCtx Navigatio
 			name:      lib.Name,
 			awaitKind: AwaitMovies,
 			awaitID:   lib.ID,
-			getCached: func() interface{} {
+			getCached: func() []domain.ListItem {
 				if c, ok := m.Store.GetMovies(lib.ID); ok {
-					return c
+					return components.WrapItems(c)
 				}
 				return nil
 			},
@@ -543,9 +543,9 @@ func (m *Model) navigateToTypedLibraryItem(lib *domain.Library, navCtx Navigatio
 			name:      lib.Name,
 			awaitKind: AwaitShows,
 			awaitID:   lib.ID,
-			getCached: func() interface{} {
+			getCached: func() []domain.ListItem {
 				if c, ok := m.Store.GetShows(lib.ID); ok {
-					return c
+					return components.WrapItems(c)
 				}
 				return nil
 			},

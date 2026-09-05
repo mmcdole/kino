@@ -68,3 +68,12 @@ func WrapPlaylistItems(items []*domain.MediaItem) []domain.ListItem {
 	}
 	return result
 }
+
+// WrapItems widens typed domain pointers into list items.
+func WrapItems[T domain.ListItem](values []T) []domain.ListItem {
+	items := make([]domain.ListItem, len(values))
+	for i, item := range values {
+		items[i] = item
+	}
+	return items
+}

@@ -6,8 +6,8 @@ import (
 	"github.com/mmcdole/kino/internal/domain"
 )
 
-func testMovies(titles ...string) []*domain.MediaItem {
-	items := make([]*domain.MediaItem, len(titles))
+func testMovies(titles ...string) []domain.ListItem {
+	items := make([]domain.ListItem, len(titles))
 	for i, t := range titles {
 		items[i] = &domain.MediaItem{ID: "id-" + t, Title: t, Type: domain.MediaTypeMovie}
 	}
@@ -94,5 +94,17 @@ func TestReplaceItemsOnEmptyColumn(t *testing.T) {
 	}
 	if c.SelectedIndex() != 0 || c.ItemCount() != 2 {
 		t.Fatalf("expected fresh load semantics, cursor=%d count=%d", c.SelectedIndex(), c.ItemCount())
+	}
+}
+
+func TestColumnIdentitySurvivesEmptyAndMixedPayloads(t *testing.T) {
+	for _, kind := range []ColumnType{ColumnTypeLibraries, ColumnTypeEpisodes, ColumnTypePlaylistItems, ColumnTypeMixed} {
+		c := NewListColumn(kind, "test")
+		c.SetItems(nil)
+		c.ReplaceItems([]domain.ListItem{&domain.MediaItem{ID: "episode", Type: domain.MediaTypeEpisode}})
+		c.ReplaceItems(nil)
+		if c.ColumnType() != kind {
+			t.Fatalf("column %v became %v", kind, c.ColumnType())
+		}
 	}
 }
