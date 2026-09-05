@@ -26,6 +26,7 @@ type Cache interface {
 }
 
 type flight struct {
+	resource  Resource
 	ctx       context.Context
 	cancel    context.CancelFunc
 	done      chan struct{}
@@ -94,7 +95,7 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy, observer 
 		}
 		if current == nil {
 			workCtx, cancel := context.WithTimeout(s.ctx, 10*time.Minute)
-			current = &flight{ctx: workCtx, cancel: cancel, done: make(chan struct{}), observers: make(map[uint64]Observer)}
+			current = &flight{resource: r, ctx: workCtx, cancel: cancel, done: make(chan struct{}), observers: make(map[uint64]Observer)}
 			s.active[key] = current
 			s.wg.Add(1)
 			go s.run(r, policy, current)
