@@ -136,7 +136,10 @@ func NewLauncher(command string, args []string, seekFlag string, logger *slog.Lo
 }
 
 // Launch opens a media URL in the configured player or auto-detected player
-func (l *Launcher) Launch(url string, startOffset time.Duration) error {
+func (l *Launcher) Launch(ctx context.Context, url string, startOffset time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	offsetSecs := int(startOffset.Seconds())
 
 	// Tier 1: User configured a specific player
@@ -146,7 +149,11 @@ func (l *Launcher) Launch(url string, startOffset time.Duration) error {
 	}
 
 	// Tier 2: Auto-detect known players
-	if player, found := l.detectPlayer(); found {
+	player, found := l.detectPlayer(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if found {
 		l.logger.Info("auto-detected player", "binary", player.Definition.Binary,
 			"executable", player.Executable)
 		if err := l.execPlayer(player, url, offsetSecs); err != nil {
@@ -168,7 +175,7 @@ func (l *Launcher) Launch(url string, startOffset time.Duration) error {
 }
 
 // detectPlayer returns the first available player from the platform-specific list
-func (l *Launcher) detectPlayer() (ResolvedPlayer, bool) {
+func (l *Launcher) detectPlayer(ctx context.Context) (ResolvedPlayer, bool) {
 	l.detectMu.Lock()
 	defer l.detectMu.Unlock()
 
@@ -179,7 +186,10 @@ func (l *Launcher) detectPlayer() (ResolvedPlayer, bool) {
 		return ResolvedPlayer{}, false
 	}
 
-	l.detected, l.detectedFound = detectPlayerUncached()
+	l.detected, l.detectedFound = detectPlayerUncached(ctx)
+	if ctx.Err() != nil {
+		return ResolvedPlayer{}, false
+	}
 	l.detectedAt = time.Now()
 	return l.detected, l.detectedFound
 }
@@ -192,8 +202,8 @@ func (l *Launcher) invalidateDetectedPlayer() {
 	l.detectedAt = time.Time{}
 }
 
-func detectPlayerUncached() (ResolvedPlayer, bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), windowsDiscoveryTimeout)
+func detectPlayerUncached(parent context.Context) (ResolvedPlayer, bool) {
+	ctx, cancel := context.WithTimeout(parent, windowsDiscoveryTimeout)
 	defer cancel()
 
 	var candidates []PlayerDef
@@ -579,15 +589,20 @@ func startCommand(cmd *exec.Cmd) error {
 	return nil
 }
 
+// URLResolver is the backend operation playback consumes.
+type URLResolver interface {
+	ResolvePlayableURL(context.Context, string) (string, error)
+}
+
 // Service orchestrates playback operations
 type Service struct {
 	launcher *Launcher
-	playback domain.PlaybackClient
+	playback URLResolver
 	logger   *slog.Logger
 }
 
 // NewService creates a new playback service
-func NewService(launcher *Launcher, playback domain.PlaybackClient, logger *slog.Logger) *Service {
+func NewService(launcher *Launcher, playback URLResolver, logger *slog.Logger) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -610,6 +625,8 @@ func (s *Service) Resume(ctx context.Context, item domain.MediaItem) error {
 
 // playItem resolves URL and launches player
 func (s *Service) playItem(ctx context.Context, item domain.MediaItem, offset time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 	url, err := s.playback.ResolvePlayableURL(ctx, item.ID)
 	if err != nil {
 		s.logger.Error("failed to resolve playable URL", "error", err, "itemID", item.ID)
@@ -621,5 +638,5 @@ func (s *Service) playItem(ctx context.Context, item domain.MediaItem, offset ti
 	}
 	s.logger.Info("launching playback", "title", item.Title, "itemID", item.ID, "offset", offset)
 
-	return s.launcher.Launch(url, offset)
+	return s.launcher.Launch(ctx, url, offset)
 }

@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
 	"github.com/mmcdole/kino/internal/config"
@@ -64,13 +63,11 @@ func MutationCmd(svc Catalog, req request, mutation catalog.Mutation) tea.Cmd {
 }
 func PlayItemCmd(svc Playback, req request, item domain.MediaItem, resume bool) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(req.ctx, 15*time.Second)
-		defer cancel()
 		var err error
 		if resume {
-			err = svc.Resume(ctx, item)
+			err = svc.Resume(req.ctx, item)
 		} else {
-			err = svc.Play(ctx, item)
+			err = svc.Play(req.ctx, item)
 		}
 		return ActionMsg{Request: req, Item: item, Playback: true, Err: err}
 	}

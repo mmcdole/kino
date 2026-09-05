@@ -36,7 +36,7 @@ func TestDetectPlayerWSLFindsExe(t *testing.T) {
 	forceWSL(t)
 
 	l := NewLauncher("", nil, "", nil)
-	p, found := l.detectPlayer()
+	p, found := l.detectPlayer(context.Background())
 	if !found {
 		t.Fatal("mpv.exe not detected under WSL")
 	}
@@ -60,7 +60,7 @@ func TestDetectPlayerWSLPotPlayerFirst(t *testing.T) {
 	forceWSL(t)
 
 	l := NewLauncher("", nil, "", nil)
-	p, found := l.detectPlayer()
+	p, found := l.detectPlayer(context.Background())
 	if !found || p.Definition.Binary != "PotPlayerMini64.exe" {
 		t.Fatalf("expected PotPlayer to win, got %q (found=%v)", p.Definition.Binary, found)
 	}
@@ -81,7 +81,7 @@ func TestDetectPlayerWSLPrefersLinuxPlayer(t *testing.T) {
 	forceWSL(t)
 
 	l := NewLauncher("", nil, "", nil)
-	p, found := l.detectPlayer()
+	p, found := l.detectPlayer(context.Background())
 	if !found || p.Definition.Binary != "mpv" {
 		t.Fatalf("expected native mpv to win, got %q (found=%v)", p.Definition.Binary, found)
 	}
@@ -119,7 +119,7 @@ printf '%s\n' "$FAKE_WSL_EXECUTABLE"
 	forceWSL(t)
 
 	l := NewLauncher("", nil, "", nil)
-	p, found := l.detectPlayer()
+	p, found := l.detectPlayer(context.Background())
 	if !found {
 		t.Fatal("VLC App Paths entry was not detected under WSL")
 	}
@@ -325,5 +325,15 @@ func TestLaunchDefaultNoOpenerActionableError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "player.command") {
 		t.Fatalf("error not actionable: %v", err)
+	}
+}
+
+// A canceled launch must not start even an explicitly configured executable.
+func TestCanceledLaunchDoesNotStartPlayer(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	l := NewLauncher("nonexistent-player", nil, "", nil)
+	if err := l.Launch(ctx, "http://media", 0); err != context.Canceled {
+		t.Fatalf("canceled launch attempted to start a player: %v", err)
 	}
 }
