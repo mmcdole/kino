@@ -106,6 +106,7 @@ func (s *Service) Mutate(ctx context.Context, m Mutation) (Change, error) {
 				s.cacheRevisions[key] = revision
 			} else {
 				s.invalid[key] = true
+				change.Resources = append(change.Resources, s.known[key])
 			}
 		}
 		return change, err

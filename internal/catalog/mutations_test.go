@@ -95,3 +95,18 @@ func TestCloseWaitsForMutationReconciliation(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestUncertainWatchWriteRequiresRevalidation(t *testing.T) {
+	svc, cache := testService(t, watchBackend{watch: func(context.Context) error { return domain.ErrServerOffline }})
+	r := Resource{Kind: Movies, ID: "lib", LibraryID: "lib"}
+	if err := cache.Save(r.Key(), domain.CachedList{FetchedAt: time.Now(), Items: []domain.ListItem{&domain.MediaItem{ID: "movie"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Load(context.Background(), r, Browse, Observer{}); err != nil {
+		t.Fatal(err)
+	}
+	change, err := svc.Mutate(context.Background(), Mutation{Kind: Watch, ItemID: "movie", LibraryID: "lib", Played: true})
+	if !errors.Is(err, domain.ErrServerOffline) || len(change.Resources) != 1 || change.Resources[0] != r || change.Applied {
+		t.Fatalf("uncertain remote write was not scheduled for reconciliation: %+v %v", change, err)
+	}
+}

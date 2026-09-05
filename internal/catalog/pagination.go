@@ -52,7 +52,7 @@ func fetchAll[T domain.ListItem](
 		if len(items) == 0 || (total > 0 && len(all) >= total) {
 			break
 		}
-		offset += chunkSize
+		offset += len(items)
 	}
 
 	return all, nil

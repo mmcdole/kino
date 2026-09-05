@@ -34,3 +34,17 @@ func TestPaginationCancellationDoesNotReturnPartialSuccess(t *testing.T) {
 		t.Fatalf("canceled pagination returned partial success: %v %v", items, err)
 	}
 }
+
+func TestPaginationAdvancesByReceivedPageSize(t *testing.T) {
+	source := []*domain.MediaItem{{ID: "a"}, {ID: "b"}, {ID: "c"}}
+	items, err := fetchAll(context.Background(), func(ctx context.Context, offset, limit int) ([]*domain.MediaItem, int, error) {
+		// Server caps pages below the requested limit.
+		if offset >= len(source) {
+			return nil, len(source), nil
+		}
+		return source[offset : offset+1], len(source), nil
+	}, 50, nil)
+	if err != nil || len(items) != 3 {
+		t.Fatalf("server page cap skipped items: %v %v", items, err)
+	}
+}
