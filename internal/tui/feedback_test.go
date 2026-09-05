@@ -20,7 +20,7 @@ func TestCachedNavigationIsQuietAndHonorsCountPreference(t *testing.T) {
 		m.libraryColumn().SetSize(40, 20)
 		m.libraryColumn().SetShowLibraryCounts(showCounts)
 		r := catalog.LibraryResource(m.Libraries[0])
-		m.pushColumn(r, "A", 0)
+		m.pushColumn(r, "A")
 		req := m.requests.active[viewOwner(r)]
 		cached := snapshot(r, 1, "one", "two")
 		cached.FromCache, cached.Validated = true, false
@@ -41,7 +41,7 @@ func TestCachedNavigationIsQuietAndHonorsCountPreference(t *testing.T) {
 func TestNetworkIndicatorIsDelayedAndLateTimerCannotReviveIt(t *testing.T) {
 	m := testModel(t)
 	r := catalog.LibraryResource(m.Libraries[0])
-	m.pushColumn(r, "A", 0)
+	m.pushColumn(r, "A")
 	req := m.requests.active[viewOwner(r)]
 	m = updateModel(m, ResourceMsg{Request: req, Stage: loadNetwork})
 	if m.activeSyncCount() != 0 {
@@ -70,7 +70,7 @@ func TestNetworkIndicatorIsDelayedAndLateTimerCannotReviveIt(t *testing.T) {
 func TestProgressDoesNotReplaceCompleteCount(t *testing.T) {
 	m := testModel(t)
 	r := catalog.LibraryResource(m.Libraries[0])
-	m.pushColumn(r, "A", 0)
+	m.pushColumn(r, "A")
 	req := m.requests.active[viewOwner(r)]
 	m = updateModel(m, ResourceMsg{Request: req, Stage: loadCached, Snapshot: snapshot(r, 4, "one", "two")})
 	m = showNetwork(m, req)
@@ -88,7 +88,7 @@ func TestProgressDoesNotReplaceCompleteCount(t *testing.T) {
 func TestCachedReadCannotClearRefreshError(t *testing.T) {
 	m := testModel(t)
 	r := catalog.LibraryResource(m.Libraries[0])
-	m.pushColumn(r, "A", 0)
+	m.pushColumn(r, "A")
 	req := m.requests.active[viewOwner(r)]
 	cached := snapshot(r, 0, "one")
 	cached.FromCache, cached.Validated = true, false
@@ -112,7 +112,7 @@ func TestCachedReadCannotClearRefreshError(t *testing.T) {
 func TestNetworkIndicatorTracksAllSubscribersAndNavigation(t *testing.T) {
 	m := testModel(t)
 	r := catalog.LibraryResource(m.Libraries[0])
-	m.pushColumn(r, "A", 0)
+	m.pushColumn(r, "A")
 	view := m.requests.active[viewOwner(r)]
 	m.loadResource(r, catalog.Revalidate, true)
 	sync := m.requests.active[syncOwner(r)]
@@ -132,7 +132,7 @@ func TestNetworkIndicatorTracksAllSubscribersAndNavigation(t *testing.T) {
 func TestFailureAfterCachedObservationKeepsSummaryAndShowsRetry(t *testing.T) {
 	m := testModel(t)
 	r := catalog.LibraryResource(m.Libraries[0])
-	m.pushColumn(r, "A", 0)
+	m.pushColumn(r, "A")
 	req := m.requests.active[viewOwner(r)]
 	cached := snapshot(r, 4, "one", "two")
 	cached.FromCache, cached.Validated = true, false

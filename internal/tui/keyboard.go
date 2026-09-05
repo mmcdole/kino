@@ -104,14 +104,10 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Let the focused column handle remaining keys (j/k/g/G navigation)
 	if top := m.ColumnStack.Top(); top != nil {
-		oldCursor := top.SelectedIndex()
 		newCol, cmd := top.Update(msg)
 		m.ColumnStack.UpdateTop(newCol)
 		if cmd != nil {
 			cmds = append(cmds, cmd)
-		}
-		if oldCursor != top.SelectedIndex() {
-			m.updateInspector()
 		}
 	}
 
@@ -201,7 +197,7 @@ func (m Model) handleDrillIn() (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	return m.drillIntoSelection()
+	return m, m.drillSelected()
 }
 
 // handleEnter handles the enter key press
@@ -212,7 +208,7 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if top.CanDrillInto() {
-		return m.drillIntoSelection()
+		return m, m.drillSelected()
 	}
 	if item := top.SelectedMediaItem(); item != nil {
 		return m, tea.Batch(
@@ -273,7 +269,7 @@ func (m Model) handleRefreshAll() (tea.Model, tea.Cmd) {
 	m.clearNavPlan()
 	cmds := []tea.Cmd{m.loadResource(catalog.Resource{Kind: catalog.Libraries}, catalog.Refresh, false)}
 	for i := 1; i < m.ColumnStack.Len(); i++ {
-		r := m.resources[m.ColumnStack.Get(i).ContentID()]
+		r, _ := m.resource(m.ColumnStack.Get(i).ContentID())
 		if r.Kind == catalog.Seasons || r.Kind == catalog.Episodes || r.Kind == catalog.PlaylistItems {
 			cmds = append(cmds, m.loadResource(r, catalog.Refresh, false))
 		}
@@ -439,7 +435,6 @@ func (m Model) handleSortModalInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 		if selection != nil {
 			if top := m.ColumnStack.Top(); top != nil {
 				top.ApplySort(selection.Field, selection.Direction)
-				m.updateInspector()
 			}
 		}
 		return true, m, nil
@@ -541,11 +536,7 @@ func (m Model) handleFilterTypingInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 	if top == nil {
 		return false, m, nil
 	}
-	oldCursor := top.SelectedIndex()
 	newCol, _ := top.Update(msg)
 	m.ColumnStack.UpdateTop(newCol)
-	if oldCursor != top.SelectedIndex() {
-		m.updateInspector()
-	}
 	return true, m, nil
 }

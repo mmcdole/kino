@@ -3,6 +3,7 @@ package player
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -160,21 +161,34 @@ func TestPlayerArgs(t *testing.T) {
 		}
 	})
 
-	t.Run("VLC uses separate instance for reliable resume", func(t *testing.T) {
-		got := playerArgs(PlayerDef{Binary: "vlc", SeekFlag: "--start-time=%d"}, "http://media", 42)
-		want := []string{"--no-one-instance", "--start-time=42", "http://media"}
-		if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
-			t.Fatalf("args = %#v, want %#v", got, want)
-		}
-	})
-
-	t.Run("VLC play from start can reuse normal instance policy", func(t *testing.T) {
-		got := playerArgs(PlayerDef{Binary: "vlc", SeekFlag: "--start-time=%d"}, "http://media", 0)
-		want := []string{"http://media"}
-		if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
-			t.Fatalf("args = %#v, want %#v", got, want)
-		}
-	})
+	for _, platform := range []struct {
+		name             string
+		players          []PlayerDef
+		separateInstance bool
+	}{
+		{"macOS", darwinPlayers, false},
+		{"Linux", linuxPlayers, true},
+		{"Windows", windowsPlayers, true},
+	} {
+		t.Run(platform.name+" VLC resume", func(t *testing.T) {
+			for _, player := range platform.players {
+				if player.Binary != "vlc" && player.Binary != "vlc.exe" {
+					continue
+				}
+				want := []string{"--start-time=921", "http://media"}
+				if platform.separateInstance {
+					want = append([]string{"--no-one-instance"}, want...)
+				}
+				got := playerArgs(player, "http://media", 921)
+				if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+					t.Fatalf("resume args = %#v, want %#v", got, want)
+				}
+				if got := playerArgs(player, "http://media", 0); len(got) != 1 || got[0] != "http://media" {
+					t.Fatalf("play from start args = %#v, want only the URL", got)
+				}
+			}
+		})
+	}
 }
 
 func TestFormatSeekArgs(t *testing.T) {
@@ -335,5 +349,28 @@ func TestCanceledLaunchDoesNotStartPlayer(t *testing.T) {
 	l := NewLauncher("nonexistent-player", nil, "", nil)
 	if err := l.Launch(ctx, "http://media", 0); err != context.Canceled {
 		t.Fatalf("canceled launch attempted to start a player: %v", err)
+	}
+}
+
+// VLC parses playback options before --version, validating launch arguments without opening media.
+func TestInstalledMacOSVLCAcceptsResumeArguments(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS VLC argument compatibility")
+	}
+	binary, err := exec.LookPath("vlc")
+	if err != nil {
+		t.Skip("VLC is not installed on PATH")
+	}
+	for _, player := range darwinPlayers {
+		if player.Binary != "vlc" {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		args := playerArgs(player, "--version", 921)
+		output, err := exec.CommandContext(ctx, binary, args...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("VLC rejected resume arguments: %v\n%s", err, output)
+		}
 	}
 }

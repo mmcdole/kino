@@ -11,11 +11,10 @@ import (
 )
 
 // MediaSource combines all client interfaces that a media server backend must implement.
-// This is the unified interface for browsing, playback, search, and playlist operations.
+// The application consumes browsing, playback, and playlist operations.
 type MediaSource interface {
 	domain.LibraryClient  // Browsing: GetLibraries, GetMovies, GetShows, GetSeasons, GetEpisodes
 	domain.PlaybackClient // Playback: ResolvePlayableURL, MarkPlayed/Unplayed
-	domain.SearchClient   // Search: Search(query) across all libraries
 	domain.PlaylistClient // Playlists: GetPlaylists, CreatePlaylist, AddToPlaylist, etc.
 }
 

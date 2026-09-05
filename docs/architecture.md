@@ -20,7 +20,11 @@ flowchart LR
 - **TUI:** navigation, selection, filtering, sorting, modal state, and presentation.
   Its consumer interfaces expose application operations. Update does not decode
   the cache, persist changes, search the index, or perform network I/O. View renders
-  state; layout and inspector updates belong to Update.
+  state; layout belongs to Update. Inspector selection is reconciled after every
+  model update, including filtering that changes the item without moving its index.
+- **Domain:** entity identity, metadata, and watch-state semantics. Collection
+  consumers require only identity and title. TUI presenters supply formatting,
+  navigation affordances, and sort metadata.
 - **Catalog:** resource identity, cache freshness, shared fetches, pagination,
   deadlines, remote mutations, and cache reconciliation. A resource identifies a
   collection and its ancestry; the optional server version is separate from identity.
@@ -49,10 +53,30 @@ work; the ownership check and cache commit happen under the same service lock.
 An obsolete fetch cannot persist after its replacement. Still-interested subscribers
 join replacement work, while removing the last subscriber cancels the fetch.
 
+Cache reads and decoding run outside the catalog mutex. The catalog registers a
+resource before reading and checks its revision after decoding; an intervening
+commit discards that observation and repeats the read. A fetch uses this same
+observation for count validation. Cache writes and mutation reconciliation remain
+inside the commit fence, so refresh and mutation ordering also governs persistence.
+
 Snapshots and mutations also carry resource revisions. These fence responses that
 were already queued when a newer result or mutation reached the UI. Library counts
 and status obey the same rule as column contents. Cached payload revisions remain
 separate from committed result revisions if persistence fails.
+
+The TUI stores one record per collection: resource identity, accepted snapshot,
+minimum acceptable revision, last error, and background subscription identity.
+The minimum acceptable revision is independent of the displayed snapshot revision.
+Rejecting an obsolete terminal response without a usable replacement schedules a
+read at the required revision. A failure from that recovery attempt stops with a
+retry hint. Error ordering follows the attempt, independently of the revision of
+any cached fallback payload.
+
+Load results and mutation snapshots use the same acceptance and projection path.
+An equal revision updates feedback without rebuilding column content or the search
+index. Opening a column projects the retained snapshot immediately, then starts a
+catalog request to check freshness. Columns retain their own cursor, sort, filter,
+and scroll state while navigation changes the focused column.
 
 The catalog explicitly reports when a subscriber is waiting on network work.
 A result separately records whether it was validated against the server: count
@@ -96,13 +120,19 @@ cancellation and the service lifetime also bound all operations.
 | Background library or playlist load | Delayed row spinner and aggregate footer activity; progress in inspector |
 | Playback or mutation pending | Footer pending indicator until completion |
 | Playlist membership loading | Immediate loading modal; Escape cancels it |
-| Search query pending | Loading state; older query results cannot replace it |
+| Search query pending | Fixed viewport retains results; activity appears after 200 ms; pending results cannot be activated |
 
 Counts describe the last complete snapshot and never double as download progress.
 With `ui.show_library_counts` enabled, known counts (including zero) remain visible
 in library rows. With it disabled, counts never flash during or after a load.
 The inspector uses the same summary and labels progress separately. Failed refreshes
 retain the summary and a retry hint; a cache hit alone cannot clear the error.
+
+Collection feedback combines the accepted snapshot with all active subscribers.
+Columns, library rows, and inspector summaries receive the same feedback value.
+Initial loading, refreshing, and failure presentation are derived from pending
+requests, content availability, and errors; content replacement does not complete
+a request. Inspector scrolling resets only when the selected identity changes.
 
 Routine reads and background completion are silent: there is no temporary library
 success checkmark or count-expiry timer. Indicator space is reserved to keep titles
@@ -118,7 +148,10 @@ and sync status, so late responses cannot recreate them.
 
 Catalog serializes remote writes and reconciles before returning their result.
 Watch updates patch all cached projections in one transaction and adjust parent
-counters once. Playlist changes expire affected snapshots while retaining offline
+counters once. Successful reconciliation returns detached snapshots for affected
+known collections, including show and season parents. The TUI applies these
+snapshots without inferring watch changes from open columns. Missing or invalid
+cached projections require server revalidation. Playlist changes expire affected snapshots while retaining offline
 fallbacks. Uncertain or partial remote writes return errors and affected resources
 for revalidation. Persistence failures remain explicit.
 
@@ -130,16 +163,15 @@ On shutdown, contexts are canceled and catalog operations are drained before the
 database closes, including reconciliation after canceled writes. Logout clears
 the cache only after that drain and database close.
 
-## Storage transition and deferred work
+## Storage and backend constraints
 
-The snapshot schema replaces the old per-content cache buckets. Those disposable
-buckets are removed on opening the cache and rebuilt through subsequent online
-loads. Existing credentials and configuration are unaffected. Offline browsing
-requires snapshots populated in the new format.
+The `snapshots` bucket stores collection payloads. Opening the cache removes
+incompatible collection buckets and unused JSON cache files. Offline browsing
+requires persisted snapshots for the selected server and user.
 
 Backend capability differences, including Plex's inability to create empty
-playlists, are deliberately deferred. This architecture does not add capability
-negotiation or change those backend behaviors.
+playlists, are reported by the adapters. The application does not negotiate
+backend capabilities.
 
 ## Verification
 
@@ -149,5 +181,10 @@ errors, typed columns, scoped UI responses, modal cancellation, loading states, 
 search revisions. Backend tests exercise the same error contract through local
 HTTP servers. A TUI integration test uses the real catalog and disk store through
 cached loading, shared refresh, mutation, offline fallback, and database reopening.
+Reconciliation tests cover mutations before queued load results, navigation during
+watch updates, inspector selection, duplicate revisions, and recovery failures.
+Concurrency tests cover independent cache reads and mutation fencing during decoding.
 
 Run `go test -race ./...`, `go vet ./...`, and `go build ./cmd/kino`.
+Use `go test ./internal/catalog -run '^$' -bench BenchmarkCachedLibraries -benchmem`
+to measure parallel cached-load throughput for small and large disk snapshots.

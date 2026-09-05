@@ -17,7 +17,7 @@ func TestLibraryCountVisibilityIsIndependentOfActivity(t *testing.T) {
 				c.SetShowLibraryCounts(show)
 				c.SetItems([]domain.ListItem{&domain.Library{ID: "lib", Name: "Movies"}})
 				c.SetSize(40, 20)
-				c.SetLibraryStates(map[string]LibraryState{"lib": {
+				c.SetLibraryStates(map[string]CollectionFeedback{"lib": {
 					Summary:  CollectionSummary{Known: true, Count: count},
 					Activity: LoadActivity{Visible: active, Loaded: 3, Total: 20},
 				}})
@@ -32,11 +32,11 @@ func TestLibraryCountVisibilityIsIndependentOfActivity(t *testing.T) {
 
 func TestInspectorDistinguishesUnknownZeroAndProgress(t *testing.T) {
 	i := NewInspector()
-	i.SetLibraryStates(map[string]LibraryState{"lib": {Activity: LoadActivity{Visible: true, Loaded: 3, Total: 20}}})
+	i.SetLibraryStates(map[string]CollectionFeedback{"lib": {Activity: LoadActivity{Visible: true, Loaded: 3, Total: 20}}})
 	if strings.Contains(i.renderLibraryFeedback("lib"), "Items:") {
 		t.Fatal("unknown count rendered as a partial or zero count")
 	}
-	i.SetLibraryStates(map[string]LibraryState{"lib": {
+	i.SetLibraryStates(map[string]CollectionFeedback{"lib": {
 		Summary:  CollectionSummary{Known: true, Count: 0},
 		Activity: LoadActivity{Visible: true, Loaded: 3, Total: 20},
 	}})
@@ -44,7 +44,7 @@ func TestInspectorDistinguishesUnknownZeroAndProgress(t *testing.T) {
 	if !strings.Contains(view, "Items: 0") || !strings.Contains(view, "Loading: 3/20") {
 		t.Fatal("zero and progress not distinguished")
 	}
-	i.SetLibraryStates(map[string]LibraryState{"lib": {
+	i.SetLibraryStates(map[string]CollectionFeedback{"lib": {
 		Summary: CollectionSummary{Known: true, Count: 12, Stale: true}, Error: errors.New("offline"),
 	}})
 	view = i.renderLibraryFeedback("lib")
@@ -57,9 +57,9 @@ func TestColumnIndicatorDoesNotMoveTitleOrHideContent(t *testing.T) {
 	c := NewListColumn(ColumnTypeMovies, "Movies")
 	c.SetSize(40, 20)
 	c.SetItems(testMovies("Alpha"))
-	c.SetRequestState(true, false, false)
+	c.SetFeedback(CollectionFeedback{Pending: true})
 	before := strings.Split(c.renderContent(), "\n")[0]
-	c.SetRequestState(true, true, false)
+	c.SetFeedback(CollectionFeedback{Pending: true, Activity: LoadActivity{Visible: true}})
 	during := strings.Split(c.renderContent(), "\n")[0]
 	beforePrefix := before[:strings.Index(before, "Movies")]
 	duringPrefix := during[:strings.Index(during, "Movies")]
@@ -75,7 +75,7 @@ func TestFailedRefreshKeepsKnownEmptyCollectionAndRetry(t *testing.T) {
 	c := NewListColumn(ColumnTypeMovies, "Movies")
 	c.SetSize(40, 20)
 	c.SetItems(nil)
-	c.SetRequestState(false, false, true)
+	c.SetFeedback(CollectionFeedback{Error: errors.New("offline")})
 	view := c.View()
 	if !strings.Contains(view, "No items") || !strings.Contains(view, "Refresh failed") || !strings.Contains(view, "r to retry") {
 		t.Fatal("known empty collection lost its meaning after failed refresh")

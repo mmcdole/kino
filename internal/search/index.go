@@ -24,6 +24,12 @@ type Index struct {
 func NewIndex() *Index { return &Index{libraries: make(map[string]indexedLibrary)} }
 
 func (s *Index) ReplaceLibrary(id string, revision uint64, items []domain.ListItem) {
+	s.mu.RLock()
+	old, exists := s.libraries[id]
+	s.mu.RUnlock()
+	if exists && old.revision >= revision {
+		return
+	}
 	entry := indexedLibrary{revision: revision}
 	for _, item := range domain.CloneItems(items) {
 		var kind domain.MediaType
@@ -40,7 +46,7 @@ func (s *Index) ReplaceLibrary(id string, revision uint64, items []domain.ListIt
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if old, ok := s.libraries[id]; ok && old.revision > revision {
+	if old, ok := s.libraries[id]; ok && old.revision >= revision {
 		return
 	}
 	s.libraries[id] = entry

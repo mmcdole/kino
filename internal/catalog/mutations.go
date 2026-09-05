@@ -31,6 +31,8 @@ type Mutation struct {
 }
 
 type Change struct {
+	// Snapshots contain reconciled cache data; Resources require server revalidation.
+	Snapshots []Snapshot
 	Revisions map[string]uint64
 	Mutation  Mutation
 	Applied   bool
@@ -102,8 +104,14 @@ func (s *Service) Mutate(ctx context.Context, m Mutation) (Change, error) {
 			change.Warning = s.cache.PatchWatchState(m.ItemID, m.Played)
 		}
 		for key, revision := range change.Revisions {
-			if err == nil && change.Warning == nil {
+			if err == nil && change.Warning == nil && !s.invalid[key] {
 				s.cacheRevisions[key] = revision
+				r := s.known[key]
+				if entry, ok := s.cache.Load(key); ok {
+					change.Snapshots = append(change.Snapshots, Snapshot{Resource: r, CachedList: entry, Revision: revision, FromCache: true, Stale: !s.fresh(r, entry)})
+				} else {
+					change.Resources = append(change.Resources, r)
+				}
 			} else {
 				s.invalid[key] = true
 				change.Resources = append(change.Resources, s.known[key])

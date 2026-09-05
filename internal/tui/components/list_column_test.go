@@ -1,6 +1,7 @@
 package components
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -86,7 +87,7 @@ func TestReplaceItemsPreservesSort(t *testing.T) {
 func TestReplaceItemsOnEmptyColumn(t *testing.T) {
 	c := NewListColumn(ColumnTypeMovies, "Movies")
 	c.SetSize(40, 20)
-	c.BeginLoad()
+	c.SetFeedback(CollectionFeedback{Pending: true})
 
 	c.ReplaceItems(testMovies("Alpha", "Bravo"))
 
@@ -113,27 +114,27 @@ func TestColumnIdentitySurvivesEmptyAndMixedPayloads(t *testing.T) {
 func TestLoadFailureAndRetryKeepCachedContentVisible(t *testing.T) {
 	c := NewListColumn(ColumnTypeMovies, "Movies")
 	c.SetSize(50, 20)
-	c.BeginLoad()
-	c.FinishLoad(true)
+	c.SetFeedback(CollectionFeedback{Pending: true})
+	c.SetFeedback(CollectionFeedback{Error: errors.New("offline")})
 	if c.IsLoading() || !strings.Contains(c.View(), "press r to retry") {
 		t.Fatal("cold failure did not become retryable")
 	}
-	c.BeginLoad()
+	c.SetFeedback(CollectionFeedback{Pending: true})
 	if !c.IsLoading() || c.HasLoadFailed() {
 		t.Fatal("retry retained failure")
 	}
 	c.SetItems(testMovies("Alpha"))
-	c.BeginLoad()
-	c.FinishLoad(true)
+	c.SetFeedback(CollectionFeedback{Pending: true})
+	c.SetFeedback(CollectionFeedback{Error: errors.New("offline")})
 	if !strings.Contains(c.View(), "Refresh failed") || !strings.Contains(c.View(), "Alpha") {
 		t.Fatal("refresh failure hid cached content or retry state")
 	}
-	c.BeginLoad()
+	c.SetFeedback(CollectionFeedback{Pending: true})
 	if !c.IsRefreshing() || c.HasLoadFailed() {
 		t.Fatal("refresh retry state inconsistent")
 	}
 	c.ReplaceItems(nil)
-	c.BeginLoad()
+	c.SetFeedback(CollectionFeedback{Pending: true})
 	if c.IsLoading() || !c.IsRefreshing() {
 		t.Fatal("empty snapshot treated as no snapshot")
 	}

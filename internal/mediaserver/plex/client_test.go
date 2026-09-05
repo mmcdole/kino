@@ -60,7 +60,7 @@ func TestNetworkErrorWrapsServerOffline(t *testing.T) {
 	}
 }
 
-// GETs retry on 5xx (previously Plex had no retry at all); mutations don't.
+// Only reads may retry a server failure; repeating a mutation can apply it twice.
 func TestRetryPolicy(t *testing.T) {
 	var gets, deletes atomic.Int32
 	c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

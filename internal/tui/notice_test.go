@@ -18,9 +18,7 @@ func TestNotifySetsNoticeAndTimer(t *testing.T) {
 	}
 }
 
-// A stale timer from an earlier notice must not clear a newer one — this was
-// the bug class where "Marked watched"'s timer deleted the persistent auth
-// alert posted a second later.
+// Notice expiry is scoped to the sequence that scheduled it.
 func TestStaleTimerCannotClearNewerNotice(t *testing.T) {
 	m := &Model{}
 

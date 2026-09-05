@@ -25,15 +25,6 @@ const (
 	ScrollIndicatorLines = 2
 )
 
-type loadState uint8
-
-const (
-	loadIdle loadState = iota
-	loadInitial
-	loadRefreshing
-	loadFailed
-)
-
 // ListColumn is a scrollable list column that can display various content types.
 // It implements the Column interface.
 type ListColumn struct {
@@ -57,12 +48,11 @@ type ListColumn struct {
 	title string
 
 	// Loading state
-	loadState        loadState
-	indicatorVisible bool
-	spinnerFrame     int
+	feedback     CollectionFeedback
+	spinnerFrame int
 
 	// Library summaries and activity (for library column)
-	libraryStates map[string]LibraryState
+	libraryStates map[string]CollectionFeedback
 
 	// Sort state
 	sortField SortField
@@ -97,7 +87,7 @@ func NewListColumn(colType ColumnType, title string) *ListColumn {
 		sortField:     SortTitle,
 		sortDir:       SortAsc,
 		filterInput:   ti,
-		libraryStates: make(map[string]LibraryState),
+		libraryStates: make(map[string]CollectionFeedback),
 	}
 }
 
@@ -288,44 +278,19 @@ func (c *ListColumn) CanDrillInto() bool {
 	if idx >= len(c.items) {
 		return false
 	}
-	return c.items[idx].CanDrillDown()
+	return present(c.items[idx]).DrillDown
 }
 
-// BeginLoad derives the presentation from whether a snapshot has arrived.
-// An empty successful snapshot is still content, and remains visible on refresh.
-func (c *ListColumn) BeginLoad() {
-	c.loadState = loadInitial
-	if c.hasContent {
-		c.loadState = loadRefreshing
-	}
-}
-
-func (c *ListColumn) FinishLoad(failed bool) {
-	c.loadState = loadIdle
-	if failed {
-		c.loadState = loadFailed
-	}
-}
-
-// SetRequestState receives presentation derived from all active subscribers.
-func (c *ListColumn) SetRequestState(pending, visible, failed bool) {
-	if pending {
-		c.BeginLoad()
-	} else {
-		c.FinishLoad(failed)
-	}
-	c.indicatorVisible = visible
-}
-
-func (c *ListColumn) IsLoading() bool     { return c.loadState == loadInitial }
-func (c *ListColumn) IsRefreshing() bool  { return c.loadState == loadRefreshing }
-func (c *ListColumn) HasLoadFailed() bool { return c.loadState == loadFailed }
+// SetFeedback receives the same presentation value used by library rows and the inspector.
+func (c *ListColumn) SetFeedback(feedback CollectionFeedback) { c.feedback = feedback }
+func (c *ListColumn) IsLoading() bool                         { return c.feedback.Pending && !c.hasContent }
+func (c *ListColumn) IsRefreshing() bool                      { return c.feedback.Pending && c.hasContent }
+func (c *ListColumn) HasLoadFailed() bool                     { return !c.feedback.Pending && c.feedback.Error != nil }
 
 func (c *ListColumn) HasContent() bool { return c.hasContent }
 
 func (c *ListColumn) SetItems(items []domain.ListItem) {
 	c.hasContent = true
-	c.loadState = loadIdle
 	c.cursor = 0
 	c.offset = 0
 	c.clearFilter()
@@ -397,57 +362,12 @@ func (c *ListColumn) ReplaceItems(items []domain.ListItem) {
 	}
 }
 
-// ApplyWatchState patches a media item's watch state in this column's items.
-// Returns the patched item (nil if not present) and whether the played flag
-// actually changed.
-func (c *ListColumn) ApplyWatchState(itemID string, played bool) (*domain.MediaItem, bool) {
-	for _, item := range c.items {
-		if m, ok := item.(*domain.MediaItem); ok && m.ID == itemID {
-			flipped := m.IsPlayed != played
-			m.IsPlayed = played
-			m.ViewOffset = 0
-			return m, flipped
-		}
-	}
-	return nil, false
-}
-
-// AdjustUnwatchedCounts shifts the unwatched counter on matching show and
-// season rows (used when an episode's watch state is toggled in place).
-func (c *ListColumn) AdjustUnwatchedCounts(showID, seasonID string, delta int) {
-	for _, item := range c.items {
-		switch v := item.(type) {
-		case *domain.Show:
-			if v.ID == showID {
-				v.UnwatchedCount = clampUnwatched(v.UnwatchedCount+delta, v.EpisodeCount)
-			}
-		case *domain.Season:
-			if v.ID == seasonID {
-				v.UnwatchedCount = clampUnwatched(v.UnwatchedCount+delta, v.EpisodeCount)
-			}
-		}
-	}
-}
-
-func clampUnwatched(n, max int) int {
-	if n < 0 {
-		return 0
-	}
-	if max > 0 && n > max {
-		return max
-	}
-	return n
-}
-
-// Additional methods
-
-// ColumnType returns the column's content type
 func (c *ListColumn) ColumnType() ColumnType {
 	return c.columnType
 }
 
 // SetLibraryStates updates the library summaries and activity (for library column)
-func (c *ListColumn) SetLibraryStates(states map[string]LibraryState) {
+func (c *ListColumn) SetLibraryStates(states map[string]CollectionFeedback) {
 	c.libraryStates = states
 }
 
@@ -663,7 +583,7 @@ func (c *ListColumn) getFilterValues() []string {
 			rawIdx = c.sortedIdx[i]
 		}
 		if rawIdx < len(c.items) {
-			titles[i] = c.items[rawIdx].GetTitle()
+			titles[i] = present(c.items[rawIdx]).Title
 		}
 	}
 	return titles
@@ -706,7 +626,7 @@ func (c *ListColumn) renderContent() string {
 	// Title line (styled, truncated to fit column width); background
 	// refreshes show a spinner next to the title while items stay visible
 	title := "  " + c.title
-	if c.IsRefreshing() && c.indicatorVisible {
+	if c.IsRefreshing() && c.feedback.Activity.Visible {
 		title = styles.SpinnerFrames[c.spinnerFrame%len(styles.SpinnerFrames)] + " " + c.title
 	}
 	titleLine := styles.AccentStyle.Render(styles.Truncate(title, itemWidth))
@@ -715,7 +635,7 @@ func (c *ListColumn) renderContent() string {
 	if c.IsLoading() {
 		spinner := styles.SpinnerFrames[c.spinnerFrame%len(styles.SpinnerFrames)]
 		loadingLine := " "
-		if c.indicatorVisible {
+		if c.feedback.Activity.Visible {
 			loadingLine = styles.DimStyle.Render(spinner + " Loading...")
 		}
 		return titleLine + "\n" + " " + "\n" + loadingLine + "\n" + " "
@@ -926,7 +846,7 @@ func (c *ListColumn) renderSeasonItem(season domain.Season, selected bool, width
 		indicatorChar = " "
 	}
 
-	title := season.DisplayTitle()
+	title := seasonTitle(season)
 
 	// Available space: width - indicator(1) - space(1) - margins(2)
 	availableForTitle := width - 4
@@ -952,7 +872,7 @@ func (c *ListColumn) renderEpisodeItem(item domain.MediaItem, selected bool, wid
 		indicatorChar = " "
 	}
 
-	code := item.EpisodeCode()
+	code := episodeCode(item)
 	plexOrange := styles.PlexOrange
 
 	// Available space: width - indicator(1) - space(1) - code - space(1) - margins(2)
@@ -1049,7 +969,7 @@ func (c *ListColumn) renderPlaylistMediaItem(item domain.MediaItem, selected boo
 	title := item.Title
 	if item.Type == domain.MediaTypeEpisode && item.ShowTitle != "" {
 		// Show episode with show context: "Show - S01E05 Title"
-		title = fmt.Sprintf("%s - %s %s", item.ShowTitle, item.EpisodeCode(), item.Title)
+		title = fmt.Sprintf("%s - %s %s", item.ShowTitle, episodeCode(item), item.Title)
 	} else if item.Year > 0 {
 		title = fmt.Sprintf("%s (%d)", item.Title, item.Year)
 	}
@@ -1073,14 +993,14 @@ func (c *ListColumn) renderMixedItem(item domain.ListItem, selected bool, width 
 	var indicatorChar string
 	var indicatorFg lipgloss.Color
 	if c.showWatchStatus {
-		indicatorChar, indicatorFg = watchIndicator(item.GetWatchStatus())
+		indicatorChar, indicatorFg = watchIndicator(present(item).WatchStatus)
 	} else {
 		indicatorChar = " "
 	}
 
 	// Build title with year
-	title := item.GetTitle()
-	if year := item.GetYear(); year > 0 {
+	title := present(item).Title
+	if year := present(item).Year; year > 0 {
 		title = fmt.Sprintf("%s (%d)", title, year)
 	}
 
@@ -1112,7 +1032,7 @@ func (c *ListColumn) sortTag(item domain.ListItem) string {
 
 	switch c.sortField {
 	case SortDuration:
-		d := item.GetDuration()
+		d := present(item).Duration
 		if d <= 0 {
 			return ""
 		}
@@ -1123,7 +1043,7 @@ func (c *ListColumn) sortTag(item domain.ListItem) string {
 		}
 		return fmt.Sprintf("%dm", m)
 	case SortRating:
-		r := item.GetRating()
+		r := present(item).Rating
 		if r == 0 {
 			return ""
 		}
@@ -1131,9 +1051,9 @@ func (c *ListColumn) sortTag(item domain.ListItem) string {
 	case SortDateAdded, SortLastUpdated:
 		var ts int64
 		if c.sortField == SortDateAdded {
-			ts = item.GetAddedAt()
+			ts = present(item).AddedAt
 		} else {
-			ts = item.GetUpdatedAt()
+			ts = present(item).UpdatedAt
 		}
 		if ts == 0 {
 			return ""
@@ -1145,7 +1065,7 @@ func (c *ListColumn) sortTag(item domain.ListItem) string {
 		case ColumnTypeMovies, ColumnTypeShows, ColumnTypeMixed:
 			return ""
 		}
-		y := item.GetYear()
+		y := present(item).Year
 		if y == 0 {
 			return ""
 		}
@@ -1178,7 +1098,7 @@ func formatMonthYear(ts int64) string {
 }
 
 // columnSortable returns true if this column type supports user-facing sorting.
-// Episodes, seasons, libraries, playlists, and playlist items keep their natural order.
+// Seasons, libraries, playlists, and playlist items keep their natural order.
 func (c *ListColumn) columnSortable() bool {
 	switch c.columnType {
 	case ColumnTypeMovies, ColumnTypeShows, ColumnTypeMixed, ColumnTypeEpisodes:
@@ -1248,8 +1168,8 @@ func (c *ListColumn) compareBySortField(i, j int) int {
 
 	switch c.sortField {
 	case SortTitle:
-		ti := strings.ToLower(itemI.GetSortTitle())
-		tj := strings.ToLower(itemJ.GetSortTitle())
+		ti := strings.ToLower(present(itemI).SortTitle)
+		tj := strings.ToLower(present(itemJ).SortTitle)
 		if ti < tj {
 			return -1
 		}
@@ -1258,8 +1178,8 @@ func (c *ListColumn) compareBySortField(i, j int) int {
 		}
 		return 0
 	case SortDateAdded:
-		ai := itemI.GetAddedAt()
-		aj := itemJ.GetAddedAt()
+		ai := present(itemI).AddedAt
+		aj := present(itemJ).AddedAt
 		if ai < aj {
 			return -1
 		}
@@ -1268,8 +1188,8 @@ func (c *ListColumn) compareBySortField(i, j int) int {
 		}
 		return 0
 	case SortLastUpdated:
-		ai := itemI.GetUpdatedAt()
-		aj := itemJ.GetUpdatedAt()
+		ai := present(itemI).UpdatedAt
+		aj := present(itemJ).UpdatedAt
 		if ai < aj {
 			return -1
 		}
@@ -1278,8 +1198,8 @@ func (c *ListColumn) compareBySortField(i, j int) int {
 		}
 		return 0
 	case SortReleased:
-		yi := itemI.GetYear()
-		yj := itemJ.GetYear()
+		yi := present(itemI).Year
+		yj := present(itemJ).Year
 		if yi < yj {
 			return -1
 		}
@@ -1288,8 +1208,8 @@ func (c *ListColumn) compareBySortField(i, j int) int {
 		}
 		return 0
 	case SortDuration:
-		di := itemI.GetDuration()
-		dj := itemJ.GetDuration()
+		di := present(itemI).Duration
+		dj := present(itemJ).Duration
 		if di < dj {
 			return -1
 		}
@@ -1298,8 +1218,8 @@ func (c *ListColumn) compareBySortField(i, j int) int {
 		}
 		return 0
 	case SortRating:
-		ri := itemI.GetRating()
-		rj := itemJ.GetRating()
+		ri := present(itemI).Rating
+		rj := present(itemJ).Rating
 		if ri < rj {
 			return -1
 		}

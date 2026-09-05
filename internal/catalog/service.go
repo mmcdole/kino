@@ -15,9 +15,11 @@ import (
 type Backend interface {
 	domain.LibraryClient
 	domain.PlaylistClient
-	domain.PlaybackClient
+	MarkPlayed(context.Context, string) error
+	MarkUnplayed(context.Context, string) error
 }
 
+// Cache supports concurrent reads and returns detached entity values.
 type Cache interface {
 	Load(string) (domain.CachedList, bool)
 	Save(string, domain.CachedList) error
@@ -53,11 +55,25 @@ type Service struct {
 
 func NewService(ctx context.Context, backend Backend, cache Cache) *Service {
 	ctx, cancel := context.WithCancel(ctx)
-	return &Service{backend: backend, cache: cache, ctx: ctx, cancel: cancel, active: make(map[string]*flight), revisions: make(map[string]uint64), known: make(map[string]Resource), cacheRevisions: make(map[string]uint64), invalid: make(map[string]bool), mutations: make(chan struct{}, 1), now: time.Now}
+	return &Service{
+		backend: backend, cache: cache, ctx: ctx, cancel: cancel,
+		active:         make(map[string]*flight),
+		revisions:      make(map[string]uint64),
+		known:          make(map[string]Resource),
+		cacheRevisions: make(map[string]uint64),
+		invalid:        make(map[string]bool),
+		mutations:      make(chan struct{}, 1),
+		now:            time.Now,
+	}
 }
 
 // Close cancels outstanding I/O before the caller closes the cache.
-func (s *Service) Close() { s.mu.Lock(); s.cancel(); s.mu.Unlock(); s.wg.Wait() }
+func (s *Service) Close() {
+	s.mu.Lock()
+	s.cancel()
+	s.mu.Unlock()
+	s.wg.Wait()
+}
 
 func (s *Service) fresh(r Resource, entry domain.CachedList) bool {
 	age := s.now().Sub(entry.FetchedAt)
@@ -93,7 +109,24 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy, observer 
 			r.Version = known.Version
 		}
 		s.known[key] = r
+		// Register before decoding so a concurrent mutation fences this read.
+		// Only detached cache data crosses the unlocked section.
+		revision := s.revisions[key]
+		s.mu.Unlock()
 		entry, ok := s.cache.Load(key)
+		s.mu.Lock()
+		if revision != s.revisions[key] {
+			s.mu.Unlock()
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			s.mu.Unlock()
+			return Snapshot{}, err
+		}
+		if err := s.ctx.Err(); err != nil {
+			s.mu.Unlock()
+			return Snapshot{}, err
+		}
 		cached := Snapshot{Resource: r, CachedList: entry, Revision: s.cacheRevisions[key], FromCache: true, Stale: s.invalid[key] || !s.fresh(r, entry)}
 		if old := s.active[key]; old != nil && old.resource.Version != r.Version {
 			old.cancel()
@@ -115,14 +148,14 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy, observer 
 			current = &flight{resource: r, ctx: workCtx, cancel: cancel, done: make(chan struct{}), observers: make(map[uint64]Observer)}
 			s.active[key] = current
 			s.wg.Add(1)
-			go s.run(r, policy, current)
+			go s.run(r, current, cached, policy == Revalidate && ok && !cached.Stale)
 		}
 		s.nextObserver++
 		observerID := s.nextObserver
 		current.observers[observerID] = observer
 		s.mu.Unlock()
 		if ok && !published && observer.Cached != nil {
-			observer.Cached(cached)
+			observer.Cached(cached.Clone())
 			published = true
 		}
 		if !networkPublished && observer.Network != nil {
@@ -163,7 +196,7 @@ func (s *Service) release(key string, f *flight, id uint64) {
 	}
 }
 
-func (s *Service) run(r Resource, policy Policy, f *flight) {
+func (s *Service) run(r Resource, f *flight, cached Snapshot, canCheckCount bool) {
 	defer s.wg.Done()
 	defer f.cancel()
 	progress := func(loaded, total int) {
@@ -183,20 +216,16 @@ func (s *Service) run(r Resource, policy Policy, f *flight) {
 	// A successful count check must not advance its fetched-at timestamp.
 	var result Snapshot
 	var err error
-	s.mu.Lock()
-	entry, ok := s.cache.Load(r.Key())
-	canCheckCount := policy == Revalidate && ok && !s.invalid[r.Key()] && s.fresh(r, entry) && (r.Kind == Movies || r.Kind == Shows || r.Kind == Mixed)
-	s.mu.Unlock()
+	entry := cached.CachedList
+	ok := false
+	canCheckCount = canCheckCount && (r.Kind == Movies || r.Kind == Shows || r.Kind == Mixed)
 	if canCheckCount {
 		var count int
 		count, err = s.backend.GetLibraryItemCount(f.ctx, r.LibraryID, libraryType(r.Kind))
 		if err == nil && count == len(entry.Items) {
 			result = Snapshot{Resource: r, CachedList: entry, FromCache: true}
-		} else if err == nil {
-			ok = false
+			ok = true
 		}
-	} else {
-		ok = false
 	}
 	if err == nil && !ok {
 		result.Items, err = s.fetch(f.ctx, r, progress)

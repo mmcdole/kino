@@ -1,10 +1,11 @@
 package tui
 
 import (
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
 	"github.com/mmcdole/kino/internal/domain"
-	"time"
 )
 
 func (m *Model) beginMutation(change catalog.Mutation) tea.Cmd {
@@ -49,5 +50,8 @@ func (m *Model) scheduleSearch() tea.Cmd {
 		return nil
 	}
 	m.GlobalSearch.SetLoading(true)
-	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return SearchDebounceMsg{Seq: seq, Query: query} })
+	return tea.Batch(
+		tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return SearchDebounceMsg{Seq: seq, Query: query} }),
+		tea.Tick(loadingIndicatorDelay, func(time.Time) tea.Msg { return ShowSearchLoadingMsg{Seq: seq} }),
+	)
 }

@@ -30,24 +30,26 @@ type Inspector struct {
 	height        int
 	offset        int // scroll offset
 	maxVisible    int // max visible lines
-	libraryStates map[string]LibraryState
+	libraryStates map[string]CollectionFeedback
 }
 
 // NewInspector creates a new inspector component
 func NewInspector() Inspector {
 	return Inspector{
-		libraryStates: make(map[string]LibraryState),
+		libraryStates: make(map[string]CollectionFeedback),
 	}
 }
 
 // SetItem sets the item to display
 func (i *Inspector) SetItem(item domain.ListItem) {
+	if item == nil || i.item == nil || item.GetID() != i.item.GetID() {
+		i.offset = 0
+	}
 	i.item = item
-	i.offset = 0 // Reset scroll on item change
 }
 
 // SetLibraryStates sets the library summaries and activity for displaying item counts
-func (i *Inspector) SetLibraryStates(states map[string]LibraryState) {
+func (i *Inspector) SetLibraryStates(states map[string]CollectionFeedback) {
 	i.libraryStates = states
 }
 
@@ -196,7 +198,7 @@ func renderMediaHeader(item domain.MediaItem, width int) string {
 	// Title
 	title := item.Title
 	if item.Type == domain.MediaTypeEpisode {
-		title = fmt.Sprintf("%s - %s", item.EpisodeCode(), item.Title)
+		title = fmt.Sprintf("%s - %s", episodeCode(item), item.Title)
 	}
 	b.WriteString(styles.TitleStyle.Render(styles.Truncate(title, width)))
 	b.WriteString("\n")
@@ -212,7 +214,7 @@ func renderMediaHeader(item domain.MediaItem, width int) string {
 	if item.Year > 0 {
 		metaParts = append(metaParts, fmt.Sprintf("%d", item.Year))
 	}
-	metaParts = append(metaParts, item.FormattedDuration())
+	metaParts = append(metaParts, formattedDuration(item))
 	if item.ContentRating != "" {
 		metaParts = append(metaParts, item.ContentRating)
 	}
@@ -284,13 +286,13 @@ func renderMediaFooter(item domain.MediaItem, width int) string {
 		row1c1 = strings.ToUpper(item.Container)
 	}
 	row1c2 := item.VideoCodec
-	row1c3 := item.Resolution()
+	row1c3 := resolution(item)
 
 	// Row 2: audio codec | channel layout | filesize (or bitrate)
 	row2c1 := item.AudioCodec
-	row2c2 := item.ChannelLayout()
+	row2c2 := channelLayout(item)
 	row2c3 := ""
-	if fs := item.FormattedFileSize(); fs != "" {
+	if fs := formattedFileSize(item); fs != "" {
 		row2c3 = fs
 	} else if item.Bitrate >= 1000 {
 		row2c3 = fmt.Sprintf("%.1f Mbps", float64(item.Bitrate)/1000)
@@ -403,7 +405,7 @@ func (i Inspector) renderSeasonInspector(season domain.Season, width int) string
 	var b strings.Builder
 
 	// Title
-	b.WriteString(styles.TitleStyle.Render(styles.Truncate(season.DisplayTitle(), width)))
+	b.WriteString(styles.TitleStyle.Render(styles.Truncate(seasonTitle(season), width)))
 	b.WriteString("\n")
 
 	// Show title

@@ -8,13 +8,6 @@ import (
 	"github.com/mmcdole/kino/internal/tui/components"
 )
 
-// Request activity never overwrites the last complete collection summary.
-// Errors survive cached reads and clear only after successful server validation.
-type resourceResult struct {
-	Summary components.CollectionSummary
-	Error   error
-}
-
 const loadingIndicatorDelay = 200 * time.Millisecond
 
 func showLoadingCmd(req request) tea.Cmd {
@@ -22,7 +15,7 @@ func showLoadingCmd(req request) tea.Cmd {
 }
 
 func (m *Model) updateResourceFeedback(r catalog.Resource) {
-	result := m.resourceResults[r.Key()]
+	result := m.collection(r)
 	var pending bool
 	var activity components.LoadActivity
 	var progressID uint64
@@ -41,16 +34,18 @@ func (m *Model) updateResourceFeedback(r catalog.Resource) {
 			activity.Loaded, activity.Total = req.Progress.Loaded, req.Progress.Total
 		}
 	}
+	feedback := components.CollectionFeedback{
+		Pending: pending, Activity: activity, Error: result.Error,
+		Summary: components.CollectionSummary{Count: len(result.Snapshot.Items), Known: result.Known,
+			Stale: result.Snapshot.Stale || result.Error != nil || result.Snapshot.Revision < result.RequiredRevision},
+	}
 	for i := 0; i < m.ColumnStack.Len(); i++ {
-		col := m.ColumnStack.Get(i)
-		if col.ContentID() == r.Key() {
-			col.SetRequestState(pending, activity.Visible, result.Error != nil)
+		if col := m.ColumnStack.Get(i); col.ContentID() == r.Key() {
+			col.SetFeedback(feedback)
 		}
 	}
 	if id := libraryStateID(r); id != "" {
-		summary := result.Summary
-		summary.Stale = summary.Stale || result.Error != nil
-		m.LibraryStates[id] = components.LibraryState{Summary: summary, Activity: activity, Error: result.Error}
+		m.LibraryStates[id] = feedback
 		m.updateLibraryStates()
 	}
 }

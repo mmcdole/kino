@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/mmcdole/kino/internal/domain"
 	"github.com/mmcdole/kino/internal/search"
 	"github.com/mmcdole/kino/internal/tui/styles"
@@ -15,15 +16,17 @@ import (
 
 // GlobalSearch is the fuzzy search modal component
 type GlobalSearch struct {
-	loading   bool
-	input     textinput.Model
-	results   []search.FilterResult
-	cursor    int
-	offset    int
-	visible   bool
-	width     int
-	height    int
-	prevQuery string
+	loading        bool
+	loadingVisible bool
+	resultsQuery   string
+	input          textinput.Model
+	results        []search.FilterResult
+	cursor         int
+	offset         int
+	visible        bool
+	width          int
+	height         int
+	prevQuery      string
 }
 
 // NewGlobalSearch creates a new global search component
@@ -45,11 +48,14 @@ func NewGlobalSearch() GlobalSearch {
 // Show makes the global search visible and focuses the input
 func (o *GlobalSearch) Show() {
 	o.loading = false
+	o.loadingVisible = false
+	o.resultsQuery = ""
 	o.visible = true
 	o.input.Focus()
 	o.input.SetValue("")
 	o.input.Placeholder = "Type to search..."
 	o.input.Prompt = "🔍 "
+	o.SetSize(o.width, o.height)
 	o.results = nil
 	o.cursor = 0
 	o.offset = 0
@@ -67,26 +73,49 @@ func (o GlobalSearch) IsVisible() bool {
 	return o.visible
 }
 
-// SetResults sets the search results with match highlighting data
+// SetResults replaces the results, preserving selection when the same query is reindexed.
 func (o *GlobalSearch) SetResults(results []search.FilterResult) {
+	var selected *search.FilterItem
+	if o.resultsQuery == o.Query() && o.cursor < len(o.results) {
+		selected = &o.results[o.cursor].FilterItem
+	}
 	o.loading = false
+	o.loadingVisible = false
 	o.results = results
+	o.resultsQuery = o.Query()
 	o.cursor = 0
-	o.offset = 0
+	if selected != nil {
+		for i, result := range results {
+			if result.LibraryID == selected.LibraryID && result.Type == selected.Type && result.Item.GetID() == selected.Item.GetID() {
+				o.cursor = i
+				break
+			}
+		}
+	} else {
+		o.offset = 0
+	}
+	o.ensureVisible(o.layout().rows)
 }
 
+// SetLoading retains the displayed results until the pending query completes.
 func (o *GlobalSearch) SetLoading(loading bool) {
 	o.loading = loading
-	if loading {
-		o.results = nil
-	}
+	o.loadingVisible = false
 }
 
-// SetSize updates the component dimensions
+// ShowLoading reveals activity only while a query remains pending.
+func (o *GlobalSearch) ShowLoading() {
+	o.loadingVisible = o.loading
+}
+
+// SetSize fits the input and result viewport to the terminal.
 func (o *GlobalSearch) SetSize(width, height int) {
-	o.width = width
-	o.height = height
-	o.input.Width = width - 10
+	o.width = max(0, width)
+	o.height = max(0, height)
+	layout := o.layout()
+	o.input.Width = max(1, layout.width-lipgloss.Width(o.input.Prompt)-1)
+	o.input.SetCursor(o.input.Position())
+	o.ensureVisible(layout.rows)
 }
 
 // Query returns the current search query
@@ -106,7 +135,7 @@ func (o *GlobalSearch) QueryChanged() bool {
 
 // Selected returns the selected result's FilterItem
 func (o GlobalSearch) Selected() *search.FilterItem {
-	if len(o.results) == 0 || o.cursor >= len(o.results) {
+	if o.loading || len(o.results) == 0 || o.cursor >= len(o.results) {
 		return nil
 	}
 	return &o.results[o.cursor].FilterItem
@@ -139,22 +168,22 @@ func (o GlobalSearch) Update(msg tea.Msg) (GlobalSearch, tea.Cmd, bool) {
 			return o, nil, false
 
 		case key.Matches(msg, GlobalSearchKeys.Enter):
-			if resultCount > 0 {
-				return o, nil, true // Selected
+			if o.Selected() != nil {
+				return o, nil, true
 			}
 			return o, nil, false
 
 		case key.Matches(msg, GlobalSearchKeys.Down):
 			if o.cursor < resultCount-1 {
 				o.cursor++
-				o.ensureVisible(10)
+				o.ensureVisible(o.layout().rows)
 			}
 			return o, nil, false
 
 		case key.Matches(msg, GlobalSearchKeys.Up):
 			if o.cursor > 0 {
 				o.cursor--
-				o.ensureVisible(10)
+				o.ensureVisible(o.layout().rows)
 			}
 			return o, nil, false
 
@@ -171,6 +200,8 @@ func (o GlobalSearch) Update(msg tea.Msg) (GlobalSearch, tea.Cmd, bool) {
 }
 
 func (o *GlobalSearch) ensureVisible(maxVisible int) {
+	maxVisible = max(1, maxVisible)
+	o.offset = min(o.offset, max(0, len(o.results)-maxVisible))
 	if o.cursor < o.offset {
 		o.offset = o.cursor
 	}
@@ -179,52 +210,53 @@ func (o *GlobalSearch) ensureVisible(maxVisible int) {
 	}
 }
 
-// View renders the component
+type searchLayout struct {
+	width, height int
+	header, rows  int
+}
+
+// Geometry depends on terminal size so query and result changes cannot move the modal.
+func (o GlobalSearch) layout() searchLayout {
+	frameWidth, frameHeight := styles.ModalStyle.GetFrameSize()
+	width := min(80, max(40, o.width*2/3), max(0, o.width-4))
+	height := min(19, max(0, o.height-2))
+	layout := searchLayout{width: max(1, width-frameWidth), height: max(1, height-frameHeight), header: 4}
+	if layout.height < 7 {
+		layout.header = 2
+	}
+	layout.rows = max(0, layout.height-layout.header-1)
+	return layout
+}
+
+// View renders the modal; its parent owns placement on the screen.
 func (o GlobalSearch) View() string {
-	if !o.visible {
+	if !o.visible || o.width == 0 || o.height == 0 {
 		return ""
 	}
-
-	// Modal dimensions
-	modalWidth := o.width * 2 / 3
-	if modalWidth < 40 {
-		modalWidth = 40
+	if o.width < 12 || o.height < 9 {
+		return ansi.Truncate("Global Search", o.width, "")
 	}
-	if modalWidth > 80 {
-		modalWidth = 80
+	layout := o.layout()
+	lines := make([]string, layout.height)
+	lines[0] = "Global Search"
+	lines[layout.header/2] = o.input.View()
+	for row := 0; row < layout.rows && o.offset+row < len(o.results); row++ {
+		i := o.offset + row
+		lines[layout.header+row] = o.renderResult(o.results[i], i == o.cursor, layout.width)
 	}
-	maxResults := 10
-
-	var b strings.Builder
-
-	// Title
-	b.WriteString("Global Search")
-	b.WriteString("\n\n")
-
-	// Input field
-	b.WriteString(o.input.View())
-	b.WriteString("\n\n")
-
-	// Results
-	o.renderResults(&b, modalWidth, maxResults)
-
-	// Center the modal
-	content := lipgloss.NewStyle().
-		Width(modalWidth - 4).
-		Render(b.String())
-
-	modal := styles.ModalStyle.
-		Width(modalWidth).
-		Render(content)
-
-	// Center horizontally and vertically
-	return lipgloss.Place(
-		o.width,
-		o.height,
-		lipgloss.Center,
-		lipgloss.Center,
-		modal,
-	)
+	if len(o.results) == 0 && o.Query() != "" && !o.loading && layout.rows > 0 {
+		lines[layout.header] = styles.DimStyle.Render("No matches found")
+	}
+	if o.loadingVisible {
+		lines[len(lines)-1] = styles.DimStyle.Render("Searching…")
+	} else if remaining := len(o.results) - (o.offset + layout.rows); remaining > 0 {
+		lines[len(lines)-1] = styles.DimStyle.Render(fmt.Sprintf("... and %d more", remaining))
+	}
+	for i, line := range lines {
+		lines[i] = ansi.Truncate(line, layout.width, "…")
+	}
+	content := lipgloss.NewStyle().Width(layout.width).Height(layout.height).Render(strings.Join(lines, "\n"))
+	return styles.ModalStyle.Render(content)
 }
 
 // highlightMatches renders text with matched characters highlighted
@@ -298,71 +330,32 @@ func highlightMatches(text string, matchedIndexes []int, selected bool) string {
 	return result.String()
 }
 
-// renderResults renders the search results
-func (o GlobalSearch) renderResults(b *strings.Builder, modalWidth, maxResults int) {
-	if o.loading {
-		b.WriteString(styles.DimStyle.Render("Searching…"))
-		return
+func (o GlobalSearch) renderResult(result search.FilterResult, selected bool, width int) string {
+	var badge string
+	switch result.Type {
+	case domain.MediaTypeMovie:
+		badge = "MOV"
+	case domain.MediaTypeShow:
+		badge = "SHOW"
+	case domain.MediaTypeEpisode:
+		badge = "EP"
 	}
-	if len(o.results) == 0 && o.input.Value() != "" {
-		b.WriteString(styles.DimStyle.Render("No matches found"))
-		return
-	}
-	if len(o.results) == 0 {
-		// Don't show anything when empty - placeholder already guides the user
-		return
-	}
-
-	displayCount := len(o.results) - o.offset
-	if displayCount > maxResults {
-		displayCount = maxResults
-	}
-
-	for i := o.offset; i < o.offset+displayCount; i++ {
-		result := o.results[i]
-		selected := i == o.cursor
-
-		var line strings.Builder
-
-		// Type badge with library context
+	prefix := styles.DimBadgeStyle.Render(badge) + " "
+	title := result.Title
+	matchedIndexes := result.MatchedIndexes
+	if item, ok := result.Item.(*domain.MediaItem); ok {
 		switch result.Type {
-		case domain.MediaTypeMovie:
-			line.WriteString(styles.DimBadgeStyle.Render("MOV"))
-		case domain.MediaTypeShow:
-			line.WriteString(styles.DimBadgeStyle.Render("SHOW"))
 		case domain.MediaTypeEpisode:
-			line.WriteString(styles.DimBadgeStyle.Render("EP"))
-		}
-		line.WriteString(" ")
-
-		// Build display title
-		title := result.Title
-		matchedIndexes := result.MatchedIndexes
-		maxTitleWidth := modalWidth - 25
-		if result.Type == domain.MediaTypeEpisode {
-			// For episodes, show: ShowTitle - S01E01 Title
-			if item, ok := result.Item.(*domain.MediaItem); ok {
-				title = fmt.Sprintf("%s - %s %s", item.ShowTitle, item.EpisodeCode(), item.Title)
-				// Reset matched indexes since the title format changed
-				matchedIndexes = nil
-			}
-		} else if result.Type == domain.MediaTypeMovie {
-			// For movies, show: Title (Year)
-			if item, ok := result.Item.(*domain.MediaItem); ok && item.Year > 0 {
+			title = fmt.Sprintf("%s - %s %s", item.ShowTitle, episodeCode(*item), item.Title)
+			// Match positions refer to the indexed title, not the episode display label.
+			matchedIndexes = nil
+		case domain.MediaTypeMovie:
+			if item.Year > 0 {
 				title = fmt.Sprintf("%s (%d)", item.Title, item.Year)
-				// Matched indexes still apply to the title portion
 			}
 		}
-		title = styles.Truncate(title, maxTitleWidth)
-
-		// Apply highlighting to the title
-		line.WriteString(highlightMatches(title, matchedIndexes, selected))
-
-		b.WriteString(line.String())
-		b.WriteString("\n")
 	}
-
-	if remaining := len(o.results) - (o.offset + displayCount); remaining > 0 {
-		b.WriteString(styles.DimStyle.Render(fmt.Sprintf("... and %d more", remaining)))
-	}
+	title = strings.NewReplacer("\n", " ", "\r", " ", "\t", " ").Replace(title)
+	title = styles.Truncate(title, max(1, width-lipgloss.Width(prefix)-2))
+	return prefix + highlightMatches(title, matchedIndexes, selected)
 }

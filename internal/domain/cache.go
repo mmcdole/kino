@@ -11,8 +11,8 @@ type CachedList struct {
 	Version   int64
 }
 
-// CloneItems gives each consumer its own entities: UI projections may update
-// watch state without mutating snapshots held by another request or view.
+// CloneItems copies entity values so consumers can retain or modify snapshots
+// independently of other requests and projections.
 func CloneItems(items []ListItem) []ListItem {
 	out := make([]ListItem, 0, len(items))
 	for _, item := range items {

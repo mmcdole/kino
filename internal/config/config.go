@@ -130,7 +130,7 @@ func LoadConfig() (*Config, error) {
 		// Config file not found is OK, use defaults
 	}
 
-	// Tighten pre-existing config files created with the old 0644 default
+	// Credentials require private permissions even when the file exists.
 	if configFile := viper.ConfigFileUsed(); configFile != "" {
 		_ = os.Chmod(configFile, 0o600)
 	}
@@ -161,8 +161,7 @@ func LoadConfig() (*Config, error) {
 func generateDeviceID() string {
 	buf := make([]byte, 8)
 	if _, err := rand.Read(buf); err != nil {
-		// Fall back to the legacy static ID; auth still works, just without
-		// per-install uniqueness
+		// Entropy failure permits authentication with a shared device ID.
 		return "kino-tui-client"
 	}
 	return "kino-" + hex.EncodeToString(buf)

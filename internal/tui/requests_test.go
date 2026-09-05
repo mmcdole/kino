@@ -34,11 +34,11 @@ func updateModel(m Model, msg tea.Msg) Model { next, _ := m.Update(msg); return 
 func TestFailureFromAbandonedViewCannotFailCurrentLoad(t *testing.T) {
 	m := testModel(t)
 	a, b := catalog.LibraryResource(m.Libraries[0]), catalog.LibraryResource(m.Libraries[1])
-	m.pushColumn(a, "A", 0)
+	m.pushColumn(a, "A")
 	old := m.requests.active[viewOwner(a)]
 	next, _ := m.handleBack()
 	m = next.(Model)
-	m.pushColumn(b, "B", 1)
+	m.pushColumn(b, "B")
 	m = updateModel(m, ResourceMsg{Request: old, Stage: loadFinished, Err: errors.New("A failed")})
 	if !m.ColumnStack.Top().IsLoading() {
 		t.Fatal("abandoned request failed the current view")
@@ -51,7 +51,7 @@ func TestFailureFromAbandonedViewCannotFailCurrentLoad(t *testing.T) {
 func TestLateSameResourceResponseCannotReplaceNewRefresh(t *testing.T) {
 	m := testModel(t)
 	r := catalog.LibraryResource(m.Libraries[0])
-	m.pushColumn(r, "A", 0)
+	m.pushColumn(r, "A")
 	old := m.requests.active[viewOwner(r)]
 	m.loadResource(r, catalog.Refresh, false)
 	fresh := m.requests.active[viewOwner(r)]
@@ -65,7 +65,7 @@ func TestLateSameResourceResponseCannotReplaceNewRefresh(t *testing.T) {
 func TestBackgroundCompletionUpdatesOpenCachedView(t *testing.T) {
 	m := testModel(t)
 	r := catalog.LibraryResource(m.Libraries[0])
-	m.pushColumn(r, "A", 0)
+	m.pushColumn(r, "A")
 	view := m.requests.active[viewOwner(r)]
 	cached := snapshot(r, 0, "old")
 	cached.FromCache = true
@@ -92,7 +92,7 @@ func TestBackgroundCompletionUpdatesOpenCachedView(t *testing.T) {
 func TestRefreshFailureRetainsContentAndStopsSpinner(t *testing.T) {
 	m := testModel(t)
 	r := catalog.LibraryResource(m.Libraries[0])
-	m.pushColumn(r, "A", 0)
+	m.pushColumn(r, "A")
 	req := m.requests.active[viewOwner(r)]
 	cached := snapshot(r, 1, "old")
 	cached.FromCache = true
@@ -149,7 +149,7 @@ func TestModalDismissalAndReplacementRejectLateResponses(t *testing.T) {
 func TestUnrelatedActionErrorLeavesColumnLoading(t *testing.T) {
 	m := testModel(t)
 	r := catalog.LibraryResource(m.Libraries[0])
-	m.pushColumn(r, "A", 0)
+	m.pushColumn(r, "A")
 	req := m.requests.begin("playback:x", catalog.Resource{}, catalog.Browse)
 	m = updateModel(m, ActionMsg{Request: req, Playback: true, Err: errors.New("player unavailable")})
 	if !m.ColumnStack.Top().IsLoading() {
@@ -160,11 +160,15 @@ func TestUnrelatedActionErrorLeavesColumnLoading(t *testing.T) {
 func TestWatchChangeRejectsAlreadyQueuedPreMutationSnapshot(t *testing.T) {
 	m := testModel(t)
 	r := catalog.LibraryResource(m.Libraries[0])
-	m.pushColumn(r, "A", 0)
+	m.pushColumn(r, "A")
 	read := m.requests.active[viewOwner(r)]
 	m = updateModel(m, ResourceMsg{Request: read, Stage: loadCached, Snapshot: snapshot(r, 1, "movie")})
 	write := m.requests.begin("mutation:watch:movie", catalog.Resource{}, catalog.Browse)
 	change := catalog.Change{Applied: true, Mutation: catalog.Mutation{Kind: catalog.Watch, ItemID: "movie", Played: true}, Revisions: map[string]uint64{r.Key(): 2}}
+	patched := snapshot(r, 2, "movie")
+	patched.Items[0].(*domain.MediaItem).IsPlayed = true
+	patched.FromCache, patched.Validated = true, false
+	change.Snapshots = []catalog.Snapshot{patched}
 	m = updateModel(m, ActionMsg{Request: write, Change: change})
 	m = updateModel(m, ResourceMsg{Request: read, Stage: loadFinished, Snapshot: snapshot(r, 1, "movie")})
 	if !m.ColumnStack.Top().SelectedMediaItem().IsPlayed {
@@ -191,7 +195,7 @@ func TestColdStartupFailureKeepsRetryableRoot(t *testing.T) {
 func TestRejectedSnapshotCannotOverwriteCurrentLibraryCount(t *testing.T) {
 	m := testModel(t)
 	r := catalog.LibraryResource(m.Libraries[0])
-	m.pushColumn(r, "A", 0)
+	m.pushColumn(r, "A")
 	old := m.requests.active[viewOwner(r)]
 	m.loadResource(r, catalog.Revalidate, true)
 	newer := m.requests.active[syncOwner(r)]
@@ -209,7 +213,7 @@ func TestRejectedSnapshotCannotOverwriteCurrentLibraryCount(t *testing.T) {
 func TestRemovedLibraryDetachesRequestsAndNavigation(t *testing.T) {
 	m := testModel(t)
 	r := catalog.LibraryResource(m.Libraries[0])
-	m.pushColumn(r, "A", 0)
+	m.pushColumn(r, "A")
 	m.loadResource(r, catalog.Revalidate, true)
 	late := m.requests.active[syncOwner(r)]
 	root := catalog.Resource{Kind: catalog.Libraries}

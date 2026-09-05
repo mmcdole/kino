@@ -7,8 +7,7 @@ import (
 	"testing"
 )
 
-// KINO_* environment overrides must reach the unmarshaled config — they were
-// previously dead (no env key replacer, no BindEnv registration).
+// Environment-only nested keys must participate in config unmarshaling.
 func TestEnvVarOverrides(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -82,7 +81,7 @@ func TestLoadConfigGeneratesDeviceID(t *testing.T) {
 	}
 
 	// The config file contains the token: it must not be world-readable,
-	// including pre-existing files created with the old 0644 default
+	// including files with permissive modes.
 	info, err := os.Stat(configFile)
 	if err != nil {
 		t.Fatal(err)

@@ -47,6 +47,7 @@ type SearchDebounceMsg struct {
 	Seq   uint64
 	Query string
 }
+type ShowSearchLoadingMsg struct{ Seq uint64 }
 type SearchResultsMsg struct {
 	Request request
 	Results []search.FilterResult

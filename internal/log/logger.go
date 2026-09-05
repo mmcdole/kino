@@ -35,7 +35,7 @@ func SetupLogger(cfg *config.LoggingConfig) (*slog.Logger, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open log file: %w", err)
 	}
-	// Tighten pre-existing log files created with the old 0644 default
+	// OpenFile permissions do not apply to an existing file.
 	_ = logFile.Chmod(0600)
 
 	// Parse log level

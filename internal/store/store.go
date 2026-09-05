@@ -58,8 +58,8 @@ func Open(baseCacheDir, serverURL, userID string) (*Store, error) {
 		return nil, fmt.Errorf("failed to open bolt db: %w", err)
 	}
 
-	// Snapshot schema replaces the old per-content buckets. This is a
-	// disposable cache; obsolete entries are rebuilt on the next online load.
+	// The snapshots bucket is authoritative. Discard other collection buckets
+	// so reads cannot mix incompatible schemas.
 	err = db.Update(func(tx *bolt.Tx) error {
 		if _, err := tx.CreateBucketIfNotExists(bucketSnapshots); err != nil {
 			return err
@@ -78,7 +78,7 @@ func Open(baseCacheDir, serverURL, userID string) (*Store, error) {
 		return nil, err
 	}
 
-	// Clean up legacy JSON cache files from pre-BoltDB era
+	// JSON cache files are not read by this store.
 	cleanupLegacyJSONCache(dir)
 
 	return &Store{db: db, cache: make(map[string][]byte)}, nil
@@ -90,7 +90,7 @@ func hashServerURL(serverURL string) string {
 	return hex.EncodeToString(hash[:6])
 }
 
-// cleanupLegacyJSONCache removes vestigial JSON cache files from pre-BoltDB era.
+// cleanupLegacyJSONCache removes JSON files that are not used by snapshot storage.
 func cleanupLegacyJSONCache(cacheDir string) {
 	matches, err := filepath.Glob(filepath.Join(cacheDir, "*.json"))
 	if err != nil || len(matches) == 0 {

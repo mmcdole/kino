@@ -74,7 +74,7 @@ func TestCatalogDiskCacheAndTUIRequestLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	msg := awaitResource(t, m.pushColumn(r, "A", 0))
+	msg := awaitResource(t, m.pushColumn(r, "A"))
 	for msg.Stage == loadNetwork {
 		m = updateModel(m, msg)
 		msg = awaitResource(t, msg.Next)

@@ -15,7 +15,9 @@ type LoadActivity struct {
 	Total   int
 }
 
-type LibraryState struct {
+// CollectionFeedback is derived from content and all live subscribers.
+type CollectionFeedback struct {
+	Pending  bool
 	Summary  CollectionSummary
 	Activity LoadActivity
 	Error    error

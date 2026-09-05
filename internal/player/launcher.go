@@ -28,10 +28,11 @@ type Launcher struct {
 	detectedAt    time.Time
 }
 
-// PlayerDef defines a player binary and its seek flag format
+// PlayerDef defines a platform-specific player command and playback arguments.
 type PlayerDef struct {
 	Binary        string
 	SeekFlag      string   // Use %d for seconds placeholder, e.g., "--start=%d" or "-ss %d"
+	ResumeArgs    []string // Additional auto-detection arguments used only when resuming
 	URLBeforeSeek bool     // Some players (notably PotPlayer) expect the media URL before switches
 	ProgramPaths  []string // Conventional paths relative to Windows Program Files roots
 }
@@ -44,10 +45,12 @@ type ResolvedPlayer struct {
 	Executable string
 }
 
-// Platform-specific player lists, ordered by priority (first match wins)
+// Platform-specific player lists, ordered by priority (first match wins).
+// Linux and Windows VLC need a separate instance to honor resume offsets.
+// macOS VLC does not support the one-instance option.
 var linuxPlayers = []PlayerDef{
 	{Binary: "mpv", SeekFlag: "--start=%d"},
-	{Binary: "vlc", SeekFlag: "--start-time=%d"},
+	{Binary: "vlc", SeekFlag: "--start-time=%d", ResumeArgs: []string{"--no-one-instance"}},
 	{Binary: "celluloid", SeekFlag: "--mpv-start=%d"},
 	{Binary: "haruna", SeekFlag: "--start=%d"},
 	{Binary: "smplayer", SeekFlag: "-ss %d"},
@@ -76,7 +79,7 @@ var windowsPlayers = []PlayerDef{
 		ProgramPaths:  []string{`DAUM\PotPlayer\PotPlayerMini.exe`},
 	},
 	{Binary: "mpv.exe", SeekFlag: "--start=%d", ProgramPaths: []string{`mpv\mpv.exe`}},
-	{Binary: "vlc.exe", SeekFlag: "--start-time=%d", ProgramPaths: []string{`VideoLAN\VLC\vlc.exe`}},
+	{Binary: "vlc.exe", SeekFlag: "--start-time=%d", ResumeArgs: []string{"--no-one-instance"}, ProgramPaths: []string{`VideoLAN\VLC\vlc.exe`}},
 }
 
 // Kept as an alias because WSL uses the same Windows-side player definitions.
@@ -407,7 +410,10 @@ func (l *Launcher) execPlayer(player ResolvedPlayer, url string, offsetSecs int)
 
 func playerArgs(player PlayerDef, url string, offsetSecs int) []string {
 	seekArgs := formatSeekArgs(player.SeekFlag, offsetSecs)
-	defaultArgs := playerDefaultArgs(player, offsetSecs)
+	var defaultArgs []string
+	if offsetSecs > 0 {
+		defaultArgs = player.ResumeArgs
+	}
 	if player.URLBeforeSeek {
 		args := append([]string{url}, defaultArgs...)
 		return append(args, seekArgs...)
@@ -415,16 +421,6 @@ func playerArgs(player PlayerDef, url string, offsetSecs int) []string {
 	args := append([]string{}, defaultArgs...)
 	args = append(args, seekArgs...)
 	return append(args, url)
-}
-
-func playerDefaultArgs(player PlayerDef, offsetSecs int) []string {
-	// A running VLC instance can ignore --start-time for a subsequently opened
-	// URL. Keeping auto-detected playback in its own instance makes resume
-	// deterministic; explicitly configured VLC remains under user control.
-	if offsetSecs > 0 && (strings.EqualFold(player.Binary, "vlc.exe") || strings.EqualFold(player.Binary, "vlc")) {
-		return []string{"--no-one-instance"}
-	}
-	return nil
 }
 
 func formatSeekArgs(flag string, offsetSecs int) []string {

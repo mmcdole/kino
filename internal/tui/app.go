@@ -68,52 +68,59 @@ func (m *Model) allLibraryEntries() []domain.Library {
 }
 
 type Model struct {
-	State                                              ApplicationState
-	Ready                                              bool
-	Catalog                                            Catalog
-	PlaybackSvc                                        Playback
-	SearchIndex                                        *search.Index
-	ColumnStack                                        *ColumnStack
-	Inspector                                          components.Inspector
-	GlobalSearch                                       components.GlobalSearch
-	SortModal                                          components.SortModal
-	PlaylistModal                                      components.PlaylistModal
-	InputModal                                         components.InputModal
-	Libraries                                          []domain.Library
-	Width, Height                                      int
-	SpinnerFrame                                       int
-	ShowInspector                                      bool
-	notice                                             Notice
-	noticeSeq                                          int
-	LibraryStates                                      map[string]components.LibraryState
-	navPlan                                            *NavPlan
-	pendingDeletePlaylistID, pendingDeletePlaylistName string
-	UIConfig                                           config.UIConfig
-	requests                                           *requests
-	resources                                          map[string]catalog.Resource
-	revisions                                          map[string]uint64
-	resourceResults                                    map[string]resourceResult
+	State         ApplicationState
+	Ready         bool
+	Width, Height int
+	SpinnerFrame  int
+	ShowInspector bool
+	LoggedOut     bool
+	loggingOut    bool
 
-	backgroundStarted map[string]uint64
-	searchSeq         uint64
-	LoggedOut         bool
-	loggingOut        bool
+	Catalog     Catalog
+	PlaybackSvc Playback
+	SearchIndex *search.Index
+	UIConfig    config.UIConfig
+
+	ColumnStack   *ColumnStack
+	Inspector     components.Inspector
+	GlobalSearch  components.GlobalSearch
+	SortModal     components.SortModal
+	PlaylistModal components.PlaylistModal
+	InputModal    components.InputModal
+
+	Libraries     []domain.Library
+	LibraryStates map[string]components.CollectionFeedback
+	collections   map[string]*collectionState
+	requests      *requests
+
+	notice                    Notice
+	noticeSeq                 int
+	searchSeq                 uint64
+	navPlan                   *NavPlan
+	pendingDeletePlaylistID   string
+	pendingDeletePlaylistName string
 }
 
 func NewModel(ctx context.Context, svc Catalog, playback Playback, index *search.Index, ui config.UIConfig) Model {
-	m := Model{Catalog: svc, PlaybackSvc: playback, SearchIndex: index, UIConfig: ui,
-		ColumnStack: NewColumnStack(), Inspector: components.NewInspector(), GlobalSearch: components.NewGlobalSearch(),
-		PlaylistModal: components.NewPlaylistModal(), InputModal: components.NewInputModal(),
-		LibraryStates: make(map[string]components.LibraryState), requests: newRequests(ctx),
-		resources: make(map[string]catalog.Resource), revisions: make(map[string]uint64), backgroundStarted: make(map[string]uint64), resourceResults: make(map[string]resourceResult)}
+	m := Model{
+		Catalog: svc, PlaybackSvc: playback, SearchIndex: index, UIConfig: ui,
+		ColumnStack:   NewColumnStack(),
+		Inspector:     components.NewInspector(),
+		GlobalSearch:  components.NewGlobalSearch(),
+		PlaylistModal: components.NewPlaylistModal(),
+		InputModal:    components.NewInputModal(),
+		LibraryStates: make(map[string]components.CollectionFeedback),
+		requests:      newRequests(ctx),
+		collections:   make(map[string]*collectionState),
+	}
 	root := catalog.Resource{Kind: catalog.Libraries}
 	col := components.NewListColumn(components.ColumnTypeLibraries, "Libraries")
 	col.SetContentID(root.Key())
-	col.BeginLoad()
+	col.SetFeedback(components.CollectionFeedback{Pending: true})
 	col.SetShowWatchStatus(ui.ShowWatchStatus)
 	col.SetShowLibraryCounts(ui.ShowLibraryCounts)
 	m.ColumnStack.Reset(col)
-	m.resources[root.Key()] = root
+	m.collection(root)
 	return m
 }
 func (m Model) Init() tea.Cmd {
@@ -121,6 +128,13 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	model := next.(Model)
+	model.updateInspector()
+	return model, cmd
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.loggingOut {
 		if result, ok := msg.(LogoutCompleteMsg); ok {
 			if result.Error != nil {
@@ -183,6 +197,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg {
 			return SearchResultsMsg{Request: req, Results: m.SearchIndex.Search(req.ctx, msg.Query, libraries)}
 		}
+	case ShowSearchLoadingMsg:
+		if m.GlobalSearch.IsVisible() && msg.Seq == m.searchSeq {
+			m.GlobalSearch.ShowLoading()
+		}
+		return m, nil
 	case SearchResultsMsg:
 		if !m.requests.owns(msg.Request) || !m.GlobalSearch.IsVisible() {
 			return m, nil
@@ -237,78 +256,59 @@ func (m Model) handleResource(msg ResourceMsg) (tea.Model, tea.Cmd) {
 		m.updateResourceFeedback(r)
 		return m, tea.Batch(cmds...)
 	}
+	state := m.collection(r)
 	hasSnapshot := msg.Snapshot.FromCache || msg.Err == nil
-	obsolete := hasSnapshot && msg.Snapshot.Revision < m.revisions[r.Key()] ||
-		!hasSnapshot && m.requests.active[msg.Request.Owner].Revision < m.revisions[r.Key()]
-	accepted := hasSnapshot && !obsolete
+	accepted := hasSnapshot && state.accepts(msg.Snapshot)
+	// A failed attempt has its own ordering, independent of the fallback payload.
+	obsolete := !accepted && m.requests.active[msg.Request.Owner].Revision < state.RequiredRevision
 	if accepted {
 		if msg.Stage == loadCached {
 			req := m.requests.active[msg.Request.Owner]
 			req.Revision = msg.Snapshot.Revision
 			m.requests.active[req.Owner] = req
 		}
-		result := m.resourceResults[r.Key()]
-		result.Summary = components.CollectionSummary{Count: len(msg.Snapshot.Items), Known: true, Stale: msg.Snapshot.Stale}
-		m.resourceResults[r.Key()] = result
-		m.revisions[r.Key()] = msg.Snapshot.Revision
+		cmds = append(cmds, m.applySnapshot(msg.Snapshot))
 		if r.Kind == catalog.Libraries {
-			m.Libraries = nil
-			for _, item := range msg.Snapshot.Items {
-				if lib, ok := item.(*domain.Library); ok {
-					m.Libraries = append(m.Libraries, *lib)
-				}
-			}
-			m.libraryColumn().ReplaceItems(components.WrapLibraries(m.allLibraryEntries()))
 			if msg.Stage == loadFinished && msg.Err == nil && msg.Snapshot.Validated {
 				m.pruneLibraryRequests()
 			}
-
 			policy := catalog.Revalidate
 			if msg.Request.Policy == catalog.Refresh {
 				policy = catalog.Refresh
 			}
 			for _, lib := range m.Libraries {
 				resource := catalog.LibraryResource(lib)
-				previous, exists := m.resources[resource.Key()]
-				if m.backgroundStarted[resource.Key()] != msg.Request.ID || (exists && previous.Version != resource.Version) {
-					m.backgroundStarted[resource.Key()] = msg.Request.ID
+				child := m.collection(resource)
+				if child.BackgroundRequest != msg.Request.ID || child.Resource.Version != resource.Version {
+					child.BackgroundRequest = msg.Request.ID
 					cmds = append(cmds, m.loadResource(resource, policy, true))
 				}
 			}
 			playlists := catalog.Resource{Kind: catalog.Playlists}
-			if m.backgroundStarted[playlists.Key()] != msg.Request.ID {
-				m.backgroundStarted[playlists.Key()] = msg.Request.ID
+			child := m.collection(playlists)
+			if child.BackgroundRequest != msg.Request.ID {
+				child.BackgroundRequest = msg.Request.ID
 				cmds = append(cmds, m.loadResource(playlists, policy, true))
 			}
-		} else {
-			for i := 0; i < m.ColumnStack.Len(); i++ {
-				if col := m.ColumnStack.Get(i); col.ContentID() == r.Key() {
-					col.ReplaceItems(domain.CloneItems(msg.Snapshot.Items))
-				}
-			}
 		}
-		if r.Kind == catalog.Movies || r.Kind == catalog.Shows || r.Kind == catalog.Mixed {
-			snapshot := msg.Snapshot.Clone()
-			cmds = append(cmds, func() tea.Msg {
-				m.SearchIndex.ReplaceLibrary(r.LibraryID, snapshot.Revision, snapshot.Items)
-				return SearchIndexChangedMsg{}
-			})
-		}
-		m.updateInspector()
 		if msg.Stage == loadFinished && msg.Err == nil && msg.Snapshot.Validated {
 			m.pruneNavigation()
 		}
 	}
+
 	if msg.Stage == loadFinished {
 		m.requests.finish(msg.Request)
+		// A queued pre-mutation completion may be the last subscriber. Recover
+		// once at the new revision; a current failed attempt remains retryable.
+		if obsolete && (!state.Known || state.Snapshot.Revision < state.RequiredRevision) {
+			cmds = append(cmds, m.loadResource(r, catalog.Browse, libraryStateID(r) != ""))
+		}
 		if !obsolete {
-			result := m.resourceResults[r.Key()]
 			if msg.Err != nil && !errors.Is(msg.Err, context.Canceled) {
-				result.Error = msg.Err
+				state.Error = msg.Err
 			} else if msg.Err == nil && msg.Snapshot.Validated {
-				result.Error = nil
+				state.Error = nil
 			}
-			m.resourceResults[r.Key()] = result
 		}
 		if !obsolete && msg.Err != nil {
 			if m.navPlan != nil && m.navPlan.AwaitKey == r.Key() {
@@ -340,27 +340,37 @@ func (m Model) handleAction(msg ActionMsg) (tea.Model, tea.Cmd) {
 	}
 	change := msg.Change
 	for key, revision := range change.Revisions {
-		if revision > m.revisions[key] {
-			m.revisions[key] = revision
+		if state := m.collections[key]; state != nil {
+			state.RequiredRevision = max(state.RequiredRevision, revision)
 		}
 	}
 	var cmds []tea.Cmd
-	if change.Applied && change.Mutation.Kind == catalog.Watch {
-		m.applyWatchState(change.Mutation.ItemID, change.Mutation.Played)
+	for _, snapshot := range change.Snapshots {
+		// Closed collections can still feed search and later navigation.
+		if state := m.collections[snapshot.Resource.Key()]; state != nil && state.accepts(snapshot) {
+			cmds = append(cmds, m.applySnapshot(snapshot))
+			cmds = append(cmds, m.advanceNavPlanAfterLoad(snapshot.Resource.Key(), false))
+			m.updateResourceFeedback(snapshot.Resource)
+		}
 	}
 	for _, r := range change.Resources {
-		// Playlist counts stay current even when their column is closed.
-		if r.Kind == catalog.Playlists {
-			cmds = append(cmds, m.loadResource(r, catalog.Revalidate, true))
+		if m.collections[r.Key()] == nil && r.Kind != catalog.Playlists {
 			continue
 		}
+		// Restart subscriptions whose result may already be queued. New callers
+		// still join shared catalog work; a stale UI request cannot swallow recovery.
+		m.requests.stop(viewOwner(r))
+		m.requests.stop(syncOwner(r))
+		background := libraryStateID(r) != ""
+		visible := false
 		for i := 0; i < m.ColumnStack.Len(); i++ {
-			if m.ColumnStack.Get(i).ContentID() == r.Key() {
-				cmds = append(cmds, m.loadResource(r, catalog.Revalidate, false))
-				break
-			}
+			visible = visible || m.ColumnStack.Get(i).ContentID() == r.Key()
+		}
+		if background || visible {
+			cmds = append(cmds, m.loadResource(r, catalog.Revalidate, background))
 		}
 	}
+
 	if change.Applied && change.Mutation.Kind == catalog.DeletePlaylist {
 		if r, ok := m.topResource(); ok && r.Kind == catalog.PlaylistItems && r.ID == change.Mutation.PlaylistID {
 			model, cmd := m.handleBack()
@@ -450,36 +460,6 @@ func (m Model) resourceName(r catalog.Resource) string {
 	return "items"
 }
 
-func (m *Model) applyWatchState(itemID string, played bool) {
-
-	// Patch the item wherever a column renders it, and adjust unwatched
-	// counters on visible show/season rows if an episode flipped state.
-	var patched *domain.MediaItem
-	flipped := false
-	for i := 0; i < m.ColumnStack.Len(); i++ {
-		if col := m.ColumnStack.Get(i); col != nil {
-			if item, f := col.ApplyWatchState(itemID, played); item != nil {
-				patched = item
-				flipped = flipped || f
-			}
-		}
-	}
-
-	if flipped && patched != nil && patched.ShowID != "" {
-		delta := 1
-		if played {
-			delta = -1
-		}
-		for i := 0; i < m.ColumnStack.Len(); i++ {
-			if col := m.ColumnStack.Get(i); col != nil {
-				col.AdjustUnwatchedCounts(patched.ShowID, patched.ParentID, delta)
-			}
-		}
-	}
-
-	m.updateInspector()
-}
-
 // pruneLibraryRequests detaches removed libraries after an authoritative root
 // refresh. Queued results cannot recreate removed rows or keep sync active.
 func (m *Model) pruneLibraryRequests() {
@@ -487,15 +467,14 @@ func (m *Model) pruneLibraryRequests() {
 	for _, lib := range m.Libraries {
 		allowed[lib.ID] = true
 	}
-	for key, r := range m.resources {
+	for key, state := range m.collections {
+		r := state.Resource
 		if r.LibraryID == "" || allowed[r.LibraryID] {
 			continue
 		}
 		m.requests.stop(viewOwner(r))
 		m.requests.stop(syncOwner(r))
-		delete(m.resources, key)
-		delete(m.resourceResults, key)
-		delete(m.backgroundStarted, key)
+		delete(m.collections, key)
 		delete(m.LibraryStates, r.LibraryID)
 	}
 	m.updateLibraryStates()

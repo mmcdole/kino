@@ -4,30 +4,15 @@ import (
 	"github.com/mmcdole/kino/internal/tui/components"
 )
 
-// ColumnStack manages the stack of navigable columns in Miller Columns layout.
-// The stack contains list columns only - the Inspector is a separate view projection.
-//
-// Visual representation:
-//
-//	Root:     [Empty | Libraries | Inspector]
-//	Library:  [Libraries | Movies | Inspector]
-//	Show:     [TV Shows | Breaking Bad | Inspector]
-//	Season:   [Breaking Bad | Season 1 | Inspector]
-//
-// The "middle" column (top of stack) is always focused.
-// The "left" column shows parent context.
-// The "right" column (Inspector) shows details for the selection in middle column.
+// ColumnStack retains each column's selection and scroll position during
+// navigation. The top column is focused; the root cannot be popped.
 type ColumnStack struct {
-	columns     []*components.ListColumn
-	cursorStack []int // Saved cursor positions for back navigation
+	columns []*components.ListColumn
 }
 
 // NewColumnStack creates a new empty column stack
 func NewColumnStack() *ColumnStack {
-	return &ColumnStack{
-		columns:     make([]*components.ListColumn, 0),
-		cursorStack: make([]int, 0),
-	}
+	return &ColumnStack{}
 }
 
 // Len returns the number of columns in the stack
@@ -51,56 +36,39 @@ func (cs *ColumnStack) Top() *components.ListColumn {
 	return cs.columns[len(cs.columns)-1]
 }
 
-// Push adds a new column to the stack, saving the current cursor position
-func (cs *ColumnStack) Push(col *components.ListColumn, saveCursor int) {
-	// Save current cursor position for back navigation
-	cs.cursorStack = append(cs.cursorStack, saveCursor)
-
-	// Unfocus current top
+// Push focuses col and retains the parent column.
+func (cs *ColumnStack) Push(col *components.ListColumn) {
 	if top := cs.Top(); top != nil {
 		top.SetFocused(false)
 	}
 
-	// Add new column and focus it
 	col.SetFocused(true)
 	cs.columns = append(cs.columns, col)
 }
 
-// Pop removes and returns the top column, along with the saved cursor position.
-// Returns nil if stack would become empty (must have at least 1 column).
-func (cs *ColumnStack) Pop() (*components.ListColumn, int) {
+// Pop removes the focused column unless it is the root.
+func (cs *ColumnStack) Pop() *components.ListColumn {
 	if len(cs.columns) <= 1 {
-		// Don't pop the last column (root level)
-		return nil, 0
+		return nil
 	}
 
-	// Remove top column
 	popped := cs.columns[len(cs.columns)-1]
 	popped.SetFocused(false)
 	cs.columns = cs.columns[:len(cs.columns)-1]
 
-	// Restore saved cursor position
-	savedCursor := 0
-	if len(cs.cursorStack) > 0 {
-		savedCursor = cs.cursorStack[len(cs.cursorStack)-1]
-		cs.cursorStack = cs.cursorStack[:len(cs.cursorStack)-1]
-	}
-
-	// Focus new top
 	if top := cs.Top(); top != nil {
 		top.SetFocused(true)
 	}
 
-	return popped, savedCursor
+	return popped
 }
 
-// Reset resets the stack to a single column (used when switching libraries)
+// Reset focuses col as the root.
 func (cs *ColumnStack) Reset(col *components.ListColumn) {
 	for _, c := range cs.columns {
 		c.SetFocused(false)
 	}
 	cs.columns = nil
-	cs.cursorStack = nil
 	col.SetFocused(true)
 	cs.columns = append(cs.columns, col)
 }
@@ -111,7 +79,6 @@ func (cs *ColumnStack) CanGoBack() bool {
 }
 
 // UpdateTop replaces the top column with the given column.
-// This preserves encapsulation by avoiding direct access to the columns slice.
 func (cs *ColumnStack) UpdateTop(col *components.ListColumn) {
 	if len(cs.columns) > 0 {
 		cs.columns[len(cs.columns)-1] = col

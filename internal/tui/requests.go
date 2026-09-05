@@ -82,9 +82,9 @@ func (m *Model) loadResource(r catalog.Resource, policy catalog.Policy, backgrou
 		return nil
 	}
 	req := m.requests.begin(owner, r, policy)
-	req.Revision = m.revisions[r.Key()]
+	req.Revision = m.collection(r).RequiredRevision
 	m.requests.active[owner] = req
-	m.resources[r.Key()] = r
+	m.collection(r).Resource = r
 	m.updateResourceFeedback(r)
 	return LoadResourceCmd(m.Catalog, req)
 }
@@ -102,7 +102,7 @@ func libraryStateID(r catalog.Resource) string {
 
 func (m *Model) topResource() (catalog.Resource, bool) {
 	if col := m.ColumnStack.Top(); col != nil {
-		r, ok := m.resources[col.ContentID()]
+		r, ok := m.resource(col.ContentID())
 		return r, ok
 	}
 	return catalog.Resource{}, false

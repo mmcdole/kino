@@ -110,3 +110,25 @@ func TestUncertainWatchWriteRequiresRevalidation(t *testing.T) {
 		t.Fatalf("uncertain remote write was not scheduled for reconciliation: %+v %v", change, err)
 	}
 }
+
+func TestWatchPatchDoesNotPromoteInvalidCachedPayload(t *testing.T) {
+	svc, cache := testService(t, fakeBackend{
+		Backend: watchBackend{watch: func(context.Context) error { return nil }},
+		movies: func(context.Context) ([]*domain.MediaItem, int, error) {
+			return []*domain.MediaItem{{ID: "movie", Title: "Current"}}, 1, nil
+		},
+	})
+	r := Resource{Kind: Movies, ID: "a", LibraryID: "a"}
+	if err := cache.Save(r.Key(), domain.CachedList{FetchedAt: time.Now(), Items: []domain.ListItem{&domain.MediaItem{ID: "movie", Title: "Outdated"}}}); err != nil {
+		t.Fatal(err)
+	}
+	svc.cache = &failingCache{Cache: cache, fail: true}
+	snapshot, err := svc.Load(context.Background(), r, Refresh, Observer{})
+	if err != nil || snapshot.Warning == nil {
+		t.Fatal("expected usable content with a persistence warning")
+	}
+	change, err := svc.Mutate(context.Background(), Mutation{Kind: Watch, ItemID: "movie", LibraryID: "a", Played: true})
+	if err != nil || !change.Applied || len(change.Snapshots) != 0 || len(change.Resources) != 1 {
+		t.Fatal("watch patch promoted invalid cache data instead of requiring revalidation")
+	}
+}

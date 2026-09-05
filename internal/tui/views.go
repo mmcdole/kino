@@ -117,7 +117,7 @@ func (m Model) View() string {
 
 // renderFooter renders a single-line minimal footer.
 //
-// Feedback scope rules (see docs/design-review.md and notice.go):
+// Feedback scopes (see docs/architecture.md and notice.go):
 //   - Row-scoped work (library sync) renders on the row; the footer only
 //     carries a compact activity segment on the right, never full-width text.
 //   - Column-scoped work (loads, refreshes, failures) renders in the column.

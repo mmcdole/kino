@@ -39,17 +39,20 @@ func columnType(kind catalog.Kind) components.ColumnType {
 	}
 }
 
-func (m *Model) pushColumn(r catalog.Resource, title string, cursor int) tea.Cmd {
+func (m *Model) pushColumn(r catalog.Resource, title string) tea.Cmd {
 	col := components.NewListColumn(columnType(r.Kind), title)
 	col.SetContentID(r.Key())
 	col.SetShowWatchStatus(m.UIConfig.ShowWatchStatus)
-	m.ColumnStack.Push(col, cursor)
-	m.resources[r.Key()] = r
+	m.ColumnStack.Push(col)
+	state := m.collection(r)
+	state.Resource = r
+	if state.Known {
+		col.ReplaceItems(domain.CloneItems(state.Snapshot.Items))
+	}
 	if m.navPlan != nil {
 		m.navPlan.AwaitKey = r.Key()
 	}
 	m.updateLayout()
-	m.updateInspector()
 	return m.loadResource(r, catalog.Browse, false)
 }
 
@@ -59,28 +62,25 @@ func (m *Model) drillSelected() tea.Cmd {
 		return nil
 	}
 	parent, _ := m.topResource()
-	cursor := top.SelectedIndex()
 	switch item := top.SelectedItem().(type) {
 	case *domain.Library:
 		if item.ID == playlistsLibraryID {
-			return m.pushColumn(catalog.Resource{Kind: catalog.Playlists}, "Playlists", cursor)
+			return m.pushColumn(catalog.Resource{Kind: catalog.Playlists}, "Playlists")
 		}
-		return m.pushColumn(catalog.LibraryResource(*item), item.Name, cursor)
+		return m.pushColumn(catalog.LibraryResource(*item), item.Name)
 	case *domain.Show:
-		return m.pushColumn(catalog.Resource{Kind: catalog.Seasons, ID: item.ID, LibraryID: parent.LibraryID, ShowID: item.ID}, item.Title, cursor)
+		return m.pushColumn(catalog.Resource{Kind: catalog.Seasons, ID: item.ID, LibraryID: parent.LibraryID, ShowID: item.ID}, item.Title)
 	case *domain.Season:
 		title := fmt.Sprintf("%s - S%02d", item.ShowTitle, item.SeasonNum)
 		if item.SeasonNum == 0 {
 			title = item.ShowTitle + " - Specials"
 		}
-		return m.pushColumn(catalog.Resource{Kind: catalog.Episodes, ID: item.ID, LibraryID: parent.LibraryID, ShowID: parent.ShowID}, title, cursor)
+		return m.pushColumn(catalog.Resource{Kind: catalog.Episodes, ID: item.ID, LibraryID: parent.LibraryID, ShowID: parent.ShowID}, title)
 	case *domain.Playlist:
-		return m.pushColumn(catalog.Resource{Kind: catalog.PlaylistItems, ID: item.ID}, item.Title, cursor)
+		return m.pushColumn(catalog.Resource{Kind: catalog.PlaylistItems, ID: item.ID}, item.Title)
 	}
 	return nil
 }
-
-func (m Model) drillIntoSelection() (tea.Model, tea.Cmd) { return m, m.drillSelected() }
 
 func (m Model) handleBack() (tea.Model, tea.Cmd) {
 	m.clearNavPlan()
@@ -89,13 +89,12 @@ func (m Model) handleBack() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	top := m.ColumnStack.Top()
-	if r, ok := m.resources[top.ContentID()]; ok {
+	if r, ok := m.resource(top.ContentID()); ok {
 		m.requests.stop(viewOwner(r))
 		m.updateResourceFeedback(r)
 	}
 	m.ColumnStack.Pop()
 	m.updateLayout()
-	m.updateInspector()
 	return m, nil
 }
 
@@ -120,7 +119,6 @@ func (m *Model) advanceNavPlanAfterLoad(key string, final bool) tea.Cmd {
 	p.Step++
 	if p.Step == len(p.Targets) {
 		m.clearNavPlan()
-		m.updateInspector()
 		return nil
 	}
 	cmd := m.drillSelected()
@@ -137,7 +135,7 @@ func (m *Model) navigateToSearchResult(item search.FilterItem) tea.Cmd {
 	for m.ColumnStack.CanGoBack() {
 		col := m.ColumnStack.Top()
 		m.requests.stop("view:" + col.ContentID())
-		if r, ok := m.resources[col.ContentID()]; ok {
+		if r, ok := m.resource(col.ContentID()); ok {
 			m.updateResourceFeedback(r)
 		}
 		m.ColumnStack.Pop()
@@ -152,14 +150,14 @@ func (m *Model) navigateToSearchResult(item search.FilterItem) tea.Cmd {
 		targets = append(targets, "")
 	}
 	m.navPlan = &NavPlan{Targets: targets}
-	return m.pushColumn(catalog.LibraryResource(*lib), lib.Name, m.libraryColumn().SelectedIndex())
+	return m.pushColumn(catalog.LibraryResource(*lib), lib.Name)
 }
 
 // Revalidate the navigation ancestry when an authoritative parent snapshot
 // changes. Retained columns cannot silently acquire a different parent.
 func (m *Model) pruneNavigation() {
 	for i := 1; i < m.ColumnStack.Len(); i++ {
-		r, exists := m.resources[m.ColumnStack.Get(i).ContentID()]
+		r, exists := m.resource(m.ColumnStack.Get(i).ContentID())
 		expected := r.ID
 		if r.Kind == catalog.Playlists {
 			expected = playlistsLibraryID
@@ -174,7 +172,7 @@ func (m *Model) pruneNavigation() {
 		for m.ColumnStack.Len() > i {
 			col := m.ColumnStack.Top()
 			m.requests.stop("view:" + col.ContentID())
-			if r, ok := m.resources[col.ContentID()]; ok {
+			if r, ok := m.resource(col.ContentID()); ok {
 				m.updateResourceFeedback(r)
 			}
 			m.ColumnStack.Pop()
@@ -182,7 +180,6 @@ func (m *Model) pruneNavigation() {
 		m.clearNavPlan()
 		m.notify(NoticeAlert, "Item no longer exists in this view — navigation reset")
 		m.updateLayout()
-		m.updateInspector()
 		return
 	}
 }

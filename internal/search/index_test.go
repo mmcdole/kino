@@ -2,13 +2,15 @@ package search
 
 import (
 	"context"
-	"github.com/mmcdole/kino/internal/domain"
 	"testing"
+
+	"github.com/mmcdole/kino/internal/domain"
 )
 
 func TestIndexRejectsStaleUpdatesAndReturnsDetachedResults(t *testing.T) {
 	index := NewIndex()
 	index.ReplaceLibrary("lib", 2, []domain.ListItem{&domain.Show{ID: "show", Title: "Current"}})
+	index.ReplaceLibrary("lib", 2, []domain.ListItem{&domain.Show{ID: "show", Title: "Duplicate"}})
 	index.ReplaceLibrary("lib", 1, []domain.ListItem{&domain.Show{ID: "show", Title: "Obsolete"}})
 	libs := []domain.Library{{ID: "lib"}}
 	found := index.Search(context.Background(), "Current", libs)
