@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
 	"github.com/mmcdole/kino/internal/domain"
@@ -90,6 +91,7 @@ func (m Model) handleBack() (tea.Model, tea.Cmd) {
 	top := m.ColumnStack.Top()
 	if r, ok := m.resources[top.ContentID()]; ok {
 		m.requests.stop(viewOwner(r))
+		m.updateResourceFeedback(r)
 	}
 	m.ColumnStack.Pop()
 	m.updateLayout()
@@ -135,6 +137,9 @@ func (m *Model) navigateToSearchResult(item search.FilterItem) tea.Cmd {
 	for m.ColumnStack.CanGoBack() {
 		col := m.ColumnStack.Top()
 		m.requests.stop("view:" + col.ContentID())
+		if r, ok := m.resources[col.ContentID()]; ok {
+			m.updateResourceFeedback(r)
+		}
 		m.ColumnStack.Pop()
 	}
 	lib := m.findLibrary(item.LibraryID)
@@ -169,6 +174,9 @@ func (m *Model) pruneNavigation() {
 		for m.ColumnStack.Len() > i {
 			col := m.ColumnStack.Top()
 			m.requests.stop("view:" + col.ContentID())
+			if r, ok := m.resources[col.ContentID()]; ok {
+				m.updateResourceFeedback(r)
+			}
 			m.ColumnStack.Pop()
 		}
 		m.clearNavPlan()

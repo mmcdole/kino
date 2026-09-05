@@ -1,11 +1,12 @@
 package tui
 
 import (
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
 	"github.com/mmcdole/kino/internal/config"
 	"github.com/mmcdole/kino/internal/domain"
-	"time"
 )
 
 // LoadResourceCmd adapts the application's result stream to Bubble Tea. Cached
@@ -15,9 +16,16 @@ func LoadResourceCmd(svc Catalog, req request) tea.Cmd {
 	return func() tea.Msg {
 		cached := make(chan ResourceMsg, 1)
 		progress := make(chan ResourceMsg, 1)
+		network := make(chan ResourceMsg, 1)
 		done := make(chan ResourceMsg, 1)
 		go func() {
 			snapshot, err := svc.Load(req.ctx, req.Resource, req.Policy, catalog.Observer{
+				Network: func() {
+					select {
+					case network <- ResourceMsg{Request: req, Stage: loadNetwork}:
+					default:
+					}
+				},
 				Cached: func(snapshot catalog.Snapshot) {
 					select {
 					case cached <- ResourceMsg{Request: req, Stage: loadCached, Snapshot: snapshot}:
@@ -33,10 +41,10 @@ func LoadResourceCmd(svc Catalog, req request) tea.Cmd {
 			})
 			done <- ResourceMsg{Request: req, Stage: loadFinished, Snapshot: snapshot, Err: err}
 		}()
-		return readResource(req, cached, progress, done)
+		return readResource(req, cached, progress, network, done)
 	}
 }
-func readResource(req request, cached, progress, done <-chan ResourceMsg) tea.Msg {
+func readResource(req request, cached, progress, network, done <-chan ResourceMsg) tea.Msg {
 	var msg ResourceMsg
 	select {
 	case msg = <-done:
@@ -46,12 +54,13 @@ func readResource(req request, cached, progress, done <-chan ResourceMsg) tea.Ms
 	select {
 	case msg = <-cached:
 	case msg = <-progress:
+	case msg = <-network:
 	case msg = <-done:
 		return msg
 	case <-req.ctx.Done():
 		return ResourceMsg{Request: req, Stage: loadFinished, Err: req.ctx.Err()}
 	}
-	msg.Next = func() tea.Msg { return readResource(req, cached, progress, done) }
+	msg.Next = func() tea.Msg { return readResource(req, cached, progress, network, done) }
 	return msg
 }
 

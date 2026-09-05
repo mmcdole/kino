@@ -23,7 +23,7 @@ func testModel(t *testing.T) Model {
 	return m
 }
 func snapshot(r catalog.Resource, revision uint64, ids ...string) catalog.Snapshot {
-	result := catalog.Snapshot{Resource: r, Revision: revision, CachedList: domain.CachedList{FetchedAt: time.Now()}}
+	result := catalog.Snapshot{Resource: r, Revision: revision, Validated: true, CachedList: domain.CachedList{FetchedAt: time.Now()}}
 	for _, id := range ids {
 		result.Items = append(result.Items, &domain.MediaItem{ID: id, Title: id})
 	}
@@ -198,7 +198,7 @@ func TestRejectedSnapshotCannotOverwriteCurrentLibraryCount(t *testing.T) {
 	m = updateModel(m, ResourceMsg{Request: newer, Stage: loadFinished, Snapshot: snapshot(r, 2, "one", "two")})
 	m = updateModel(m, ResourceMsg{Request: old, Stage: loadFinished, Snapshot: snapshot(r, 1, "old"), Err: domain.ErrServerOffline})
 	state := m.LibraryStates[r.LibraryID]
-	if state.Total != 2 || state.Error != nil || state.Status == components.StatusSyncing {
+	if state.Summary.Count != 2 || state.Error != nil || state.Activity.Visible {
 		t.Fatalf("stale response corrupted status: %+v", state)
 	}
 	if m.notice.Text != "" || m.ColumnStack.Top().HasLoadFailed() {

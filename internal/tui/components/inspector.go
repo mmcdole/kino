@@ -30,13 +30,13 @@ type Inspector struct {
 	height        int
 	offset        int // scroll offset
 	maxVisible    int // max visible lines
-	libraryStates map[string]LibrarySyncState
+	libraryStates map[string]LibraryState
 }
 
 // NewInspector creates a new inspector component
 func NewInspector() Inspector {
 	return Inspector{
-		libraryStates: make(map[string]LibrarySyncState),
+		libraryStates: make(map[string]LibraryState),
 	}
 }
 
@@ -46,8 +46,8 @@ func (i *Inspector) SetItem(item domain.ListItem) {
 	i.offset = 0 // Reset scroll on item change
 }
 
-// SetLibraryStates sets the library sync states for displaying item counts
-func (i *Inspector) SetLibraryStates(states map[string]LibrarySyncState) {
+// SetLibraryStates sets the library summaries and activity for displaying item counts
+func (i *Inspector) SetLibraryStates(states map[string]LibraryState) {
 	i.libraryStates = states
 }
 
@@ -433,6 +433,8 @@ func (i Inspector) renderLibraryInspector(lib *domain.Library, width int) string
 		b.WriteString(styles.TitleStyle.Render(styles.Truncate(lib.Name, width)))
 		b.WriteString("\n\n")
 		b.WriteString(styles.DimStyle.Render("Browse and manage your playlists"))
+		b.WriteString("\n")
+		b.WriteString(i.renderLibraryFeedback(lib.ID))
 		b.WriteString("\n\n")
 		b.WriteString(styles.SubtitleStyle.Render("Press Enter to browse"))
 		return b.String()
@@ -450,11 +452,7 @@ func (i Inspector) renderLibraryInspector(lib *domain.Library, width int) string
 	b.WriteString(styles.DimStyle.Render(fmt.Sprintf("Type: %s", typeLabel)))
 	b.WriteString("\n")
 
-	// Item count from sync state
-	if state, ok := i.libraryStates[lib.ID]; ok && state.Loaded > 0 {
-		b.WriteString(styles.DimStyle.Render(fmt.Sprintf("Items: %d", state.Loaded)))
-		b.WriteString("\n")
-	}
+	b.WriteString(i.renderLibraryFeedback(lib.ID))
 
 	b.WriteString("\n")
 	b.WriteString(styles.SubtitleStyle.Render("Press Enter to browse"))
@@ -561,4 +559,28 @@ func wordWrap(text string, width int) string {
 	}
 
 	return result.String()
+}
+
+// renderLibraryFeedback uses the same summary as the library row. Progress is
+// labeled separately so a partial download is never mistaken for the item count.
+func (i Inspector) renderLibraryFeedback(id string) string {
+	state := i.libraryStates[id]
+	var b strings.Builder
+	if state.Summary.Known {
+		label := fmt.Sprintf("Items: %d", state.Summary.Count)
+		if state.Summary.Stale {
+			label += " (cached)"
+		}
+		b.WriteString(styles.DimStyle.Render(label) + "\n")
+	}
+	if state.Activity.Visible {
+		label := "Refreshing..."
+		if state.Activity.Total > 0 {
+			label = fmt.Sprintf("Loading: %d/%d", state.Activity.Loaded, state.Activity.Total)
+		}
+		b.WriteString(styles.DimStyle.Render(label) + "\n")
+	} else if state.Error != nil {
+		b.WriteString(styles.ErrorStyle.Render("Refresh failed · r to retry") + "\n")
+	}
+	return b.String()
 }

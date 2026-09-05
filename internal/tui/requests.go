@@ -2,12 +2,10 @@ package tui
 
 import (
 	"context"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
 	"github.com/mmcdole/kino/internal/domain"
-	"github.com/mmcdole/kino/internal/tui/components"
 )
 
 // These are the application operations the TUI consumes. There is no cache or
@@ -23,13 +21,16 @@ type Playback interface {
 }
 
 type request struct {
-	ID       uint64
-	Owner    string
-	Resource catalog.Resource
-	Policy   catalog.Policy
-	Revision uint64
-	ctx      context.Context
-	cancel   context.CancelFunc
+	ID               uint64
+	Owner            string
+	Resource         catalog.Resource
+	Policy           catalog.Policy
+	Revision         uint64
+	Network          bool
+	IndicatorVisible bool
+	Progress         catalog.Progress
+	ctx              context.Context
+	cancel           context.CancelFunc
 }
 
 // requests is owned by the event loop. IDs apply to errors, progress, and
@@ -84,20 +85,7 @@ func (m *Model) loadResource(r catalog.Resource, policy catalog.Policy, backgrou
 	req.Revision = m.revisions[r.Key()]
 	m.requests.active[owner] = req
 	m.resources[r.Key()] = r
-	for i := 0; i < m.ColumnStack.Len(); i++ {
-		col := m.ColumnStack.Get(i)
-		if col.ContentID() != r.Key() {
-			continue
-		}
-		col.BeginLoad()
-	}
-	if id := libraryStateID(r); id != "" {
-		state := m.LibraryStates[id]
-		state.Status = components.StatusSyncing
-		state.Error = nil
-		m.LibraryStates[id] = state
-		m.updateLibraryStates()
-	}
+	m.updateResourceFeedback(r)
 	return LoadResourceCmd(m.Catalog, req)
 }
 
@@ -118,8 +106,4 @@ func (m *Model) topResource() (catalog.Resource, bool) {
 		return r, ok
 	}
 	return catalog.Resource{}, false
-}
-
-func (m *Model) clearLibraryStatus(id string, revision uint64) tea.Cmd {
-	return tea.Tick(2*time.Second, func(time.Time) tea.Msg { return ClearLibraryStatusMsg{LibraryID: id, Revision: revision} })
 }

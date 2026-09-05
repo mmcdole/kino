@@ -12,6 +12,7 @@ type loadStage uint8
 const (
 	loadCached loadStage = iota
 	loadProgress
+	loadNetwork
 	loadFinished
 )
 
@@ -40,10 +41,7 @@ type PlaylistModalDataMsg struct {
 }
 
 type TickMsg struct{}
-type ClearLibraryStatusMsg struct {
-	LibraryID string
-	Revision  uint64
-}
+type ShowLoadingMsg struct{ Request request }
 type LogoutCompleteMsg struct{ Error error }
 type SearchDebounceMsg struct {
 	Seq   uint64

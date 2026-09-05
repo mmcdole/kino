@@ -48,7 +48,7 @@ type PlayerConfig struct {
 // UIConfig holds UI configuration
 type UIConfig struct {
 	ShowWatchStatus   bool `mapstructure:"show_watch_status"`   // Show watched/unwatched/in-progress indicators
-	ShowLibraryCounts bool `mapstructure:"show_library_counts"` // Keep library item counts visible after sync
+	ShowLibraryCounts bool `mapstructure:"show_library_counts"` // Show known library item counts, independently of loading activity
 }
 
 // LoggingConfig holds logging configuration

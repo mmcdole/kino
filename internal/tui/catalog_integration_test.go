@@ -75,6 +75,10 @@ func TestCatalogDiskCacheAndTUIRequestLifecycle(t *testing.T) {
 	}
 
 	msg := awaitResource(t, m.pushColumn(r, "A", 0))
+	for msg.Stage == loadNetwork {
+		m = updateModel(m, msg)
+		msg = awaitResource(t, msg.Next)
+	}
 	if msg.Stage != loadCached {
 		t.Fatalf("expected cached data while server waits: %v", msg.Stage)
 	}
@@ -86,6 +90,10 @@ func TestCatalogDiskCacheAndTUIRequestLifecycle(t *testing.T) {
 
 	// A second UI subscription joins the same service fetch.
 	shared := awaitResource(t, m.loadResource(r, catalog.Revalidate, true))
+	for shared.Stage == loadNetwork {
+		m = updateModel(m, shared)
+		shared = awaitResource(t, shared.Next)
+	}
 	if shared.Stage != loadCached {
 		t.Fatal("background request did not expose cached data")
 	}

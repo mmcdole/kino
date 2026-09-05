@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
 	"github.com/mmcdole/kino/internal/config"
 	"github.com/mmcdole/kino/internal/domain"
 	"github.com/mmcdole/kino/internal/search"
 	"github.com/mmcdole/kino/internal/tui/components"
-	"time"
 )
 
 // authFailedStatusMsg tells the user how to recover from a revoked/expired
@@ -84,13 +85,14 @@ type Model struct {
 	ShowInspector                                      bool
 	notice                                             Notice
 	noticeSeq                                          int
-	LibraryStates                                      map[string]components.LibrarySyncState
+	LibraryStates                                      map[string]components.LibraryState
 	navPlan                                            *NavPlan
 	pendingDeletePlaylistID, pendingDeletePlaylistName string
 	UIConfig                                           config.UIConfig
 	requests                                           *requests
 	resources                                          map[string]catalog.Resource
 	revisions                                          map[string]uint64
+	resourceResults                                    map[string]resourceResult
 
 	backgroundStarted map[string]uint64
 	searchSeq         uint64
@@ -102,8 +104,8 @@ func NewModel(ctx context.Context, svc Catalog, playback Playback, index *search
 	m := Model{Catalog: svc, PlaybackSvc: playback, SearchIndex: index, UIConfig: ui,
 		ColumnStack: NewColumnStack(), Inspector: components.NewInspector(), GlobalSearch: components.NewGlobalSearch(),
 		PlaylistModal: components.NewPlaylistModal(), InputModal: components.NewInputModal(),
-		LibraryStates: make(map[string]components.LibrarySyncState), requests: newRequests(ctx),
-		resources: make(map[string]catalog.Resource), revisions: make(map[string]uint64), backgroundStarted: make(map[string]uint64)}
+		LibraryStates: make(map[string]components.LibraryState), requests: newRequests(ctx),
+		resources: make(map[string]catalog.Resource), revisions: make(map[string]uint64), backgroundStarted: make(map[string]uint64), resourceResults: make(map[string]resourceResult)}
 	root := catalog.Resource{Kind: catalog.Libraries}
 	col := components.NewListColumn(components.ColumnTypeLibraries, "Libraries")
 	col.SetContentID(root.Key())
@@ -162,15 +164,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ClearNoticeMsg:
 		m.expireNotice(msg.Seq)
 		return m, nil
-	case ClearLibraryStatusMsg:
-		for key, r := range m.resources {
-			if libraryStateID(r) == msg.LibraryID && m.revisions[key] == msg.Revision {
-				state := m.LibraryStates[msg.LibraryID]
-				if state.Status == components.StatusSynced {
-					state.Status = components.StatusIdle
-					m.LibraryStates[msg.LibraryID] = state
-					m.updateLibraryStates()
-				}
+	case ShowLoadingMsg:
+		if m.requests.owns(msg.Request) {
+			req := m.requests.active[msg.Request.Owner]
+			if req.Network {
+				req.IndicatorVisible = true
+				m.requests.active[req.Owner] = req
+				m.updateResourceFeedback(req.Resource)
 			}
 		}
 		return m, nil
@@ -219,24 +219,37 @@ func (m Model) handleResource(msg ResourceMsg) (tea.Model, tea.Cmd) {
 	if msg.Next != nil {
 		cmds = append(cmds, msg.Next)
 	}
-	if msg.Stage == loadProgress {
-		if msg.Request.Revision < m.revisions[r.Key()] {
-			return m, tea.Batch(cmds...)
-		}
-		if id := libraryStateID(r); id != "" {
-			state := m.LibraryStates[id]
-			state.Loaded = msg.Progress.Loaded
-			state.Total = msg.Progress.Total
-			m.LibraryStates[id] = state
-			m.updateLibraryStates()
+	if msg.Stage == loadNetwork {
+		req := m.requests.active[msg.Request.Owner]
+		if !req.Network {
+			req.Network = true
+			m.requests.active[req.Owner] = req
+			cmds = append(cmds, showLoadingCmd(req))
 		}
 		return m, tea.Batch(cmds...)
 	}
-	hasSnapshot := !msg.Snapshot.FetchedAt.IsZero() || msg.Snapshot.FromCache || msg.Err == nil
+	if msg.Stage == loadProgress {
+		// Activity belongs to the live subscription. A cached observation may
+		// advance the snapshot revision while this same request keeps fetching.
+		req := m.requests.active[msg.Request.Owner]
+		req.Progress = msg.Progress
+		m.requests.active[req.Owner] = req
+		m.updateResourceFeedback(r)
+		return m, tea.Batch(cmds...)
+	}
+	hasSnapshot := msg.Snapshot.FromCache || msg.Err == nil
 	obsolete := hasSnapshot && msg.Snapshot.Revision < m.revisions[r.Key()] ||
-		!hasSnapshot && msg.Request.Revision < m.revisions[r.Key()]
+		!hasSnapshot && m.requests.active[msg.Request.Owner].Revision < m.revisions[r.Key()]
 	accepted := hasSnapshot && !obsolete
 	if accepted {
+		if msg.Stage == loadCached {
+			req := m.requests.active[msg.Request.Owner]
+			req.Revision = msg.Snapshot.Revision
+			m.requests.active[req.Owner] = req
+		}
+		result := m.resourceResults[r.Key()]
+		result.Summary = components.CollectionSummary{Count: len(msg.Snapshot.Items), Known: true, Stale: msg.Snapshot.Stale}
+		m.resourceResults[r.Key()] = result
 		m.revisions[r.Key()] = msg.Snapshot.Revision
 		if r.Kind == catalog.Libraries {
 			m.Libraries = nil
@@ -246,7 +259,7 @@ func (m Model) handleResource(msg ResourceMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.libraryColumn().ReplaceItems(components.WrapLibraries(m.allLibraryEntries()))
-			if msg.Stage == loadFinished && msg.Err == nil {
+			if msg.Stage == loadFinished && msg.Err == nil && msg.Snapshot.Validated {
 				m.pruneLibraryRequests()
 			}
 
@@ -282,53 +295,20 @@ func (m Model) handleResource(msg ResourceMsg) (tea.Model, tea.Cmd) {
 			})
 		}
 		m.updateInspector()
-		if msg.Stage == loadFinished && msg.Err == nil {
+		if msg.Stage == loadFinished && msg.Err == nil && msg.Snapshot.Validated {
 			m.pruneNavigation()
 		}
 	}
-	if msg.Stage == loadCached {
-		for i := 0; i < m.ColumnStack.Len(); i++ {
-			if col := m.ColumnStack.Get(i); col.ContentID() == r.Key() {
-				col.BeginLoad()
-			}
-		}
-	} else {
+	if msg.Stage == loadFinished {
 		m.requests.finish(msg.Request)
-		// A second subscriber may still be refreshing this collection.
-		_, viewPending := m.requests.active[viewOwner(r)]
-		_, syncPending := m.requests.active[syncOwner(r)]
-		for i := 0; i < m.ColumnStack.Len(); i++ {
-			col := m.ColumnStack.Get(i)
-			if col.ContentID() != r.Key() {
-				continue
+		if !obsolete {
+			result := m.resourceResults[r.Key()]
+			if msg.Err != nil && !errors.Is(msg.Err, context.Canceled) {
+				result.Error = msg.Err
+			} else if msg.Err == nil && msg.Snapshot.Validated {
+				result.Error = nil
 			}
-			if viewPending || syncPending {
-				col.BeginLoad()
-			} else {
-				col.FinishLoad(!obsolete && msg.Err != nil && !errors.Is(msg.Err, context.Canceled))
-			}
-		}
-		if id := libraryStateID(r); id != "" {
-			state := m.LibraryStates[id]
-			if accepted {
-				state.Loaded = len(msg.Snapshot.Items)
-				state.Total = state.Loaded
-				state.FromCache = msg.Snapshot.FromCache
-			}
-			if !obsolete {
-				state.Error = msg.Err
-			}
-			switch {
-			case viewPending || syncPending:
-				state.Status = components.StatusSyncing
-			case state.Error != nil:
-				state.Status = components.StatusError
-			default:
-				state.Status = components.StatusSynced
-				cmds = append(cmds, m.clearLibraryStatus(id, m.revisions[r.Key()]))
-			}
-			m.LibraryStates[id] = state
-			m.updateLibraryStates()
+			m.resourceResults[r.Key()] = result
 		}
 		if !obsolete && msg.Err != nil {
 			if m.navPlan != nil && m.navPlan.AwaitKey == r.Key() {
@@ -340,6 +320,7 @@ func (m Model) handleResource(msg ResourceMsg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.notifyError("Loaded "+m.resourceName(r), msg.Snapshot.Warning))
 		}
 	}
+	m.updateResourceFeedback(r)
 	if accepted && msg.Err == nil {
 		cmds = append(cmds, m.advanceNavPlanAfterLoad(r.Key(), msg.Stage == loadFinished))
 	}
@@ -423,7 +404,7 @@ func (m *Model) notifyError(scope string, err error) tea.Cmd {
 func (m Model) activeSyncCount() int {
 	n := 0
 	for _, state := range m.LibraryStates {
-		if state.Status == components.StatusSyncing {
+		if state.Activity.Visible {
 			n++
 		}
 	}
@@ -513,6 +494,7 @@ func (m *Model) pruneLibraryRequests() {
 		m.requests.stop(viewOwner(r))
 		m.requests.stop(syncOwner(r))
 		delete(m.resources, key)
+		delete(m.resourceResults, key)
 		delete(m.backgroundStarted, key)
 		delete(m.LibraryStates, r.LibraryID)
 	}

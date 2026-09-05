@@ -57,11 +57,12 @@ type ListColumn struct {
 	title string
 
 	// Loading state
-	loadState    loadState
-	spinnerFrame int
+	loadState        loadState
+	indicatorVisible bool
+	spinnerFrame     int
 
-	// Library sync states (for library column)
-	libraryStates map[string]LibrarySyncState
+	// Library summaries and activity (for library column)
+	libraryStates map[string]LibraryState
 
 	// Sort state
 	sortField SortField
@@ -96,7 +97,7 @@ func NewListColumn(colType ColumnType, title string) *ListColumn {
 		sortField:     SortTitle,
 		sortDir:       SortAsc,
 		filterInput:   ti,
-		libraryStates: make(map[string]LibrarySyncState),
+		libraryStates: make(map[string]LibraryState),
 	}
 }
 
@@ -306,6 +307,16 @@ func (c *ListColumn) FinishLoad(failed bool) {
 	}
 }
 
+// SetRequestState receives presentation derived from all active subscribers.
+func (c *ListColumn) SetRequestState(pending, visible, failed bool) {
+	if pending {
+		c.BeginLoad()
+	} else {
+		c.FinishLoad(failed)
+	}
+	c.indicatorVisible = visible
+}
+
 func (c *ListColumn) IsLoading() bool     { return c.loadState == loadInitial }
 func (c *ListColumn) IsRefreshing() bool  { return c.loadState == loadRefreshing }
 func (c *ListColumn) HasLoadFailed() bool { return c.loadState == loadFailed }
@@ -435,8 +446,8 @@ func (c *ListColumn) ColumnType() ColumnType {
 	return c.columnType
 }
 
-// SetLibraryStates updates the library sync states (for library column)
-func (c *ListColumn) SetLibraryStates(states map[string]LibrarySyncState) {
+// SetLibraryStates updates the library summaries and activity (for library column)
+func (c *ListColumn) SetLibraryStates(states map[string]LibraryState) {
 	c.libraryStates = states
 }
 
@@ -694,21 +705,24 @@ func (c *ListColumn) renderContent() string {
 
 	// Title line (styled, truncated to fit column width); background
 	// refreshes show a spinner next to the title while items stay visible
-	title := c.title
-	if c.IsRefreshing() {
-		title = c.title + " " + styles.SpinnerFrames[c.spinnerFrame%len(styles.SpinnerFrames)]
+	title := "  " + c.title
+	if c.IsRefreshing() && c.indicatorVisible {
+		title = styles.SpinnerFrames[c.spinnerFrame%len(styles.SpinnerFrames)] + " " + c.title
 	}
 	titleLine := styles.AccentStyle.Render(styles.Truncate(title, itemWidth))
 
 	// Loading state
 	if c.IsLoading() {
 		spinner := styles.SpinnerFrames[c.spinnerFrame%len(styles.SpinnerFrames)]
-		loadingLine := styles.DimStyle.Render(spinner + " Loading...")
+		loadingLine := " "
+		if c.indicatorVisible {
+			loadingLine = styles.DimStyle.Render(spinner + " Loading...")
+		}
 		return titleLine + "\n" + " " + "\n" + loadingLine + "\n" + " "
 	}
 
 	// Failed load: actionable dead-end instead of an infinite spinner
-	if c.HasLoadFailed() && len(c.items) == 0 {
+	if c.HasLoadFailed() && !c.hasContent {
 		failedLine := styles.ErrorStyle.Render("✗ Failed to load")
 		retryLine := styles.DimStyle.Render("press r to retry")
 		return titleLine + "\n" + " " + "\n" + failedLine + "\n" + retryLine
@@ -720,7 +734,12 @@ func (c *ListColumn) renderContent() string {
 		if c.filterActive && c.filterQuery != "" {
 			emptyMsg = styles.DimStyle.Render("No matches")
 		}
-		content := titleLine + "\n" + " " + "\n" + emptyMsg + "\n" + " "
+		header, footer := " ", " "
+		if c.HasLoadFailed() {
+			header = styles.ErrorStyle.Render("Refresh failed")
+			footer = styles.DimStyle.Render("press r to retry")
+		}
+		content := titleLine + "\n" + header + "\n" + emptyMsg + "\n" + footer
 		// Add filter bar if active so user can see what they're typing
 		if c.filterActive {
 			content += "\n" + c.renderFilterBar(itemWidth)
@@ -800,21 +819,17 @@ func (c *ListColumn) renderItem(idx int, selected bool, width int) string {
 }
 
 func (c *ListColumn) renderLibraryItem(lib domain.Library, selected bool, width int) string {
-	// Get sync state for this library (works for playlists too via playlistsLibraryID)
+	// Get the summary and activity for this library (works for playlists too via playlistsLibraryID)
 	state := c.libraryStates[lib.ID]
 
 	var prefix string
 	var prefixFg lipgloss.Color
 
-	switch state.Status {
-	case StatusSyncing:
-		spinner := styles.SpinnerFrames[c.spinnerFrame%len(styles.SpinnerFrames)]
-		prefix = spinner + " "
+	switch {
+	case state.Activity.Visible:
+		prefix = styles.SpinnerFrames[c.spinnerFrame%len(styles.SpinnerFrames)] + " "
 		prefixFg = styles.PlexOrange
-	case StatusSynced:
-		prefix = "✓ "
-		prefixFg = styles.Green
-	case StatusError:
+	case state.Error != nil:
 		prefix = "✗ "
 		prefixFg = styles.Red
 	default:
@@ -823,13 +838,8 @@ func (c *ListColumn) renderLibraryItem(lib domain.Library, selected bool, width 
 	}
 
 	title := lib.Name
-	// Show count if available:
-	// - During sync: show progress (loaded/total)
-	// - After sync: show count if config flag is set OR briefly after sync completes
-	if state.Status == StatusSyncing && state.Total > 0 {
-		title = fmt.Sprintf("%s (%d/%d)", lib.Name, state.Loaded, state.Total)
-	} else if (state.Status == StatusSynced || c.showLibraryCounts) && state.Loaded > 0 {
-		title = fmt.Sprintf("%s (%d)", lib.Name, state.Loaded)
+	if c.showLibraryCounts && state.Summary.Known {
+		title = fmt.Sprintf("%s (%d)", lib.Name, state.Summary.Count)
 	}
 	title = styles.Truncate(title, width-4)
 

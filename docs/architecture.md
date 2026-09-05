@@ -54,6 +54,11 @@ were already queued when a newer result or mutation reached the UI. Library coun
 and status obey the same rule as column contents. Cached payload revisions remain
 separate from committed result revisions if persistence fails.
 
+The catalog explicitly reports when a subscriber is waiting on network work.
+A result separately records whether it was validated against the server: count
+validation can reuse a cached payload, while a pure cache hit cannot clear a
+previous network error.
+
 Cached observations and progress may coalesce. A final result has its own buffered
 channel and cannot be dropped behind progress or strand a producer after cancellation.
 
@@ -84,14 +89,25 @@ cancellation and the service lifetime also bound all operations.
 
 | Situation | Presentation |
 | --- | --- |
-| Initial load without a snapshot | Column loading indicator |
-| Refresh with a snapshot, including an empty one | Items remain usable; title spinner |
+| Initial load without a snapshot | Column opens immediately; network spinner appears after 200 ms |
+| Refresh with a snapshot, including an empty one | Items remain usable; network spinner appears after 200 ms |
 | Failed initial load | Failure message and retry hint |
 | Failed refresh | Retained items and persistent column retry hint |
-| Background library or playlist load | Row progress and aggregate footer activity |
+| Background library or playlist load | Delayed row spinner and aggregate footer activity; progress in inspector |
 | Playback or mutation pending | Footer pending indicator until completion |
 | Playlist membership loading | Immediate loading modal; Escape cancels it |
 | Search query pending | Loading state; older query results cannot replace it |
+
+Counts describe the last complete snapshot and never double as download progress.
+With `ui.show_library_counts` enabled, known counts (including zero) remain visible
+in library rows. With it disabled, counts never flash during or after a load.
+The inspector uses the same summary and labels progress separately. Failed refreshes
+retain the summary and a retry hint; a cache hit alone cannot clear the error.
+
+Routine reads and background completion are silent: there is no temporary library
+success checkmark or count-expiry timer. Indicator space is reserved to keep titles
+stationary. Delayed indicator messages require current request ownership, so quick
+loads and canceled requests cannot flash a spinner afterward.
 
 One subscriber finishing cannot clear another subscriber's loading indication.
 Authoritative parent changes preserve selection by identity where possible and
