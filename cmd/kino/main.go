@@ -80,10 +80,10 @@ func run() error {
 	}
 
 	// Create store (persistence layer)
-	libraryStore, err := store.NewLibraryStore(config.DefaultCachePath(), cfg.Server.URL, cfg.Server.UserID)
+	libraryStore, err := store.Open(config.DefaultCachePath(), cfg.Server.URL, cfg.Server.UserID)
 	if err != nil {
 		logger.Warn("store unavailable, continuing memory-only", "error", err)
-		libraryStore, _ = store.NewLibraryStore("", "", "") // Memory-only fallback
+		libraryStore, _ = store.Open("", "", "") // Memory-only fallback
 	}
 	defer libraryStore.Close() // Clean shutdown
 

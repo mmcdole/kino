@@ -16,7 +16,7 @@ type storedSnapshot struct {
 	Version   int64             `json:"version"`
 }
 
-func (s *LibraryStore) Load(key string) (domain.CachedList, bool) {
+func (s *Store) Load(key string) (domain.CachedList, bool) {
 	var data storedSnapshot
 	if !s.get(bucketSnapshots, key, &data) {
 		return domain.CachedList{}, false
@@ -24,11 +24,11 @@ func (s *LibraryStore) Load(key string) (domain.CachedList, bool) {
 	return domain.CachedList{Items: unwrapListItems(data.Items), FetchedAt: data.FetchedAt, Version: data.Version}, true
 }
 
-func (s *LibraryStore) Save(key string, data domain.CachedList) error {
+func (s *Store) Save(key string, data domain.CachedList) error {
 	return s.set(bucketSnapshots, key, storedSnapshot{Items: wrapListItems(data.Items), FetchedAt: data.FetchedAt, Version: data.Version})
 }
 
-func (s *LibraryStore) Remove(keys ...string) error {
+func (s *Store) Remove(keys ...string) error {
 	entries := make([]cacheDeletion, 0, len(keys))
 	for _, key := range keys {
 		entries = append(entries, cacheDeletion{bucketSnapshots, key, false})
@@ -38,7 +38,7 @@ func (s *LibraryStore) Remove(keys ...string) error {
 
 // PatchWatchState updates every cached projection in one transaction. Parent
 // counters are adjusted once, even when an episode occurs in several lists.
-func (s *LibraryStore) PatchWatchState(itemID string, played bool) error {
+func (s *Store) PatchWatchState(itemID string, played bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	apply := func(tx *bolt.Tx, memory map[string][]byte) error {

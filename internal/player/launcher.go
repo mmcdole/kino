@@ -616,17 +616,10 @@ func (s *Service) playItem(ctx context.Context, item domain.MediaItem, offset ti
 		return err
 	}
 
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	s.logger.Info("launching playback", "title", item.Title, "itemID", item.ID, "offset", offset)
 
 	return s.launcher.Launch(url, offset)
-}
-
-// MarkWatched marks an item as fully watched
-func (s *Service) MarkWatched(ctx context.Context, itemID string) error {
-	return s.playback.MarkPlayed(ctx, itemID)
-}
-
-// MarkUnwatched marks an item as unwatched
-func (s *Service) MarkUnwatched(ctx context.Context, itemID string) error {
-	return s.playback.MarkUnplayed(ctx, itemID)
 }
