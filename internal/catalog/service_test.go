@@ -71,7 +71,7 @@ func TestRefreshFencesOlderFetchAndSharesReplacement(t *testing.T) {
 
 func TestConcurrentBrowseSharesFetchAndDetachedResults(t *testing.T) {
 	registered, release := make(chan struct{}, 2), make(chan struct{})
-	var calls atomic.Int32
+	var calls, networkObservers atomic.Int32
 	svc, cache := testService(t, fakeBackend{movies: func(ctx context.Context) ([]*domain.MediaItem, int, error) {
 		calls.Add(1)
 		<-release
@@ -82,7 +82,7 @@ func TestConcurrentBrowseSharesFetchAndDetachedResults(t *testing.T) {
 	result := make(chan Snapshot, 2)
 	for range 2 {
 		go func() {
-			snap, _ := svc.Load(context.Background(), r, Browse, Observer{Cached: func(Snapshot) { registered <- struct{}{} }})
+			snap, _ := svc.Load(context.Background(), r, Browse, Observer{Cached: func(Snapshot) { registered <- struct{}{} }, Network: func() { networkObservers.Add(1) }})
 			result <- snap
 		}()
 	}
@@ -90,6 +90,9 @@ func TestConcurrentBrowseSharesFetchAndDetachedResults(t *testing.T) {
 	<-registered
 	close(release)
 	a, b := <-result, <-result
+	if networkObservers.Load() != 2 {
+		t.Fatal("shared fetch did not report network activity to each subscriber")
+	}
 	if calls.Load() != 1 {
 		t.Fatalf("duplicate requests: %d", calls.Load())
 	}
@@ -202,5 +205,34 @@ func TestFailedPersistenceCannotMakeOldPayloadFresh(t *testing.T) {
 	next, err := svc.Load(context.Background(), r, Browse, Observer{})
 	if err != nil || next.Items[0].GetID() != "new" || calls.Load() != 2 {
 		t.Fatal("old disk data was accepted as a fresh replacement")
+	}
+}
+
+func TestLoadReportsNetworkWorkSeparatelyFromPayloadSource(t *testing.T) {
+	for _, policy := range []Policy{Browse, Revalidate, Refresh} {
+		t.Run(map[Policy]string{Browse: "cache", Revalidate: "count check", Refresh: "full fetch"}[policy], func(t *testing.T) {
+			svc, cache := testService(t, fakeBackend{
+				count: func(context.Context) (int, error) { return 1, nil },
+				movies: func(context.Context) ([]*domain.MediaItem, int, error) {
+					return []*domain.MediaItem{{ID: "movie"}}, 1, nil
+				},
+			})
+			r := Resource{Kind: Movies, ID: "lib", LibraryID: "lib"}
+			if err := cache.Save(r.Key(), domain.CachedList{Items: []domain.ListItem{&domain.MediaItem{ID: "movie"}}, FetchedAt: time.Now()}); err != nil {
+				t.Fatal(err)
+			}
+			network := 0
+			result, err := svc.Load(context.Background(), r, policy, Observer{Network: func() { network++ }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantNetwork := policy != Browse
+			if result.Validated != wantNetwork || (network == 1) != wantNetwork {
+				t.Fatalf("policy %v: network=%d validated=%v", policy, network, result.Validated)
+			}
+			if result.FromCache != (policy != Refresh) {
+				t.Fatal("payload source conflated with validation")
+			}
+		})
 	}
 }

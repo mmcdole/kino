@@ -78,6 +78,7 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy, observer 
 	}
 	key := r.Key()
 	published := false
+	networkPublished := false
 	for {
 		s.mu.Lock()
 		if err := s.ctx.Err(); err != nil {
@@ -123,6 +124,10 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy, observer 
 		if ok && !published && observer.Cached != nil {
 			observer.Cached(cached)
 			published = true
+		}
+		if !networkPublished && observer.Network != nil {
+			observer.Network()
+			networkPublished = true
 		}
 		select {
 		case <-ctx.Done():
@@ -206,6 +211,7 @@ func (s *Service) run(r Resource, policy Policy, f *flight) {
 	} else if f.ctx.Err() != nil {
 		err = f.ctx.Err()
 	} else if err == nil {
+		result.Validated = true
 		s.revisions[r.Key()]++
 		result.Revision = s.revisions[r.Key()]
 		if !result.FromCache {

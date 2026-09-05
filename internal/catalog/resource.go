@@ -68,6 +68,9 @@ type Snapshot struct {
 	domain.CachedList
 	Revision  uint64
 	FromCache bool
+	// Validated is true only when this result was checked against the server.
+	// A count check can validate a payload that still comes from cache.
+	Validated bool
 	Stale     bool
 	// Warning means usable data was fetched but could not be persisted.
 	Warning error
@@ -79,7 +82,9 @@ func (s Snapshot) Clone() Snapshot { s.Items = domain.CloneItems(s.Items); retur
 // final return value is always delivered, even if intermediate events coalesce.
 type Progress struct{ Loaded, Total int }
 type Observer struct {
-	Cached   func(Snapshot)
+	Cached func(Snapshot)
+	// Network reports that this caller is waiting on a server request, including shared work.
+	Network  func()
 	Progress func(Progress)
 }
 
