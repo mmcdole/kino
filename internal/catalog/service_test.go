@@ -28,9 +28,9 @@ func (f fakeBackend) GetLibraryItemCount(ctx context.Context, _, _ string) (int,
 	return f.count(ctx)
 }
 
-func testService(t *testing.T, backend Backend) (*Service, *store.LibraryStore) {
+func testService(t *testing.T, backend Backend) (*Service, *store.Store) {
 	t.Helper()
-	cache, err := store.NewLibraryStore("", "", "")
+	cache, err := store.Open("", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,5 +168,39 @@ func TestLastSubscriberCancellationStopsNetworkWork(t *testing.T) {
 	case <-stopped:
 	case <-time.After(time.Second):
 		t.Fatal("orphaned network request")
+	}
+}
+
+type failingCache struct {
+	Cache
+	fail bool
+}
+
+func (c *failingCache) Save(key string, entry domain.CachedList) error {
+	if c.fail {
+		return errors.New("disk full")
+	}
+	return c.Cache.Save(key, entry)
+}
+
+func TestFailedPersistenceCannotMakeOldPayloadFresh(t *testing.T) {
+	var calls atomic.Int32
+	svc, cache := testService(t, fakeBackend{
+		movies: func(context.Context) ([]*domain.MediaItem, int, error) {
+			calls.Add(1)
+			return []*domain.MediaItem{{ID: "new"}, {ID: "second"}}, 2, nil
+		},
+		count: func(context.Context) (int, error) { return 2, nil },
+	})
+	r := Resource{Kind: Movies, ID: "lib", LibraryID: "lib"}
+	cache.Save(r.Key(), domain.CachedList{Items: []domain.ListItem{&domain.MediaItem{ID: "old"}}, FetchedAt: time.Now()})
+	svc.cache = &failingCache{Cache: cache, fail: true}
+	result, err := svc.Load(context.Background(), r, Revalidate, Observer{})
+	if err != nil || result.Warning == nil || result.Items[0].GetID() != "new" {
+		t.Fatalf("usable network result or persistence warning lost: %+v %v", result, err)
+	}
+	next, err := svc.Load(context.Background(), r, Browse, Observer{})
+	if err != nil || next.Items[0].GetID() != "new" || calls.Load() != 2 {
+		t.Fatal("old disk data was accepted as a fresh replacement")
 	}
 }

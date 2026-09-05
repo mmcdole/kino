@@ -21,7 +21,6 @@ type Backend interface {
 type Cache interface {
 	Load(string) (domain.CachedList, bool)
 	Save(string, domain.CachedList) error
-	Remove(...string) error
 	PatchWatchState(string, bool) error
 }
 
@@ -36,23 +35,25 @@ type flight struct {
 }
 
 type Service struct {
-	backend      Backend
-	cache        Cache
-	ctx          context.Context
-	cancel       context.CancelFunc
-	wg           sync.WaitGroup
-	mu           sync.Mutex // request ownership and commit fences; never acquired by the UI
-	mutations    sync.Mutex
-	active       map[string]*flight
-	revisions    map[string]uint64
-	known        map[string]Resource
-	nextObserver uint64
-	now          func() time.Time
+	backend        Backend
+	cache          Cache
+	ctx            context.Context
+	cancel         context.CancelFunc
+	wg             sync.WaitGroup
+	mu             sync.Mutex // request ownership and commit fences; never acquired by the UI
+	mutations      chan struct{}
+	active         map[string]*flight
+	revisions      map[string]uint64
+	known          map[string]Resource
+	cacheRevisions map[string]uint64
+	invalid        map[string]bool
+	nextObserver   uint64
+	now            func() time.Time
 }
 
 func NewService(ctx context.Context, backend Backend, cache Cache) *Service {
 	ctx, cancel := context.WithCancel(ctx)
-	return &Service{backend: backend, cache: cache, ctx: ctx, cancel: cancel, active: make(map[string]*flight), revisions: make(map[string]uint64), known: make(map[string]Resource), now: time.Now}
+	return &Service{backend: backend, cache: cache, ctx: ctx, cancel: cancel, active: make(map[string]*flight), revisions: make(map[string]uint64), known: make(map[string]Resource), cacheRevisions: make(map[string]uint64), invalid: make(map[string]bool), mutations: make(chan struct{}, 1), now: time.Now}
 }
 
 // Close cancels outstanding I/O before the caller closes the cache.
@@ -66,6 +67,12 @@ func (s *Service) fresh(r Resource, entry domain.CachedList) bool {
 // Load is the single browsing path. Cached data, foreground loads, startup
 // sync, and explicit refresh use the same ownership and persistence rules.
 func (s *Service) Load(ctx context.Context, r Resource, policy Policy, observer Observer) (Snapshot, error) {
+	ctx, finish, err := s.operation(ctx, 0)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	defer finish()
+
 	if err := ctx.Err(); err != nil {
 		return Snapshot{}, err
 	}
@@ -86,7 +93,7 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy, observer 
 		}
 		s.known[key] = r
 		entry, ok := s.cache.Load(key)
-		cached := Snapshot{Resource: r, CachedList: entry, Revision: s.revisions[key], FromCache: true, Stale: !s.fresh(r, entry)}
+		cached := Snapshot{Resource: r, CachedList: entry, Revision: s.cacheRevisions[key], FromCache: true, Stale: s.invalid[key] || !s.fresh(r, entry)}
 		if old := s.active[key]; old != nil && old.resource.Version != r.Version {
 			old.cancel()
 			delete(s.active, key)
@@ -103,7 +110,7 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy, observer 
 			return cached, nil
 		}
 		if current == nil {
-			workCtx, cancel := context.WithTimeout(s.ctx, 10*time.Minute)
+			workCtx, cancel := context.WithTimeout(s.ctx, r.Timeout())
 			current = &flight{resource: r, ctx: workCtx, cancel: cancel, done: make(chan struct{}), observers: make(map[uint64]Observer)}
 			s.active[key] = current
 			s.wg.Add(1)
@@ -173,7 +180,7 @@ func (s *Service) run(r Resource, policy Policy, f *flight) {
 	var err error
 	s.mu.Lock()
 	entry, ok := s.cache.Load(r.Key())
-	canCheckCount := policy == Revalidate && ok && s.fresh(r, entry) && (r.Kind == Movies || r.Kind == Shows || r.Kind == Mixed)
+	canCheckCount := policy == Revalidate && ok && !s.invalid[r.Key()] && s.fresh(r, entry) && (r.Kind == Movies || r.Kind == Shows || r.Kind == Mixed)
 	s.mu.Unlock()
 	if canCheckCount {
 		var count int
@@ -204,7 +211,12 @@ func (s *Service) run(r Resource, policy Policy, f *flight) {
 		if !result.FromCache {
 			if saveErr := s.cache.Save(r.Key(), result.CachedList); saveErr != nil {
 				result.Warning = fmt.Errorf("cache write failed: %w", saveErr)
+				s.invalid[r.Key()] = true
 			}
+		}
+		if result.Warning == nil {
+			s.cacheRevisions[r.Key()] = result.Revision
+			delete(s.invalid, r.Key())
 		}
 	}
 	f.result, f.err = result, err
@@ -223,4 +235,27 @@ func libraryType(kind Kind) string {
 	default:
 		return "mixed"
 	}
+}
+
+// operation makes every public operation part of the service lifetime, including
+// cache reconciliation after a canceled remote write. Close waits for all of it.
+func (s *Service) operation(parent context.Context, timeout time.Duration) (context.Context, func(), error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	if err := parent.Err(); err != nil {
+		return nil, nil, err
+	}
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(parent, timeout)
+	} else {
+		ctx, cancel = context.WithCancel(parent)
+	}
+	stop := context.AfterFunc(s.ctx, cancel)
+	s.wg.Add(1)
+	return ctx, func() { stop(); cancel(); s.wg.Done() }, nil
 }

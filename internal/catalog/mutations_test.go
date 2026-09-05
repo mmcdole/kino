@@ -58,3 +58,40 @@ func TestPlaylistFreshnessExpiresWithoutDiscardingOfflineFallback(t *testing.T) 
 		t.Fatalf("lost offline playlist: %+v %v", result, err)
 	}
 }
+
+type watchBackend struct {
+	Backend
+	watch func(context.Context) error
+}
+
+func (b watchBackend) MarkPlayed(ctx context.Context, _ string) error { return b.watch(ctx) }
+
+func TestCloseWaitsForMutationReconciliation(t *testing.T) {
+	started, canceled, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	svc, _ := testService(t, watchBackend{watch: func(ctx context.Context) error {
+		close(started)
+		<-ctx.Done()
+		close(canceled)
+		<-release
+		return ctx.Err()
+	}})
+	result := make(chan error, 1)
+	go func() {
+		_, err := svc.Mutate(context.Background(), Mutation{Kind: Watch, ItemID: "movie", Played: true})
+		result <- err
+	}()
+	<-started
+	closed := make(chan struct{})
+	go func() { svc.Close(); close(closed) }()
+	<-canceled
+	select {
+	case <-closed:
+		t.Fatal("Close returned while mutation still used the cache")
+	default:
+	}
+	close(release)
+	<-closed
+	if err := <-result; !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+}

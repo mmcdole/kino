@@ -82,3 +82,12 @@ type Observer struct {
 	Cached   func(Snapshot)
 	Progress func(Progress)
 }
+
+func (r Resource) Timeout() time.Duration {
+	switch r.Kind {
+	case Movies, Shows, Mixed:
+		return 10 * time.Minute
+	default:
+		return 30 * time.Second
+	}
+}

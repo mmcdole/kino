@@ -43,8 +43,17 @@ type Change struct {
 // success. The change remains explicit when a server may have partly applied a
 // multi-item request: affected views revalidate even when an error is returned.
 func (s *Service) Mutate(ctx context.Context, m Mutation) (Change, error) {
-	s.mutations.Lock()
-	defer s.mutations.Unlock()
+	ctx, finish, startErr := s.operation(ctx, 30*time.Second)
+	if startErr != nil {
+		return Change{}, startErr
+	}
+	defer finish()
+	select {
+	case s.mutations <- struct{}{}:
+	case <-ctx.Done():
+		return Change{}, ctx.Err()
+	}
+	defer func() { <-s.mutations }()
 	if err := ctx.Err(); err != nil {
 		return Change{}, err
 	}
@@ -92,6 +101,13 @@ func (s *Service) Mutate(ctx context.Context, m Mutation) (Change, error) {
 		if err == nil {
 			change.Warning = s.cache.PatchWatchState(m.ItemID, m.Played)
 		}
+		for key, revision := range change.Revisions {
+			if err == nil && change.Warning == nil {
+				s.cacheRevisions[key] = revision
+			} else {
+				s.invalid[key] = true
+			}
+		}
 		return change, err
 	}
 	change.Resources = []Resource{{Kind: Playlists}}
@@ -110,7 +126,13 @@ func (s *Service) Mutate(ctx context.Context, m Mutation) (Change, error) {
 		// remote change. Never renew its age just because we changed it locally.
 		if entry, ok := s.cache.Load(key); ok {
 			entry.FetchedAt = time.Time{}
-			change.Warning = errors.Join(change.Warning, s.cache.Save(key, entry))
+			saveErr := s.cache.Save(key, entry)
+			change.Warning = errors.Join(change.Warning, saveErr)
+			if saveErr != nil {
+				s.invalid[key] = true
+			} else {
+				s.cacheRevisions[key] = s.revisions[key]
+			}
 		}
 	}
 	return change, err
@@ -124,6 +146,12 @@ type Membership struct {
 // PlaylistMembership fetches the same playlist snapshot that the modal will
 // display. Every membership is verified; unknown never means absent.
 func (s *Service) PlaylistMembership(ctx context.Context, itemID string) (Membership, error) {
+	ctx, finish, startErr := s.operation(ctx, 30*time.Second)
+	if startErr != nil {
+		return Membership{}, startErr
+	}
+	defer finish()
+
 	snapshot, err := s.Load(ctx, Resource{Kind: Playlists}, Revalidate, Observer{})
 	if err != nil {
 		return Membership{}, err
