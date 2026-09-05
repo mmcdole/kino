@@ -33,7 +33,6 @@ func (m Model) View() string {
 		return m.renderDeletePlaylistConfirmation()
 	}
 
-	contentHeight := m.Height - ChromeHeight
 	stackLen := m.ColumnStack.Len()
 	layout := m.calculateColumnLayout(m.Width)
 
@@ -51,25 +50,24 @@ func (m Model) View() string {
 		// Add grandparent column if visible (3+ columns, inspector hidden)
 		if layout.grandparentWidth > 0 {
 			grandparentCol := m.ColumnStack.Get(topIdx - 2)
-			grandparentCol.SetSize(layout.grandparentWidth, contentHeight)
+
 			columnViews = append(columnViews, grandparentCol.View())
 		}
 
 		// Add parent column if visible (2+ columns)
 		if layout.parentWidth > 0 {
 			parentCol := m.ColumnStack.Get(topIdx - 1)
-			parentCol.SetSize(layout.parentWidth, contentHeight)
+
 			columnViews = append(columnViews, parentCol.View())
 		}
 
 		// Active column is always visible
-		currentCol.SetSize(layout.activeWidth, contentHeight)
+
 		columnViews = append(columnViews, currentCol.View())
 
 		// Add inspector if visible
 		if layout.inspectorWidth > 0 {
-			m.Inspector.SetSize(layout.inspectorWidth, contentHeight)
-			m.Inspector.SetItem(currentCol.SelectedItem())
+
 			columnViews = append(columnViews, m.Inspector.View())
 		}
 
@@ -156,6 +154,16 @@ func (m Model) renderFooter() string {
 	right := styles.AccentStyle.Render("?") + styles.DimStyle.Render(" help")
 	if n := m.activeSyncCount(); n > 0 {
 		right = RenderSpinner(m.SpinnerFrame) + styles.DimStyle.Render(fmt.Sprintf(" %d syncing", n)) + "   " + right
+	}
+
+	pending := 0
+	for owner := range m.requests.active {
+		if strings.HasPrefix(owner, "mutation:") || strings.HasPrefix(owner, "playback:") {
+			pending++
+		}
+	}
+	if pending > 0 {
+		right = RenderSpinner(m.SpinnerFrame) + styles.DimStyle.Render(fmt.Sprintf(" %d pending", pending)) + "   " + right
 	}
 
 	// Layout: left + centered hints + right

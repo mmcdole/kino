@@ -19,6 +19,7 @@ type PlaylistChange struct {
 
 // PlaylistModal is a modal for managing playlist membership
 type PlaylistModal struct {
+	loading    bool
 	visible    bool
 	item       *domain.MediaItem
 	playlists  []*domain.Playlist
@@ -49,6 +50,7 @@ func NewPlaylistModal() PlaylistModal {
 
 // Show displays the modal with the given playlists and item
 func (m *PlaylistModal) Show(playlists []*domain.Playlist, membership map[string]bool, item *domain.MediaItem) {
+	m.loading = false
 	m.visible = true
 	m.playlists = playlists
 	m.item = item
@@ -65,8 +67,15 @@ func (m *PlaylistModal) Show(playlists []*domain.Playlist, membership map[string
 	}
 }
 
+func (m *PlaylistModal) BeginLoading(item *domain.MediaItem) {
+	m.Show(nil, nil, item)
+	m.loading = true
+}
+func (m PlaylistModal) IsLoading() bool { return m.loading }
+
 // Hide dismisses the modal
 func (m *PlaylistModal) Hide() {
+	m.loading = false
 	m.visible = false
 	m.createMode = false
 	m.newTitle.Blur()
@@ -196,6 +205,9 @@ func (m *PlaylistModal) View() string {
 		return ""
 	}
 
+	if m.loading {
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, styles.ModalStyle.Render("Loading playlists…\n\nEsc: Cancel"))
+	}
 	// Modal width
 	modalWidth := 40
 	if m.width > 0 && m.width < 60 {

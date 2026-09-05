@@ -28,6 +28,7 @@ const (
 // ListColumn is a scrollable list column that can display various content types.
 // It implements the Column interface.
 type ListColumn struct {
+	hasContent bool
 	// Content - unified storage using domain.ListItem interface
 	items []domain.ListItem
 
@@ -239,7 +240,7 @@ func (c *ListColumn) Title() string {
 	return c.title
 }
 
-func (c *ListColumn) SelectedItem() interface{} {
+func (c *ListColumn) SelectedItem() domain.ListItem {
 	count := c.ItemCount()
 	if count == 0 || c.cursor >= count {
 		return nil
@@ -249,13 +250,7 @@ func (c *ListColumn) SelectedItem() interface{} {
 	if idx >= len(c.items) {
 		return nil
 	}
-	// Return the underlying concrete type for type assertions
-	switch v := c.items[idx].(type) {
-	case *domain.Library:
-		return *v // Return value, not pointer for libraries
-	default:
-		return c.items[idx]
-	}
+	return c.items[idx]
 }
 
 func (c *ListColumn) SelectedIndex() int {
@@ -320,7 +315,10 @@ func (c *ListColumn) IsRefreshing() bool {
 	return c.refreshing
 }
 
+func (c *ListColumn) HasContent() bool { return c.hasContent }
+
 func (c *ListColumn) SetItems(items []domain.ListItem) {
+	c.hasContent = true
 	c.loading = false
 	c.loadFailed = false
 	c.cursor = 0
@@ -354,7 +352,7 @@ func (c *ListColumn) SetItems(items []domain.ListItem) {
 func (c *ListColumn) ReplaceItems(items []domain.ListItem) {
 	c.refreshing = false
 
-	if len(c.items) == 0 {
+	if !c.hasContent {
 		c.SetItems(items)
 		return
 	}
@@ -484,8 +482,8 @@ func (c *ListColumn) SelectedLibrary() *domain.Library {
 	if item == nil {
 		return nil
 	}
-	lib := item.(domain.Library)
-	return &lib
+	lib, _ := item.(*domain.Library)
+	return lib
 }
 
 // SelectedShow returns the selected show (if in shows column)

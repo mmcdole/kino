@@ -3,6 +3,7 @@ package tui
 import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mmcdole/kino/internal/catalog"
 	"github.com/mmcdole/kino/internal/tui/components"
 )
 
@@ -12,6 +13,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Ctrl+C always quits, even inside modals and text inputs
 	if msg.String() == "ctrl+c" {
+		m.requests.cancel()
 		return m, tea.Quit
 	}
 
@@ -26,6 +28,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, Keys.Confirm):
 			// User confirmed logout
+			m.loggingOut = true
 			return m, LogoutCmd()
 		case key.Matches(msg, Keys.Deny):
 			// User cancelled
@@ -41,7 +44,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				id := m.pendingDeletePlaylistID
 				m.pendingDeletePlaylistID = ""
 				m.pendingDeletePlaylistName = ""
-				return m, DeletePlaylistCmd(m.PlaylistService, id)
+				return m, m.beginMutation(catalog.Mutation{Kind: catalog.DeletePlaylist, PlaylistID: id})
 			}
 		case key.Matches(msg, Keys.Deny), key.Matches(msg, Keys.Escape):
 			m.State = StateBrowsing
@@ -59,6 +62,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Global keys
 	switch {
 	case key.Matches(msg, Keys.Quit):
+		m.requests.cancel()
 		return m, tea.Quit
 	case key.Matches(msg, Keys.Help):
 		return m.handleHelp()
@@ -192,7 +196,7 @@ func (m Model) handleDrillIn() (tea.Model, tea.Cmd) {
 		if item := top.SelectedMediaItem(); item != nil {
 			return m, tea.Batch(
 				m.notify(NoticeInfo, "Launching: "+item.Title),
-				PlayItemCmd(m.PlaybackSvc, *item, item.ShouldResume()),
+				m.beginPlayback(*item, item.ShouldResume()),
 			)
 		}
 		return m, nil
@@ -213,7 +217,7 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 	if item := top.SelectedMediaItem(); item != nil {
 		return m, tea.Batch(
 			m.notify(NoticeInfo, "Launching: "+item.Title),
-			PlayItemCmd(m.PlaybackSvc, *item, item.ShouldResume()),
+			m.beginPlayback(*item, item.ShouldResume()),
 		)
 	}
 	return m, nil
@@ -244,105 +248,37 @@ func (m Model) handleSort() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleRefresh performs context-sensitive refresh with cascade invalidation.
-// At library level: refresh selected library (cascade to seasons/episodes)
-// At show level: refresh selected show (cascade to seasons/episodes)
-// At season level: refresh selected season (cascade to episodes)
-// At episode level: refresh current season's episodes
+// Refresh uses the same resource path as browsing, preserving visible data.
 func (m Model) handleRefresh() (tea.Model, tea.Cmd) {
-	top := m.ColumnStack.Top()
-	if top == nil {
+	r, ok := m.topResource()
+	if !ok {
 		return m, nil
 	}
-
-	switch top.ColumnType() {
-	case components.ColumnTypeLibraries:
-		// Refresh selected library
-		lib := top.SelectedLibrary()
-		if lib == nil || lib.ID == playlistsLibraryID {
-			return m, nil
+	if r.Kind == catalog.Libraries {
+		lib := m.ColumnStack.Top().SelectedLibrary()
+		if lib == nil {
+			return m, m.loadResource(r, catalog.Refresh, false)
 		}
-		// Already syncing: don't start a second chain or double-count
-		if state, ok := m.LibraryStates[lib.ID]; ok && state.Status == components.StatusSyncing {
-			return m, nil
+		if lib.ID == playlistsLibraryID {
+			r = catalog.Resource{Kind: catalog.Playlists}
+		} else {
+			r = catalog.LibraryResource(*lib)
 		}
-		m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
-		m.updateLibraryStates()
-		// Invalidate then sync
-		m.LibraryService.InvalidateLibrary(lib.ID)
-		return m, SyncLibraryCmd(m.LibraryService, *lib, m.SyncGen)
-
-	case components.ColumnTypeMovies, components.ColumnTypeMixed, components.ColumnTypeShows:
-		return m.refreshLibraryContent(top)
-
-	case components.ColumnTypeSeasons:
-		// Refresh current show's seasons (invalidate seasons + episodes, re-fetch seasons)
-		m.LibraryService.InvalidateShow(m.currentLibID, m.currentShowID)
-		top.SetRefreshing(true)
-		return m, LoadSeasonsCmd(m.LibraryService, m.currentLibID, m.currentShowID)
-
-	case components.ColumnTypeEpisodes:
-		// Refresh current season's episodes
-		seasonCol := m.ColumnStack.Get(m.ColumnStack.Len() - 2)
-		if seasonCol == nil {
-			return m, nil
-		}
-		season := seasonCol.SelectedSeason()
-		if season == nil {
-			return m, nil
-		}
-		m.LibraryService.InvalidateSeason(m.currentLibID, m.currentShowID, season.ID)
-		top.SetRefreshing(true)
-		return m, LoadEpisodesCmd(m.LibraryService, m.currentLibID, m.currentShowID, season.ID)
-
-	case components.ColumnTypePlaylists:
-		// Refresh playlists
-		top.SetRefreshing(true)
-		return m, LoadPlaylistsCmd(m.PlaylistService)
-
-	case components.ColumnTypePlaylistItems:
-		// Refresh playlist items
-		if m.currentPlaylistID == "" {
-			return m, nil
-		}
-		top.SetRefreshing(true)
-		return m, LoadPlaylistItemsCmd(m.PlaylistService, m.currentPlaylistID)
+		return m, m.loadResource(r, catalog.Refresh, true)
 	}
-
-	return m, nil
+	return m, m.loadResource(r, catalog.Refresh, false)
 }
 
-// refreshLibraryContent refreshes movies, shows, or mixed content in the current library
-func (m Model) refreshLibraryContent(top *components.ListColumn) (Model, tea.Cmd) {
-	libCol := m.libraryColumn()
-	if libCol == nil {
-		return m, nil
-	}
-	lib := libCol.SelectedLibrary()
-	if lib == nil {
-		return m, nil
-	}
-	m.LibraryService.InvalidateLibrary(lib.ID)
-	top.SetRefreshing(true)
-
-	switch lib.Type {
-	case "movie":
-		return m, LoadMoviesCmd(m.LibraryService, *lib)
-	case "show":
-		return m, LoadShowsCmd(m.LibraryService, *lib)
-	default:
-		return m, LoadMixedLibraryCmd(m.LibraryService, *lib)
-	}
-}
-
-// handleRefreshAll refreshes all libraries. Unlike before, the navigation
-// stack is preserved: the LibrariesLoadedMsg handler updates the root column
-// in place and reloads the visible view, only resetting when the library the
-// user is inside no longer exists.
 func (m Model) handleRefreshAll() (tea.Model, tea.Cmd) {
-	m.LibraryService.InvalidateAll()
-	m.PlaylistService.InvalidatePlaylists()
-	return m, RefreshLibrariesCmd(m.LibraryService)
+	m.clearNavPlan()
+	cmds := []tea.Cmd{m.loadResource(catalog.Resource{Kind: catalog.Libraries}, catalog.Refresh, false)}
+	for i := 1; i < m.ColumnStack.Len(); i++ {
+		r := m.resources[m.ColumnStack.Get(i).ContentID()]
+		if r.Kind == catalog.Seasons || r.Kind == catalog.Episodes || r.Kind == catalog.PlaylistItems {
+			cmds = append(cmds, m.loadResource(r, catalog.Refresh, false))
+		}
+	}
+	return m, tea.Batch(cmds...)
 }
 
 // handleMarkWatched marks the selected item as watched
@@ -355,7 +291,8 @@ func (m Model) handleMarkWatched() (tea.Model, tea.Cmd) {
 	if item == nil {
 		return m.notAvailableHere("Mark watched (w)")
 	}
-	return m, MarkWatchedCmd(m.PlaybackSvc, item.ID, item.Title)
+	r, _ := m.topResource()
+	return m, m.beginMutation(catalog.Mutation{Kind: catalog.Watch, ItemID: item.ID, Title: item.Title, LibraryID: r.LibraryID, Played: true})
 }
 
 // handleMarkUnwatched marks the selected item as unwatched
@@ -368,7 +305,8 @@ func (m Model) handleMarkUnwatched() (tea.Model, tea.Cmd) {
 	if item == nil {
 		return m.notAvailableHere("Mark unwatched (u)")
 	}
-	return m, MarkUnwatchedCmd(m.PlaybackSvc, item.ID, item.Title)
+	r, _ := m.topResource()
+	return m, m.beginMutation(catalog.Mutation{Kind: catalog.Watch, ItemID: item.ID, Title: item.Title, LibraryID: r.LibraryID})
 }
 
 // handlePlay plays the selected item from the beginning
@@ -383,7 +321,7 @@ func (m Model) handlePlay() (tea.Model, tea.Cmd) {
 	}
 	return m, tea.Batch(
 		m.notify(NoticeInfo, "Launching: "+item.Title),
-		PlayItemCmd(m.PlaybackSvc, *item, false),
+		m.beginPlayback(*item, false),
 	)
 }
 
@@ -413,13 +351,13 @@ func (m Model) handlePlaylistModal() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	item := top.SelectedMediaItem()
-	if item == nil || m.PlaylistService == nil {
+	if item == nil || m.Catalog == nil {
 		return m.notAvailableHere("Playlists (space)")
 	}
-	return m, tea.Batch(
-		m.notify(NoticeInfo, "Loading playlists..."),
-		LoadPlaylistModalDataCmd(m.PlaylistService, item),
-	)
+	m.PlaylistModal.BeginLoading(item)
+	m.PlaylistModal.SetSize(m.Width, m.Height)
+	req := m.requests.begin("playlist-modal", catalog.Resource{}, catalog.Browse)
+	return m, LoadPlaylistModalDataCmd(m.Catalog, req, *item)
 }
 
 // handleDelete handles deletion of playlists or playlist items
@@ -431,8 +369,8 @@ func (m Model) handleDelete() (tea.Model, tea.Cmd) {
 	switch top.ColumnType() {
 	case components.ColumnTypePlaylistItems:
 		item := top.SelectedMediaItem()
-		if item != nil && m.currentPlaylistID != "" {
-			return m, RemoveFromPlaylistCmd(m.PlaylistService, m.currentPlaylistID, item.ID)
+		if r, ok := m.topResource(); item != nil && ok {
+			return m, m.beginMutation(catalog.Mutation{Kind: catalog.RemoveFromPlaylist, PlaylistID: r.ID, ItemID: item.ID})
 		}
 	case components.ColumnTypePlaylists:
 		// Deleting a playlist is irreversible and server-side: confirm first
@@ -474,11 +412,13 @@ func (m Model) handleGlobalSearchInput(msg tea.KeyMsg) (Model, tea.Cmd) {
 	}
 
 	if m.GlobalSearch.QueryChanged() {
-		query := m.GlobalSearch.Query()
-		results := m.SearchSvc.FilterLocal(query, m.Libraries)
-		m.GlobalSearch.SetResults(results)
+		cmds = append(cmds, m.scheduleSearch())
 	}
 
+	if !m.GlobalSearch.IsVisible() {
+		m.requests.stop("search")
+		m.searchSeq++
+	}
 	if selected {
 		if result := m.GlobalSearch.Selected(); result != nil {
 			m.GlobalSearch.Hide()
@@ -507,6 +447,13 @@ func (m Model) handleSortModalInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 
 // handlePlaylistModalInput handles input when playlist modal is visible
 func (m Model) handlePlaylistModalInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
+	if m.PlaylistModal.IsLoading() {
+		if msg.String() == "esc" {
+			m.cancelPendingModal()
+		}
+		return true, m, nil
+	}
+
 	handled, shouldClose, shouldCreate := m.PlaylistModal.HandleKeyMsg(msg)
 	if !handled {
 		return false, m, nil
@@ -534,12 +481,12 @@ func (m Model) applyPlaylistCreate() (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	cmds := []tea.Cmd{CreatePlaylistCmd(m.PlaylistService, title, []string{item.ID})}
+	cmds := []tea.Cmd{m.beginMutation(catalog.Mutation{Kind: catalog.CreatePlaylist, Title: title, ItemIDs: []string{item.ID}})}
 	for _, change := range changes {
 		if change.Add {
-			cmds = append(cmds, AddToPlaylistCmd(m.PlaylistService, change.PlaylistID, []string{item.ID}))
+			cmds = append(cmds, m.beginMutation(catalog.Mutation{Kind: catalog.AddToPlaylist, PlaylistID: change.PlaylistID, ItemIDs: []string{item.ID}}))
 		} else {
-			cmds = append(cmds, RemoveFromPlaylistCmd(m.PlaylistService, change.PlaylistID, item.ID))
+			cmds = append(cmds, m.beginMutation(catalog.Mutation{Kind: catalog.RemoveFromPlaylist, PlaylistID: change.PlaylistID, ItemID: item.ID}))
 		}
 	}
 	return m, tea.Batch(cmds...)
@@ -558,9 +505,9 @@ func (m Model) applyPlaylistChanges() (Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	for _, change := range changes {
 		if change.Add {
-			cmds = append(cmds, AddToPlaylistCmd(m.PlaylistService, change.PlaylistID, []string{item.ID}))
+			cmds = append(cmds, m.beginMutation(catalog.Mutation{Kind: catalog.AddToPlaylist, PlaylistID: change.PlaylistID, ItemIDs: []string{item.ID}}))
 		} else {
-			cmds = append(cmds, RemoveFromPlaylistCmd(m.PlaylistService, change.PlaylistID, item.ID))
+			cmds = append(cmds, m.beginMutation(catalog.Mutation{Kind: catalog.RemoveFromPlaylist, PlaylistID: change.PlaylistID, ItemID: item.ID}))
 		}
 	}
 	return m, tea.Batch(cmds...)
@@ -576,7 +523,7 @@ func (m Model) handleInputModalInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 		title := m.InputModal.Value()
 		m.InputModal.Hide()
 		if title != "" {
-			return true, m, CreatePlaylistCmd(m.PlaylistService, title, []string{})
+			return true, m, m.beginMutation(catalog.Mutation{Kind: catalog.CreatePlaylist, Title: title})
 		}
 		return true, m, nil
 	}

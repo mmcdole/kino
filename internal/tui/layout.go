@@ -71,6 +71,7 @@ func (m *Model) updateLayout() {
 
 	contentHeight := m.Height - ChromeHeight
 	m.GlobalSearch.SetSize(m.Width, m.Height)
+	m.PlaylistModal.SetSize(m.Width, m.Height)
 
 	stackLen := m.ColumnStack.Len()
 	if stackLen == 0 {

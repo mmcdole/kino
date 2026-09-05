@@ -15,6 +15,7 @@ import (
 
 // GlobalSearch is the fuzzy search modal component
 type GlobalSearch struct {
+	loading   bool
 	input     textinput.Model
 	results   []search.FilterResult
 	cursor    int
@@ -43,6 +44,7 @@ func NewGlobalSearch() GlobalSearch {
 
 // Show makes the global search visible and focuses the input
 func (o *GlobalSearch) Show() {
+	o.loading = false
 	o.visible = true
 	o.input.Focus()
 	o.input.SetValue("")
@@ -67,9 +69,17 @@ func (o GlobalSearch) IsVisible() bool {
 
 // SetResults sets the search results with match highlighting data
 func (o *GlobalSearch) SetResults(results []search.FilterResult) {
+	o.loading = false
 	o.results = results
 	o.cursor = 0
 	o.offset = 0
+}
+
+func (o *GlobalSearch) SetLoading(loading bool) {
+	o.loading = loading
+	if loading {
+		o.results = nil
+	}
 }
 
 // SetSize updates the component dimensions
@@ -290,6 +300,10 @@ func highlightMatches(text string, matchedIndexes []int, selected bool) string {
 
 // renderResults renders the search results
 func (o GlobalSearch) renderResults(b *strings.Builder, modalWidth, maxResults int) {
+	if o.loading {
+		b.WriteString(styles.DimStyle.Render("Searching…"))
+		return
+	}
 	if len(o.results) == 0 && o.input.Value() != "" {
 		b.WriteString(styles.DimStyle.Render("No matches found"))
 		return

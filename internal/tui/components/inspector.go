@@ -25,7 +25,7 @@ type inspectorContent struct {
 
 // Inspector displays detailed metadata for the selected item
 type Inspector struct {
-	item          interface{}
+	item          domain.ListItem
 	width         int
 	height        int
 	offset        int // scroll offset
@@ -41,7 +41,7 @@ func NewInspector() Inspector {
 }
 
 // SetItem sets the item to display
-func (i *Inspector) SetItem(item interface{}) {
+func (i *Inspector) SetItem(item domain.ListItem) {
 	i.item = item
 	i.offset = 0 // Reset scroll on item change
 }
@@ -172,8 +172,6 @@ func (i Inspector) renderInspector(width int) inspectorContent {
 		return inspectorContent{header: i.renderSeasonInspector(*v, width)}
 	case *domain.Library:
 		return inspectorContent{body: i.renderLibraryInspector(v, width)}
-	case domain.Library:
-		return inspectorContent{body: i.renderLibraryInspector(&v, width)}
 	case *domain.Playlist:
 		return inspectorContent{body: i.renderPlaylistInspector(*v, width)}
 	default:

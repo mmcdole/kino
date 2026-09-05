@@ -31,6 +31,7 @@ type Mutation struct {
 }
 
 type Change struct {
+	Revisions map[string]uint64
 	Mutation  Mutation
 	Applied   bool
 	Playlist  *domain.Playlist
@@ -47,7 +48,7 @@ func (s *Service) Mutate(ctx context.Context, m Mutation) (Change, error) {
 	if err := ctx.Err(); err != nil {
 		return Change{}, err
 	}
-	change := Change{Mutation: m}
+	change := Change{Mutation: m, Revisions: make(map[string]uint64)}
 	var err error
 	switch m.Kind {
 	case Watch:
@@ -73,16 +74,21 @@ func (s *Service) Mutate(ctx context.Context, m Mutation) (Change, error) {
 	if m.Kind == Watch {
 		// Watch data can appear in several projections. Fence active reads before
 		// patching, so a response fetched before this write cannot undo it.
-		for key, f := range s.active {
-			if f.resource.Kind == Libraries || f.resource.Kind == Playlists {
+		for key, r := range s.known {
+			if r.Kind == Libraries || r.Kind == Playlists {
 				continue
 			}
-			if m.LibraryID != "" && f.resource.Kind != PlaylistItems && f.resource.LibraryID != m.LibraryID {
+			if m.LibraryID != "" && r.Kind != PlaylistItems && r.LibraryID != m.LibraryID {
 				continue
 			}
-			f.cancel()
-			delete(s.active, key)
+			if f := s.active[key]; f != nil {
+				f.cancel()
+				delete(s.active, key)
+			}
+			s.revisions[key]++
+			change.Revisions[key] = s.revisions[key]
 		}
+
 		if err == nil {
 			change.Warning = s.cache.PatchWatchState(m.ItemID, m.Played)
 		}
@@ -99,6 +105,7 @@ func (s *Service) Mutate(ctx context.Context, m Mutation) (Change, error) {
 			delete(s.active, key)
 		}
 		s.revisions[key]++
+		change.Revisions[key] = s.revisions[key]
 		// Retain usable data, but force revalidation after a known or uncertain
 		// remote change. Never renew its age just because we changed it locally.
 		if entry, ok := s.cache.Load(key); ok {

@@ -45,13 +45,14 @@ type Service struct {
 	mutations    sync.Mutex
 	active       map[string]*flight
 	revisions    map[string]uint64
+	known        map[string]Resource
 	nextObserver uint64
 	now          func() time.Time
 }
 
 func NewService(ctx context.Context, backend Backend, cache Cache) *Service {
 	ctx, cancel := context.WithCancel(ctx)
-	return &Service{backend: backend, cache: cache, ctx: ctx, cancel: cancel, active: make(map[string]*flight), revisions: make(map[string]uint64), now: time.Now}
+	return &Service{backend: backend, cache: cache, ctx: ctx, cancel: cancel, active: make(map[string]*flight), revisions: make(map[string]uint64), known: make(map[string]Resource), now: time.Now}
 }
 
 // Close cancels outstanding I/O before the caller closes the cache.
@@ -80,8 +81,16 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy, observer 
 			s.mu.Unlock()
 			return Snapshot{}, err
 		}
+		if known, ok := s.known[key]; ok && known.Version > r.Version {
+			r.Version = known.Version
+		}
+		s.known[key] = r
 		entry, ok := s.cache.Load(key)
 		cached := Snapshot{Resource: r, CachedList: entry, Revision: s.revisions[key], FromCache: true, Stale: !s.fresh(r, entry)}
+		if old := s.active[key]; old != nil && old.resource.Version != r.Version {
+			old.cancel()
+			delete(s.active, key)
+		}
 		if policy == Refresh {
 			if old := s.active[key]; old != nil {
 				old.cancel()

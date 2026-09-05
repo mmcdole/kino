@@ -12,12 +12,11 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mmcdole/kino/internal/catalog"
 	"github.com/mmcdole/kino/internal/config"
-	"github.com/mmcdole/kino/internal/library"
 	"github.com/mmcdole/kino/internal/log"
 	"github.com/mmcdole/kino/internal/mediaserver"
 	"github.com/mmcdole/kino/internal/player"
-	"github.com/mmcdole/kino/internal/playlist"
 	"github.com/mmcdole/kino/internal/search"
 	"github.com/mmcdole/kino/internal/store"
 	"github.com/mmcdole/kino/internal/tui"
@@ -91,14 +90,12 @@ func run() error {
 	// Create launcher (uses configured player or auto-detects)
 	launcher := player.NewLauncher(cfg.Player.Command, cfg.Player.Args, cfg.Player.StartFlag, logger)
 
-	// Create services
-	librarySvc := library.NewService(client, libraryStore, logger)
-	playlistSvc := playlist.NewService(client, libraryStore, logger)
-	searchSvc := search.NewService(libraryStore)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	catalogSvc := catalog.NewService(ctx, client, libraryStore)
+	defer catalogSvc.Close()
 	playbackSvc := player.NewService(launcher, client, logger)
-
-	// Create TUI model with Store and concrete service types
-	model := tui.NewModel(libraryStore, librarySvc, playlistSvc, searchSvc, playbackSvc, cfg.UI)
+	model := tui.NewModel(ctx, catalogSvc, playbackSvc, search.NewIndex(), cfg.UI)
 
 	// Run the TUI
 	p := tea.NewProgram(
@@ -109,11 +106,22 @@ func run() error {
 
 	logger.Info("starting TUI")
 
-	if _, err := p.Run(); err != nil {
+	result, err := p.Run()
+	if err != nil {
 		logger.Error("TUI error", "error", err)
 		return fmt.Errorf("TUI error: %w", err)
 	}
 
+	cancel()
+	catalogSvc.Close()
+	if final, ok := result.(tui.Model); ok && final.LoggedOut {
+		if err := libraryStore.Close(); err != nil {
+			return err
+		}
+		if err := config.ClearCache(); err != nil {
+			return err
+		}
+	}
 	logger.Info("shutting down")
 	return nil
 }

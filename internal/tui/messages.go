@@ -2,136 +2,55 @@ package tui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mmcdole/kino/internal/catalog"
 	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/search"
 )
 
-// Message types for the TUI
+type loadStage uint8
 
-// ErrMsg represents an error
-type ErrMsg struct {
-	Err     error
-	Context string
+const (
+	loadCached loadStage = iota
+	loadProgress
+	loadFinished
+)
+
+type ResourceMsg struct {
+	Request  request
+	Stage    loadStage
+	Snapshot catalog.Snapshot
+	Progress catalog.Progress
+	Err      error
+	Next     tea.Cmd
 }
 
-// Error implements the error interface
-func (e ErrMsg) Error() string {
-	if e.Context != "" {
-		return e.Context + ": " + e.Err.Error()
-	}
-	return e.Err.Error()
+type ActionMsg struct {
+	Request  request
+	Change   catalog.Change
+	Item     domain.MediaItem
+	Playback bool
+	Err      error
 }
 
-// LibrariesLoadedMsg signals that libraries have been loaded
-type LibrariesLoadedMsg struct {
-	Libraries []domain.Library
-	Refresh   bool // true for refresh-all: keep the navigation stack if possible
+type PlaylistModalDataMsg struct {
+	Request    request
+	Membership catalog.Membership
+	Item       domain.MediaItem
+	Err        error
 }
 
-// MoviesLoadedMsg signals that movies have been loaded
-type MoviesLoadedMsg struct {
-	Movies    []*domain.MediaItem
-	LibraryID string
-}
-
-// ShowsLoadedMsg signals that shows have been loaded
-type ShowsLoadedMsg struct {
-	Shows     []*domain.Show
-	LibraryID string
-}
-
-// MixedLibraryLoadedMsg signals that mixed library content has been loaded
-type MixedLibraryLoadedMsg struct {
-	Items     []domain.ListItem
-	LibraryID string
-}
-
-// SeasonsLoadedMsg signals that seasons have been loaded
-type SeasonsLoadedMsg struct {
-	Seasons []*domain.Season
-	ShowID  string
-}
-
-// EpisodesLoadedMsg signals that episodes have been loaded
-type EpisodesLoadedMsg struct {
-	Episodes []*domain.MediaItem
-	SeasonID string
-}
-
-// PlaybackStartedMsg signals that playback has started (player launched)
-type PlaybackStartedMsg struct {
-	Item domain.MediaItem
-}
-
-// MarkWatchedMsg signals a request to mark an item as watched
-type MarkWatchedMsg struct {
-	ItemID string
-	Title  string
-}
-
-// MarkUnwatchedMsg signals a request to mark an item as unwatched
-type MarkUnwatchedMsg struct {
-	ItemID string
-	Title  string
-}
-
-// TickMsg is a general tick message for animations
 type TickMsg struct{}
-
-// LibrarySyncProgressMsg sent for each chunk during streaming sync
-type LibrarySyncProgressMsg struct {
-	LibraryID   string
-	LibraryType string
-	Generation  int // Sync generation; stale generations are dropped
-	Loaded      int
-	Total       int
-	Done        bool
-	FromCache   bool
-	Error       error
-	NextCmd     tea.Cmd // Continuation command for streaming
-}
-
-// ClearLibraryStatusMsg signals that the success indicator should be removed
 type ClearLibraryStatusMsg struct {
 	LibraryID string
+	Revision  uint64
 }
-
-// LogoutCompleteMsg signals that logout has been completed
-type LogoutCompleteMsg struct {
-	Error error
+type LogoutCompleteMsg struct{ Error error }
+type SearchDebounceMsg struct {
+	Seq   uint64
+	Query string
 }
-
-// PlaylistsLoadedMsg signals that playlists have been loaded
-type PlaylistsLoadedMsg struct {
-	Playlists []*domain.Playlist
+type SearchResultsMsg struct {
+	Request request
+	Results []search.FilterResult
 }
-
-// PlaylistItemsLoadedMsg signals that playlist items have been loaded
-type PlaylistItemsLoadedMsg struct {
-	Items      []*domain.MediaItem
-	PlaylistID string
-}
-
-// PlaylistUpdatedMsg signals that a playlist was updated (item added/removed)
-type PlaylistUpdatedMsg struct {
-	PlaylistID string
-	Error      error
-}
-
-// PlaylistCreatedMsg signals that a new playlist was created
-type PlaylistCreatedMsg struct {
-	Playlist *domain.Playlist
-	Error    error
-}
-
-// PlaylistDeletedMsg signals that a playlist was deleted
-type PlaylistDeletedMsg struct {
-	PlaylistID string
-	Error      error
-}
-
-// PlaylistModalDataMsg contains data for the playlist modal
-type PlaylistModalDataMsg struct {
-	Playlists  []*domain.Playlist
-	Membership map[string]bool
-	Item       *domain.MediaItem
-}
+type SearchIndexChangedMsg struct{}

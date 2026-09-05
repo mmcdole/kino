@@ -1,19 +1,16 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"log/slog"
-	"time"
-
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mmcdole/kino/internal/catalog"
 	"github.com/mmcdole/kino/internal/config"
 	"github.com/mmcdole/kino/internal/domain"
-	"github.com/mmcdole/kino/internal/library"
-	"github.com/mmcdole/kino/internal/player"
-	"github.com/mmcdole/kino/internal/playlist"
 	"github.com/mmcdole/kino/internal/search"
 	"github.com/mmcdole/kino/internal/tui/components"
+	"time"
 )
 
 // authFailedStatusMsg tells the user how to recover from a revoked/expired
@@ -69,494 +66,345 @@ func (m *Model) allLibraryEntries() []domain.Library {
 	return append(m.Libraries, playlistsLibraryEntry())
 }
 
-// Model is the main Bubble Tea model for the application
 type Model struct {
-	// Application state
-	State ApplicationState
-	Ready bool
-
-	// Cache reads (View-safe)
-	Store domain.Store
-
-	// Network coordination (concrete types, not interfaces)
-	LibraryService  *library.Service
-	PlaylistService *playlist.Service
-
-	// Other services
-	SearchSvc   *search.Service
-	PlaybackSvc *player.Service
-
-	// UI Components - Miller Columns
-	ColumnStack   *ColumnStack             // Stack of navigable list columns
-	Inspector     components.Inspector     // View projection (always shows details for middle column selection)
-	GlobalSearch  components.GlobalSearch  // Search modal
-	SortModal     components.SortModal     // Sort field selector
-	PlaylistModal components.PlaylistModal // Playlist management modal
-	InputModal    components.InputModal    // Simple text input modal
-
-	// Data
-	Libraries []domain.Library
-
-	// Dimensions
-	Width  int
-	Height int
-
-	// UI state
-	SpinnerFrame  int
-	ShowInspector bool // Toggle inspector visibility (default true)
-
-	// Footer notification (single slot; see notice.go for the rules)
-	notice    Notice
-	noticeSeq int
-
-	// Sync state
-	LibraryStates map[string]components.LibrarySyncState // Tracks progress per library
-	SyncGen       int                                    // Current sync generation; messages from older generations are dropped
-
-	// Navigation plan for deep linking
-	navPlan *NavPlan
-
-	// Playlist navigation context (when viewing playlist items)
-	currentPlaylistID string
-
-	// Pending playlist deletion awaiting confirmation
-	pendingDeletePlaylistID   string
-	pendingDeletePlaylistName string
-
-	// Navigation context for hierarchical cache keys (cascade invalidation)
-	currentLibID  string // Set when entering a library
-	currentShowID string // Set when entering a show
-
-	// UI preferences from config
-	UIConfig config.UIConfig
+	State                                              ApplicationState
+	Ready                                              bool
+	Catalog                                            Catalog
+	PlaybackSvc                                        Playback
+	SearchIndex                                        *search.Index
+	ColumnStack                                        *ColumnStack
+	Inspector                                          components.Inspector
+	GlobalSearch                                       components.GlobalSearch
+	SortModal                                          components.SortModal
+	PlaylistModal                                      components.PlaylistModal
+	InputModal                                         components.InputModal
+	Libraries                                          []domain.Library
+	Width, Height                                      int
+	SpinnerFrame                                       int
+	ShowInspector                                      bool
+	notice                                             Notice
+	noticeSeq                                          int
+	LibraryStates                                      map[string]components.LibrarySyncState
+	navPlan                                            *NavPlan
+	pendingDeletePlaylistID, pendingDeletePlaylistName string
+	UIConfig                                           config.UIConfig
+	requests                                           *requests
+	resources                                          map[string]catalog.Resource
+	revisions                                          map[string]uint64
+	loaded                                             map[string]bool
+	backgroundStarted                                  map[string]uint64
+	searchSeq                                          uint64
+	LoggedOut                                          bool
+	loggingOut                                         bool
 }
 
-// NewModel creates a new application model
-func NewModel(
-	store domain.Store,
-	librarySvc *library.Service,
-	playlistSvc *playlist.Service,
-	searchSvc *search.Service,
-	playbackSvc *player.Service,
-	uiConfig config.UIConfig,
-) Model {
-	return Model{
-		State:           StateBrowsing,
-		Store:           store,
-		LibraryService:  librarySvc,
-		PlaylistService: playlistSvc,
-		SearchSvc:       searchSvc,
-		PlaybackSvc:     playbackSvc,
-		ColumnStack:     NewColumnStack(),
-		Inspector:       components.NewInspector(),
-		GlobalSearch:    components.NewGlobalSearch(),
-		PlaylistModal:   components.NewPlaylistModal(),
-		InputModal:      components.NewInputModal(),
-		LibraryStates:   make(map[string]components.LibrarySyncState),
-		ShowInspector:   false, // Inspector hidden by default - show 3 nav columns
-		UIConfig:        uiConfig,
-	}
+func NewModel(ctx context.Context, svc Catalog, playback Playback, index *search.Index, ui config.UIConfig) Model {
+	m := Model{Catalog: svc, PlaybackSvc: playback, SearchIndex: index, UIConfig: ui,
+		ColumnStack: NewColumnStack(), Inspector: components.NewInspector(), GlobalSearch: components.NewGlobalSearch(),
+		PlaylistModal: components.NewPlaylistModal(), InputModal: components.NewInputModal(),
+		LibraryStates: make(map[string]components.LibrarySyncState), requests: newRequests(ctx),
+		resources: make(map[string]catalog.Resource), revisions: make(map[string]uint64), backgroundStarted: make(map[string]uint64)}
+	root := catalog.Resource{Kind: catalog.Libraries}
+	col := components.NewListColumn(components.ColumnTypeLibraries, "Libraries")
+	col.SetContentID(root.Key())
+	col.SetLoading(true)
+	col.SetShowWatchStatus(ui.ShowWatchStatus)
+	col.SetShowLibraryCounts(ui.ShowLibraryCounts)
+	m.ColumnStack.Reset(col)
+	m.resources[root.Key()] = root
+	return m
 }
-
-// Init initializes the application
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(
-		LoadLibrariesCmd(m.LibraryService),
-		TickCmd(100*time.Millisecond),
-	)
+	return tea.Batch(m.loadResource(catalog.Resource{Kind: catalog.Libraries}, catalog.Revalidate, false), TickCmd(100*time.Millisecond))
 }
 
-// Update handles all messages
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmds []tea.Cmd
-
+	if m.loggingOut {
+		if result, ok := msg.(LogoutCompleteMsg); ok {
+			if result.Error != nil {
+				m.loggingOut = false
+				m.State = StateBrowsing
+				return m, m.notifyError("Logout failed", result.Error)
+			}
+			m.LoggedOut = true
+			m.requests.cancel()
+			return m, tea.Quit
+		}
+		return m, nil
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.Width = msg.Width
-		m.Height = msg.Height
-		m.Ready = true
+		m.Width, m.Height, m.Ready = msg.Width, msg.Height, true
 		m.updateLayout()
 		return m, nil
-
 	case tea.KeyMsg:
 		return m.handleKeyMsg(msg)
-
 	case TickMsg:
 		m.SpinnerFrame++
-		// Always propagate spinner frame - columns render spinner only when their loading flag is true
 		m.ColumnStack.UpdateSpinnerFrame(m.SpinnerFrame)
 		return m, TickCmd(100 * time.Millisecond)
-
-	case LibrariesLoadedMsg:
-		m.Libraries = msg.Libraries
-
-		// New sync generation: any still-running chains from before this
-		// reload are stale and their messages will be dropped
-		m.SyncGen++
-
-		// Initialize all states to Syncing (including playlists)
-		m.LibraryStates = make(map[string]components.LibrarySyncState)
-		for _, lib := range msg.Libraries {
-			m.LibraryStates[lib.ID] = components.LibrarySyncState{Status: components.StatusSyncing}
-		}
-		m.LibraryStates[playlistsLibraryID] = components.LibrarySyncState{Status: components.StatusSyncing}
-		m.Inspector.SetLibraryStates(m.LibraryStates)
-
-		syncCmds := []tea.Cmd{
-			SyncAllLibrariesCmd(m.LibraryService, msg.Libraries, m.SyncGen),
-			SyncPlaylistsCmd(m.PlaylistService, playlistsLibraryID, m.SyncGen),
-		}
-
-		// Refresh-all with the user somewhere deeper: keep their position.
-		// Update the root column in place and reload the top column's
-		// content in the background instead of resetting to the root.
-		if msg.Refresh && m.ColumnStack.Len() > 1 {
-			libCol := m.libraryColumn()
-			var drilledID string
-			if libCol != nil {
-				if sel := libCol.SelectedLibrary(); sel != nil {
-					drilledID = sel.ID
-				}
-				libCol.ReplaceItems(components.WrapLibraries(m.allLibraryEntries()))
-				libCol.SetLibraryStates(m.LibraryStates)
-			}
-
-			// The library the user is inside may have been removed
-			// server-side — that's the one case where resetting is the
-			// only sane answer
-			if drilledID != "" && drilledID != playlistsLibraryID && m.findLibrary(drilledID) == nil {
-				// Alert: it explains why navigation just reset; stays until
-				// the user dismisses it with Esc
-				m.notify(NoticeAlert, "Library no longer exists on server — navigation reset")
-			} else {
-				if reload := m.reloadTopColumnCmd(); reload != nil {
-					syncCmds = append(syncCmds, reload)
-				}
-				return m, tea.Batch(syncCmds...)
-			}
-		}
-
-		// Initial load (or unrecoverable refresh): build the root column
-		libCol := components.NewLibraryColumn(m.allLibraryEntries())
-		libCol.SetLibraryStates(m.LibraryStates)
-		libCol.SetShowWatchStatus(m.UIConfig.ShowWatchStatus)
-		libCol.SetShowLibraryCounts(m.UIConfig.ShowLibraryCounts)
-		m.ColumnStack.Reset(libCol)
-
-		return m, tea.Batch(syncCmds...)
-
-	case MoviesLoadedMsg:
-
-		// If manual load succeeded and library was in error state, clear it
-		if state, ok := m.LibraryStates[msg.LibraryID]; ok && state.Status == components.StatusError {
-			state.Status = components.StatusIdle
-			state.Error = nil
-			m.LibraryStates[msg.LibraryID] = state
-			m.updateLibraryStates()
-		}
-
-		// Validate content ID to prevent race condition
-		if !m.validateContentID(msg.LibraryID) {
+	case ResourceMsg:
+		return m.handleResource(msg)
+	case ActionMsg:
+		return m.handleAction(msg)
+	case PlaylistModalDataMsg:
+		if !m.requests.owns(msg.Request) {
 			return m, nil
 		}
-
-		// Update top column with movies
-		if top := m.ColumnStack.Top(); top != nil {
-			top.ReplaceItems(components.WrapItems(msg.Movies))
+		m.requests.finish(msg.Request)
+		if msg.Err != nil {
+			m.PlaylistModal.Hide()
+			return m, m.notifyError("Loading playlists", msg.Err)
 		}
-
-		m.updateInspector()
-
-		// Advance nav plan if waiting for this load
-		if cmd := m.advanceNavPlanAfterLoad(AwaitMovies, msg.LibraryID); cmd != nil {
-			return m, cmd
-		}
+		m.PlaylistModal.Show(msg.Membership.Playlists, msg.Membership.Present, &msg.Item)
+		m.PlaylistModal.SetSize(m.Width, m.Height)
 		return m, nil
-
-	case ShowsLoadedMsg:
-
-		// If manual load succeeded and library was in error state, clear it
-		if state, ok := m.LibraryStates[msg.LibraryID]; ok && state.Status == components.StatusError {
-			state.Status = components.StatusIdle
-			state.Error = nil
-			m.LibraryStates[msg.LibraryID] = state
-			m.updateLibraryStates()
-		}
-
-		// Validate content ID to prevent race condition
-		if !m.validateContentID(msg.LibraryID) {
-			return m, nil
-		}
-
-		// Update top column with shows
-		if top := m.ColumnStack.Top(); top != nil {
-			top.ReplaceItems(components.WrapItems(msg.Shows))
-		}
-
-		m.updateInspector()
-
-		// Advance nav plan if waiting for this load
-		if cmd := m.advanceNavPlanAfterLoad(AwaitShows, msg.LibraryID); cmd != nil {
-			return m, cmd
-		}
-		return m, nil
-
-	case MixedLibraryLoadedMsg:
-
-		// If manual load succeeded and library was in error state, clear it
-		if state, ok := m.LibraryStates[msg.LibraryID]; ok && state.Status == components.StatusError {
-			state.Status = components.StatusIdle
-			state.Error = nil
-			m.LibraryStates[msg.LibraryID] = state
-			m.updateLibraryStates()
-		}
-
-		// Validate content ID to prevent race condition
-		if !m.validateContentID(msg.LibraryID) {
-			return m, nil
-		}
-
-		// Update top column with mixed content
-		if top := m.ColumnStack.Top(); top != nil {
-			top.ReplaceItems(components.WrapItems(msg.Items))
-		}
-
-		m.updateInspector()
-
-		// Advance nav plan if waiting for this load
-		if cmd := m.advanceNavPlanAfterLoad(AwaitMixed, msg.LibraryID); cmd != nil {
-			return m, cmd
-		}
-		return m, nil
-
-	case SeasonsLoadedMsg:
-
-		// Validate content ID to prevent race condition
-		if !m.validateContentID(msg.ShowID) {
-			return m, nil
-		}
-
-		// Update top column with seasons
-		if top := m.ColumnStack.Top(); top != nil {
-			top.ReplaceItems(components.WrapItems(msg.Seasons))
-		}
-
-		m.updateInspector()
-
-		// Advance nav plan if waiting for this load
-		if cmd := m.advanceNavPlanAfterLoad(AwaitSeasons, msg.ShowID); cmd != nil {
-			return m, cmd
-		}
-		return m, nil
-
-	case EpisodesLoadedMsg:
-
-		// Validate content ID to prevent race condition
-		if !m.validateContentID(msg.SeasonID) {
-			return m, nil
-		}
-
-		// Update top column with episodes
-		if top := m.ColumnStack.Top(); top != nil {
-			top.ReplaceItems(components.WrapItems(msg.Episodes))
-		}
-
-		m.updateInspector()
-
-		// Advance nav plan if waiting for this load
-		if cmd := m.advanceNavPlanAfterLoad(AwaitEpisodes, msg.SeasonID); cmd != nil {
-			return m, cmd
-		}
-		return m, nil
-
-	case PlaybackStartedMsg:
-		return m, m.notify(NoticeSuccess, "Launched: "+msg.Item.Title)
-
-	case MarkWatchedMsg:
-		m.applyWatchState(msg.ItemID, true)
-		return m, m.notify(NoticeSuccess, "Marked watched: "+msg.Title)
-
-	case MarkUnwatchedMsg:
-		m.applyWatchState(msg.ItemID, false)
-		return m, m.notify(NoticeSuccess, "Marked unwatched: "+msg.Title)
-
-	case ErrMsg:
-		m.clearNavPlan()
-		// A failed refresh must not leave the column spinner running, and a
-		// failed initial load must show a retry hint, not spin forever
-		if top := m.ColumnStack.Top(); top != nil {
-			top.SetRefreshing(false)
-			if top.IsLoading() {
-				top.SetLoadFailed()
-			}
-		}
-		if errors.Is(msg.Err, domain.ErrAuthFailed) {
-			// The token was revoked/expired and the user must re-authenticate
-			m.notify(NoticeAlert, authFailedStatusMsg)
-			return m, nil
-		}
-		return m, m.notify(NoticeError, msg.Error())
-
 	case ClearNoticeMsg:
 		m.expireNotice(msg.Seq)
 		return m, nil
-
-	case LibrarySyncProgressMsg:
-		// Drop messages from sync chains superseded by a newer library
-		// reload; without this, stale chains corrupt SyncingCount and can
-		// wedge the loading state permanently
-		if msg.Generation != m.SyncGen {
+	case ClearLibraryStatusMsg:
+		for key, r := range m.resources {
+			if libraryStateID(r) == msg.LibraryID && m.revisions[key] == msg.Revision {
+				state := m.LibraryStates[msg.LibraryID]
+				if state.Status == components.StatusSynced {
+					state.Status = components.StatusIdle
+					m.LibraryStates[msg.LibraryID] = state
+					m.updateLibraryStates()
+				}
+			}
+		}
+		return m, nil
+	case SearchDebounceMsg:
+		if !m.GlobalSearch.IsVisible() || msg.Seq != m.searchSeq {
 			return m, nil
 		}
+		req := m.requests.begin("search", catalog.Resource{}, catalog.Browse)
+		libraries := append([]domain.Library(nil), m.Libraries...)
+		return m, func() tea.Msg {
+			return SearchResultsMsg{Request: req, Results: m.SearchIndex.Search(req.ctx, msg.Query, libraries)}
+		}
+	case SearchResultsMsg:
+		if !m.requests.owns(msg.Request) || !m.GlobalSearch.IsVisible() {
+			return m, nil
+		}
+		m.requests.finish(msg.Request)
+		m.GlobalSearch.SetResults(msg.Results)
+		return m, nil
+	case SearchIndexChangedMsg:
+		if m.GlobalSearch.IsVisible() {
+			return m, m.scheduleSearch()
+		}
+		return m, nil
+	}
+	// Bubble Tea text-input cursor messages belong to the active modal too.
+	if m.GlobalSearch.IsVisible() {
+		var cmd tea.Cmd
+		m.GlobalSearch, cmd, _ = m.GlobalSearch.Update(msg)
+		return m, cmd
+	}
+	if m.InputModal.IsVisible() {
+		var cmd tea.Cmd
+		m.InputModal, cmd, _ = m.InputModal.Update(msg)
+		return m, cmd
+	}
+	return m, nil
+}
 
-		state := m.LibraryStates[msg.LibraryID]
-
-		if msg.Error != nil {
-			state.Status = components.StatusError
-			state.Error = msg.Error
-			slog.Error("library sync failed", "libraryID", msg.LibraryID, "error", msg.Error)
-			if errors.Is(msg.Error, domain.ErrAuthFailed) {
-				m.notify(NoticeAlert, authFailedStatusMsg)
-			} else {
-				// The row's ✗ glyph may be off-screen; name the scope so the
-				// failure is visible wherever the user is
-				name := msg.LibraryID
-				if lib := m.findLibrary(msg.LibraryID); lib != nil {
-					name = lib.Name
-				} else if msg.LibraryID == playlistsLibraryID {
-					name = "Playlists"
+func (m Model) handleResource(msg ResourceMsg) (tea.Model, tea.Cmd) {
+	if !m.requests.owns(msg.Request) {
+		return m, nil
+	}
+	r := msg.Request.Resource
+	var cmds []tea.Cmd
+	if msg.Next != nil {
+		cmds = append(cmds, msg.Next)
+	}
+	if msg.Stage == loadProgress {
+		if id := libraryStateID(r); id != "" {
+			state := m.LibraryStates[id]
+			state.Loaded = msg.Progress.Loaded
+			state.Total = msg.Progress.Total
+			m.LibraryStates[id] = state
+			m.updateLibraryStates()
+		}
+		return m, tea.Batch(cmds...)
+	}
+	hasSnapshot := !msg.Snapshot.FetchedAt.IsZero() || msg.Snapshot.FromCache || msg.Err == nil
+	accepted := hasSnapshot && msg.Snapshot.Revision >= m.revisions[r.Key()]
+	if accepted {
+		m.revisions[r.Key()] = msg.Snapshot.Revision
+		if r.Kind == catalog.Libraries {
+			m.Libraries = nil
+			for _, item := range msg.Snapshot.Items {
+				if lib, ok := item.(*domain.Library); ok {
+					m.Libraries = append(m.Libraries, *lib)
 				}
-				cmds = append(cmds, m.notify(NoticeError, fmt.Sprintf("Sync failed: %s — r to retry", name)))
+			}
+			m.libraryColumn().ReplaceItems(components.WrapLibraries(m.allLibraryEntries()))
+
+			policy := catalog.Revalidate
+			if msg.Request.Policy == catalog.Refresh {
+				policy = catalog.Refresh
+			}
+			for _, lib := range m.Libraries {
+				resource := catalog.LibraryResource(lib)
+				previous, exists := m.resources[resource.Key()]
+				if m.backgroundStarted[resource.Key()] != msg.Request.ID || (exists && previous.Version != resource.Version) {
+					m.backgroundStarted[resource.Key()] = msg.Request.ID
+					cmds = append(cmds, m.loadResource(resource, policy, true))
+				}
+			}
+			playlists := catalog.Resource{Kind: catalog.Playlists}
+			if m.backgroundStarted[playlists.Key()] != msg.Request.ID {
+				m.backgroundStarted[playlists.Key()] = msg.Request.ID
+				cmds = append(cmds, m.loadResource(playlists, policy, true))
 			}
 		} else {
-			state.Loaded = msg.Loaded
-			state.Total = msg.Total
-			state.FromCache = msg.FromCache
-
-			if msg.Done {
+			for i := 0; i < m.ColumnStack.Len(); i++ {
+				if col := m.ColumnStack.Get(i); col.ContentID() == r.Key() {
+					col.ReplaceItems(domain.CloneItems(msg.Snapshot.Items))
+				}
+			}
+		}
+		if r.Kind == catalog.Movies || r.Kind == catalog.Shows || r.Kind == catalog.Mixed {
+			snapshot := msg.Snapshot.Clone()
+			cmds = append(cmds, func() tea.Msg {
+				m.SearchIndex.ReplaceLibrary(r.LibraryID, snapshot.Revision, snapshot.Items)
+				return SearchIndexChangedMsg{}
+			})
+		}
+		m.updateInspector()
+		if msg.Stage == loadFinished && msg.Err == nil {
+			m.pruneNavigation()
+		}
+	}
+	if msg.Stage == loadCached {
+		for i := 0; i < m.ColumnStack.Len(); i++ {
+			if col := m.ColumnStack.Get(i); col.ContentID() == r.Key() {
+				col.SetLoading(false)
+				col.SetRefreshing(true)
+			}
+		}
+	} else {
+		m.requests.finish(msg.Request)
+		// A second subscriber may still be refreshing this collection.
+		_, viewPending := m.requests.active[viewOwner(r)]
+		_, syncPending := m.requests.active[syncOwner(r)]
+		for i := 0; i < m.ColumnStack.Len(); i++ {
+			col := m.ColumnStack.Get(i)
+			if col.ContentID() != r.Key() {
+				continue
+			}
+			col.SetRefreshing(viewPending || syncPending)
+			if msg.Err != nil && !col.HasContent() {
+				col.SetLoadFailed()
+			}
+		}
+		if id := libraryStateID(r); id != "" {
+			state := m.LibraryStates[id]
+			state.Loaded = len(msg.Snapshot.Items)
+			state.Total = state.Loaded
+			state.FromCache = msg.Snapshot.FromCache
+			state.Error = msg.Err
+			switch {
+			case viewPending || syncPending:
+				state.Status = components.StatusSyncing
+			case msg.Err != nil:
+				state.Status = components.StatusError
+			default:
 				state.Status = components.StatusSynced
-
-				// Trigger delayed cleanup
-				cmds = append(cmds, ClearLibraryStatusCmd(msg.LibraryID, 2*time.Second))
+				cmds = append(cmds, m.clearLibraryStatus(id, msg.Snapshot.Revision))
 			}
+			m.LibraryStates[id] = state
+			m.updateLibraryStates()
 		}
-
-		m.LibraryStates[msg.LibraryID] = state
-		m.updateLibraryStates()
-
-		// If there's a continuation command, run it
-		if msg.NextCmd != nil {
-			cmds = append(cmds, msg.NextCmd)
-		}
-
-		return m, tea.Batch(cmds...)
-
-	case ClearLibraryStatusMsg:
-		if state, ok := m.LibraryStates[msg.LibraryID]; ok {
-			if state.Status == components.StatusSynced {
-				state.Status = components.StatusIdle
-				m.LibraryStates[msg.LibraryID] = state
-				m.updateLibraryStates()
+		if msg.Err != nil {
+			if m.navPlan != nil && m.navPlan.AwaitKey == r.Key() {
+				m.clearNavPlan()
 			}
+			cmds = append(cmds, m.notifyError("Loading "+m.resourceName(r), msg.Err))
 		}
-		return m, nil
-
-	case LogoutCompleteMsg:
-		if msg.Error != nil {
-			m.State = StateBrowsing
-			return m, m.notify(NoticeError, fmt.Sprintf("Logout failed: %v", msg.Error))
-		}
-		// Logout successful - quit the application
-		return m, tea.Quit
-
-	case PlaylistsLoadedMsg:
-
-		// Validate content ID like every other load handler: a slow playlist
-		// fetch must not clobber whatever column the user navigated to since
-		if !m.validateContentID(playlistsLibraryID) {
-			return m, nil
-		}
-
-		if top := m.ColumnStack.Top(); top != nil {
-			top.ReplaceItems(components.WrapItems(msg.Playlists))
-		}
-		m.updateInspector()
-		return m, nil
-
-	case PlaylistItemsLoadedMsg:
-
-		// Validate content ID to prevent race condition
-		if !m.validateContentID(msg.PlaylistID) {
-			return m, nil
-		}
-
-		m.currentPlaylistID = msg.PlaylistID
-		if top := m.ColumnStack.Top(); top != nil {
-			top.ReplaceItems(components.WrapItems(msg.Items))
-		}
-		m.updateInspector()
-		return m, nil
-
-	case PlaylistModalDataMsg:
-		// Clear the "Loading playlists..." pending notice (never an alert)
-		if m.notice.Kind == NoticeInfo {
-			m.clearNotice()
-		}
-		m.PlaylistModal.Show(msg.Playlists, msg.Membership, msg.Item)
-		m.PlaylistModal.SetSize(m.Width, m.Height)
-		return m, nil
-
-	case PlaylistUpdatedMsg:
-		if msg.Error != nil {
-			return m, m.notify(NoticeError, fmt.Sprintf("Playlist update failed: %v", msg.Error))
-		}
-		cmds = append(cmds, m.notify(NoticeSuccess, "Playlist updated"))
-		// Refresh playlist items if viewing a playlist
-		if m.currentPlaylistID != "" {
-			cmds = append(cmds, LoadPlaylistItemsCmd(m.PlaylistService, m.currentPlaylistID))
-		}
-		return m, tea.Batch(cmds...)
-
-	case PlaylistCreatedMsg:
-		if msg.Error != nil {
-			return m, m.notify(NoticeError, fmt.Sprintf("Failed to create playlist: %v", msg.Error))
-		}
-		cmds = append(cmds, m.notify(NoticeSuccess, fmt.Sprintf("Created playlist: %s", msg.Playlist.Title)))
-		// Refresh playlists if viewing playlists
-		if top := m.ColumnStack.Top(); top != nil && top.ColumnType() == components.ColumnTypePlaylists {
-			cmds = append(cmds, LoadPlaylistsCmd(m.PlaylistService))
-		}
-		return m, tea.Batch(cmds...)
-
-	case PlaylistDeletedMsg:
-		if msg.Error != nil {
-			return m, m.notify(NoticeError, fmt.Sprintf("Failed to delete playlist: %v", msg.Error))
-		}
-		cmds = append(cmds, m.notify(NoticeSuccess, "Playlist deleted"))
-		// Clear current playlist ID and refresh the playlists
-		m.currentPlaylistID = ""
-		cmds = append(cmds, LoadPlaylistsCmd(m.PlaylistService))
-		return m, tea.Batch(cmds...)
-	}
-
-	// Update the focused column (top of stack)
-	if top := m.ColumnStack.Top(); top != nil {
-		oldCursor := top.SelectedIndex()
-		newCol, cmd := top.Update(msg)
-		m.ColumnStack.columns[len(m.ColumnStack.columns)-1] = newCol
-		if cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-		if oldCursor != top.SelectedIndex() {
-			m.updateInspector()
+		if msg.Snapshot.Warning != nil {
+			cmds = append(cmds, m.notifyError("Loaded "+m.resourceName(r), msg.Snapshot.Warning))
 		}
 	}
-
+	if accepted && msg.Err == nil {
+		cmds = append(cmds, m.advanceNavPlanAfterLoad(r.Key(), msg.Stage == loadFinished))
+	}
 	return m, tea.Batch(cmds...)
 }
 
-// activeSyncCount returns how many libraries are currently syncing, for the
-// footer's compact background-activity segment
+func (m Model) handleAction(msg ActionMsg) (tea.Model, tea.Cmd) {
+	if !m.requests.owns(msg.Request) {
+		return m, nil
+	}
+	m.requests.finish(msg.Request)
+	if msg.Playback {
+		if msg.Err != nil {
+			return m, m.notifyError("Starting playback", msg.Err)
+		}
+		return m, m.notify(NoticeSuccess, "Launched: "+msg.Item.Title)
+	}
+	change := msg.Change
+	for key, revision := range change.Revisions {
+		if revision > m.revisions[key] {
+			m.revisions[key] = revision
+		}
+	}
+	var cmds []tea.Cmd
+	if change.Applied && change.Mutation.Kind == catalog.Watch {
+		m.applyWatchState(change.Mutation.ItemID, change.Mutation.Played)
+	}
+	for _, r := range change.Resources {
+		// Reconcile all affected open projections; root playlists also updates its
+		// parent list/count after an item mutation.
+		for i := 0; i < m.ColumnStack.Len(); i++ {
+			if m.ColumnStack.Get(i).ContentID() == r.Key() {
+				cmds = append(cmds, m.loadResource(r, catalog.Revalidate, false))
+				break
+			}
+		}
+	}
+	if change.Applied && change.Mutation.Kind == catalog.DeletePlaylist {
+		if r, ok := m.topResource(); ok && r.Kind == catalog.PlaylistItems && r.ID == change.Mutation.PlaylistID {
+			model, cmd := m.handleBack()
+			m = model.(Model)
+			cmds = append(cmds, cmd)
+		}
+	}
+	if msg.Err != nil {
+		cmds = append(cmds, m.notifyError("Update failed", msg.Err))
+	} else {
+		text := "Playlist updated"
+		if change.Mutation.Kind == catalog.Watch {
+			text = "Marked unwatched: " + change.Mutation.Title
+			if change.Mutation.Played {
+				text = "Marked watched: " + change.Mutation.Title
+			}
+		}
+		if change.Mutation.Kind == catalog.CreatePlaylist {
+			text = "Created playlist: " + change.Mutation.Title
+		}
+		if change.Mutation.Kind == catalog.DeletePlaylist {
+			text = "Playlist deleted"
+		}
+		cmds = append(cmds, m.notify(NoticeSuccess, text))
+	}
+	if change.Warning != nil {
+		cmds = append(cmds, m.notifyError("Server updated; local cache needs refresh", change.Warning))
+	}
+	return m, tea.Batch(cmds...)
+}
+
+func (m *Model) notifyError(scope string, err error) tea.Cmd {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return nil
+	}
+	if errors.Is(err, domain.ErrAuthFailed) {
+		return m.notify(NoticeAlert, authFailedStatusMsg)
+	}
+	return m.notify(NoticeError, fmt.Sprintf("%s: %v", scope, err))
+}
 func (m Model) activeSyncCount() int {
 	n := 0
 	for _, state := range m.LibraryStates {
@@ -566,84 +414,47 @@ func (m Model) activeSyncCount() int {
 	}
 	return n
 }
-
-// libraryColumn returns the library column (index 0) or nil if not available
-func (m *Model) libraryColumn() *components.ListColumn {
-	return m.ColumnStack.Get(0)
-}
-
-// validateContentID checks if the top column has the expected content ID.
-// Returns false if the column doesn't match (user navigated away before async load completed).
-func (m *Model) validateContentID(expectedID string) bool {
-	top := m.ColumnStack.Top()
-	return top != nil && top.ContentID() == expectedID
-}
-
-// updateLibraryStates updates the library states in the library column and inspector
+func (m *Model) libraryColumn() *components.ListColumn { return m.ColumnStack.Get(0) }
 func (m *Model) updateLibraryStates() {
-	if libCol := m.libraryColumn(); libCol != nil {
-		libCol.SetLibraryStates(m.LibraryStates)
+	if col := m.libraryColumn(); col != nil {
+		col.SetLibraryStates(m.LibraryStates)
 	}
 	m.Inspector.SetLibraryStates(m.LibraryStates)
 }
-
-// reloadTopColumnCmd returns a command reloading the top column's content
-// from the server, landing via ReplaceItems so the cursor and view state
-// survive. Used by refresh-all to freshen the visible view without
-// resetting navigation. Returns nil at the root (updated in place).
-func (m *Model) reloadTopColumnCmd() tea.Cmd {
-	top := m.ColumnStack.Top()
-	if top == nil {
-		return nil
-	}
-
-	lib := m.findLibrary(m.currentLibID)
-
-	switch top.ColumnType() {
-	case components.ColumnTypeMovies:
-		if lib != nil {
-			top.SetRefreshing(true)
-			return LoadMoviesCmd(m.LibraryService, *lib)
-		}
-	case components.ColumnTypeShows:
-		if lib != nil {
-			top.SetRefreshing(true)
-			return LoadShowsCmd(m.LibraryService, *lib)
-		}
-	case components.ColumnTypeMixed:
-		if lib != nil {
-			top.SetRefreshing(true)
-			return LoadMixedLibraryCmd(m.LibraryService, *lib)
-		}
-	case components.ColumnTypeSeasons:
-		if m.currentShowID != "" {
-			top.SetRefreshing(true)
-			return LoadSeasonsCmd(m.LibraryService, m.currentLibID, m.currentShowID)
-		}
-	case components.ColumnTypeEpisodes:
-		if seasonCol := m.ColumnStack.Get(m.ColumnStack.Len() - 2); seasonCol != nil {
-			if season := seasonCol.SelectedSeason(); season != nil {
-				top.SetRefreshing(true)
-				return LoadEpisodesCmd(m.LibraryService, m.currentLibID, m.currentShowID, season.ID)
-			}
-		}
-	case components.ColumnTypePlaylists:
-		top.SetRefreshing(true)
-		return LoadPlaylistsCmd(m.PlaylistService)
-	case components.ColumnTypePlaylistItems:
-		if m.currentPlaylistID != "" {
-			top.SetRefreshing(true)
-			return LoadPlaylistItemsCmd(m.PlaylistService, m.currentPlaylistID)
+func (m Model) findLibrary(id string) *domain.Library {
+	for _, lib := range m.Libraries {
+		if lib.ID == id {
+			return &lib
 		}
 	}
 	return nil
 }
+func (m *Model) updateInspector() {
+	if col := m.ColumnStack.Top(); col != nil {
+		m.Inspector.SetItem(col.SelectedItem())
+	} else {
+		m.Inspector.SetItem(nil)
+	}
+}
+func (m Model) resourceName(r catalog.Resource) string {
+	if r.Kind == catalog.Libraries {
+		return "libraries"
+	}
+	if r.Kind == catalog.Playlists {
+		return "playlists"
+	}
+	for i := 0; i < m.ColumnStack.Len(); i++ {
+		if col := m.ColumnStack.Get(i); col.ContentID() == r.Key() {
+			return col.Title()
+		}
+	}
+	if lib := m.findLibrary(r.LibraryID); lib != nil {
+		return lib.Name
+	}
+	return "items"
+}
 
-// applyWatchState patches an item's watch state in the cache and in every
-// visible column. This replaces the old invalidate-everything-and-refetch
-// approach: the UI updates instantly and no network requests are issued.
 func (m *Model) applyWatchState(itemID string, played bool) {
-	m.LibraryService.SetWatchState(itemID, played)
 
 	// Patch the item wherever a column renders it, and adjust unwatched
 	// counters on visible show/season rows if an episode flipped state.
@@ -671,23 +482,4 @@ func (m *Model) applyWatchState(itemID string, played bool) {
 	}
 
 	m.updateInspector()
-}
-
-// findLibrary finds a library by ID
-func (m Model) findLibrary(id string) *domain.Library {
-	for _, lib := range m.Libraries {
-		if lib.ID == id {
-			return &lib
-		}
-	}
-	return nil
-}
-
-// updateInspector updates the inspector with the selected item from middle column
-func (m *Model) updateInspector() {
-	if top := m.ColumnStack.Top(); top != nil {
-		m.Inspector.SetItem(top.SelectedItem())
-	} else {
-		m.Inspector.SetItem(nil)
-	}
 }
