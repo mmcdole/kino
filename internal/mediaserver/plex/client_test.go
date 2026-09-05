@@ -3,9 +3,12 @@ package plex
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -128,5 +131,58 @@ func TestSearchIncludesShows(t *testing.T) {
 	}
 	if !foundShow {
 		t.Fatal("show missing from search results")
+	}
+}
+
+func TestPlaylistIdentityIsLazySharedAndRetryable(t *testing.T) {
+	for _, payload := range []string{
+		`<MediaContainer machineIdentifier="server1"/>`,
+		`{"MediaContainer":{"machineIdentifier":"server1"}}`,
+	} {
+		t.Run(payload, func(t *testing.T) {
+			var identities, writes atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/identity" {
+					if identities.Add(1) == 1 {
+						w.WriteHeader(http.StatusUnauthorized)
+						return
+					}
+					fmt.Fprint(w, payload)
+					return
+				}
+				if !strings.HasPrefix(r.URL.Query().Get("uri"), "server://server1/") {
+					t.Error("mutation used missing or incorrect server identity")
+				}
+				writes.Add(1)
+			}))
+			defer srv.Close()
+			c := NewClient(srv.URL, "token", "client", nil)
+			if err := c.AddToPlaylist(context.Background(), "p", []string{"m"}); !errors.Is(err, domain.ErrAuthFailed) {
+				t.Fatalf("identity error lost classification: %v", err)
+			}
+			if writes.Load() != 0 {
+				t.Fatal("write attempted without identity")
+			}
+			var wg sync.WaitGroup
+			for range 8 {
+				wg.Go(func() {
+					if err := c.AddToPlaylist(context.Background(), "p", []string{"m"}); err != nil {
+						t.Error(err)
+					}
+				})
+			}
+			wg.Wait()
+			if identities.Load() != 2 || writes.Load() != 8 {
+				t.Fatal("identity not retried then shared")
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			if err := c.AddToPlaylist(ctx, "p", []string{"m"}); !errors.Is(err, context.Canceled) {
+				t.Fatal(err)
+			}
+			if writes.Load() != 8 {
+				t.Fatal("canceled request wrote to server")
+			}
+		})
 	}
 }

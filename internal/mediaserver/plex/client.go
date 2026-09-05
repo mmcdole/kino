@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mmcdole/kino/internal/domain"
@@ -40,7 +41,8 @@ type Client struct {
 	baseURL           string
 	token             string
 	clientID          string // unique per-install X-Plex-Client-Identifier
-	machineIdentifier string // fetched from /identity on init
+	identityMu        sync.Mutex
+	machineIdentifier string // resolved lazily by playlist writes
 	httpClient        *http.Client
 	logger            *slog.Logger
 }
@@ -61,36 +63,43 @@ func NewClient(baseURL, token, clientID string, logger *slog.Logger) *Client {
 	}
 }
 
-// FetchIdentity fetches and stores the server's machineIdentifier
-func (c *Client) FetchIdentity(ctx context.Context) error {
-	reqURL := fmt.Sprintf("%s/identity", c.baseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	if err != nil {
-		return err
+// serverIdentity is lazy so startup and offline browsing never wait for it.
+// Failed lookups remain retryable; only a validated identity is cached.
+func (c *Client) serverIdentity(ctx context.Context) (string, error) {
+	c.identityMu.Lock()
+	defer c.identityMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
+	if c.machineIdentifier != "" {
+		return c.machineIdentifier, nil
 	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
+	body, err := c.doRequest(ctx, http.MethodGet, "/identity", nil)
 	if err != nil {
-		return err
+		return "", fmt.Errorf("resolve Plex identity: %w", err)
 	}
-
-	// Parse XML response
 	var identity struct {
-		XMLName           xml.Name `xml:"MediaContainer"`
-		MachineIdentifier string   `xml:"machineIdentifier,attr"`
+		MachineIdentifier string `xml:"machineIdentifier,attr" json:"machineIdentifier"`
 	}
-	if err := xml.Unmarshal(body, &identity); err != nil {
-		return err
+	if strings.HasPrefix(strings.TrimSpace(string(body)), "<") {
+		err = xml.Unmarshal(body, &identity)
+	} else {
+		var response struct {
+			MediaContainer struct {
+				MachineIdentifier string `json:"machineIdentifier"`
+			} `json:"MediaContainer"`
+		}
+		err = json.Unmarshal(body, &response)
+		identity.MachineIdentifier = response.MediaContainer.MachineIdentifier
 	}
-
+	if err != nil {
+		return "", fmt.Errorf("parse Plex identity: %w", err)
+	}
+	if identity.MachineIdentifier == "" {
+		return "", fmt.Errorf("Plex identity missing machineIdentifier")
+	}
 	c.machineIdentifier = identity.MachineIdentifier
-	return nil
+	return c.machineIdentifier, nil
 }
 
 // setHeaders applies the standard Plex request headers
@@ -483,10 +492,15 @@ func (c *Client) CreatePlaylist(ctx context.Context, title string, itemIDs []str
 		return nil, fmt.Errorf("plex does not support creating empty playlists")
 	}
 
+	identity, err := c.serverIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Build canonical URI with machineIdentifier
 	ids := strings.Join(itemIDs, ",")
 	uri := fmt.Sprintf("server://%s/com.plexapp.plugins.library/library/metadata/%s",
-		c.machineIdentifier, ids)
+		identity, ids)
 
 	query := url.Values{}
 	query.Set("type", "video")
@@ -522,13 +536,17 @@ func (c *Client) AddToPlaylist(ctx context.Context, playlistID string, itemIDs [
 		return nil
 	}
 
+	identity, err := c.serverIdentity(ctx)
+	if err != nil {
+		return err
+	}
 	path := fmt.Sprintf("/playlists/%s/items", playlistID)
 
 	// Add items one at a time for reliability
 	for _, itemID := range itemIDs {
 		// Use canonical Plex URI format with machineIdentifier
 		uri := fmt.Sprintf("server://%s/com.plexapp.plugins.library/library/metadata/%s",
-			c.machineIdentifier, itemID)
+			identity, itemID)
 
 		query := url.Values{}
 		query.Set("uri", uri)
