@@ -1,6 +1,7 @@
 package components
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/mmcdole/kino/internal/domain"
@@ -85,7 +86,7 @@ func TestReplaceItemsPreservesSort(t *testing.T) {
 func TestReplaceItemsOnEmptyColumn(t *testing.T) {
 	c := NewListColumn(ColumnTypeMovies, "Movies")
 	c.SetSize(40, 20)
-	c.SetLoading(true)
+	c.BeginLoad()
 
 	c.ReplaceItems(testMovies("Alpha", "Bravo"))
 
@@ -106,5 +107,34 @@ func TestColumnIdentitySurvivesEmptyAndMixedPayloads(t *testing.T) {
 		if c.ColumnType() != kind {
 			t.Fatalf("column %v became %v", kind, c.ColumnType())
 		}
+	}
+}
+
+func TestLoadFailureAndRetryKeepCachedContentVisible(t *testing.T) {
+	c := NewListColumn(ColumnTypeMovies, "Movies")
+	c.SetSize(50, 20)
+	c.BeginLoad()
+	c.FinishLoad(true)
+	if c.IsLoading() || !strings.Contains(c.View(), "press r to retry") {
+		t.Fatal("cold failure did not become retryable")
+	}
+	c.BeginLoad()
+	if !c.IsLoading() || c.HasLoadFailed() {
+		t.Fatal("retry retained failure")
+	}
+	c.SetItems(testMovies("Alpha"))
+	c.BeginLoad()
+	c.FinishLoad(true)
+	if !strings.Contains(c.View(), "Refresh failed") || !strings.Contains(c.View(), "Alpha") {
+		t.Fatal("refresh failure hid cached content or retry state")
+	}
+	c.BeginLoad()
+	if !c.IsRefreshing() || c.HasLoadFailed() {
+		t.Fatal("refresh retry state inconsistent")
+	}
+	c.ReplaceItems(nil)
+	c.BeginLoad()
+	if c.IsLoading() || !c.IsRefreshing() {
+		t.Fatal("empty snapshot treated as no snapshot")
 	}
 }

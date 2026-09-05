@@ -187,3 +187,46 @@ func TestColdStartupFailureKeepsRetryableRoot(t *testing.T) {
 		t.Fatal("r cannot retry cold startup")
 	}
 }
+
+func TestRejectedSnapshotCannotOverwriteCurrentLibraryCount(t *testing.T) {
+	m := testModel(t)
+	r := catalog.LibraryResource(m.Libraries[0])
+	m.pushColumn(r, "A", 0)
+	old := m.requests.active[viewOwner(r)]
+	m.loadResource(r, catalog.Revalidate, true)
+	newer := m.requests.active[syncOwner(r)]
+	m = updateModel(m, ResourceMsg{Request: newer, Stage: loadFinished, Snapshot: snapshot(r, 2, "one", "two")})
+	m = updateModel(m, ResourceMsg{Request: old, Stage: loadFinished, Snapshot: snapshot(r, 1, "old"), Err: domain.ErrServerOffline})
+	state := m.LibraryStates[r.LibraryID]
+	if state.Total != 2 || state.Error != nil || state.Status == components.StatusSyncing {
+		t.Fatalf("stale response corrupted status: %+v", state)
+	}
+	if m.notice.Text != "" || m.ColumnStack.Top().HasLoadFailed() {
+		t.Fatal("obsolete error displayed")
+	}
+}
+
+func TestRemovedLibraryDetachesRequestsAndNavigation(t *testing.T) {
+	m := testModel(t)
+	r := catalog.LibraryResource(m.Libraries[0])
+	m.pushColumn(r, "A", 0)
+	m.loadResource(r, catalog.Revalidate, true)
+	late := m.requests.active[syncOwner(r)]
+	root := catalog.Resource{Kind: catalog.Libraries}
+	m.loadResource(root, catalog.Refresh, false)
+	req := m.requests.active[viewOwner(root)]
+	m = updateModel(m, ResourceMsg{Request: req, Stage: loadFinished, Snapshot: snapshot(root, 1)})
+	if m.ColumnStack.Len() != 1 {
+		t.Fatal("removed library remains open")
+	}
+	if _, ok := m.LibraryStates[r.LibraryID]; ok {
+		t.Fatal("removed library remains in sync status")
+	}
+	if m.requests.owns(late) || late.ctx.Err() == nil {
+		t.Fatal("removed subscription remains active")
+	}
+	m = updateModel(m, ResourceMsg{Request: late, Stage: loadFinished, Snapshot: snapshot(r, 2, "late")})
+	if _, ok := m.LibraryStates[r.LibraryID]; ok {
+		t.Fatal("late response recreated removed library")
+	}
+}

@@ -154,7 +154,7 @@ func (m *Model) navigateToSearchResult(item search.FilterItem) tea.Cmd {
 // changes. Retained columns cannot silently acquire a different parent.
 func (m *Model) pruneNavigation() {
 	for i := 1; i < m.ColumnStack.Len(); i++ {
-		r := m.resources[m.ColumnStack.Get(i).ContentID()]
+		r, exists := m.resources[m.ColumnStack.Get(i).ContentID()]
 		expected := r.ID
 		if r.Kind == catalog.Playlists {
 			expected = playlistsLibraryID
@@ -163,7 +163,7 @@ func (m *Model) pruneNavigation() {
 		if !parent.HasContent() {
 			continue
 		}
-		if parent.SetSelectedByID(expected) {
+		if exists && parent.SetSelectedByID(expected) {
 			continue
 		}
 		for m.ColumnStack.Len() > i {

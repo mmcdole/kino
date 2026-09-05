@@ -25,6 +25,15 @@ const (
 	ScrollIndicatorLines = 2
 )
 
+type loadState uint8
+
+const (
+	loadIdle loadState = iota
+	loadInitial
+	loadRefreshing
+	loadFailed
+)
+
 // ListColumn is a scrollable list column that can display various content types.
 // It implements the Column interface.
 type ListColumn struct {
@@ -48,9 +57,7 @@ type ListColumn struct {
 	title string
 
 	// Loading state
-	loading      bool
-	refreshing   bool // background refresh in progress; items stay visible
-	loadFailed   bool // last load errored; renders a retry hint instead of a spinner
+	loadState    loadState
 	spinnerFrame int
 
 	// Library sync states (for library column)
@@ -91,13 +98,6 @@ func NewListColumn(colType ColumnType, title string) *ListColumn {
 		filterInput:   ti,
 		libraryStates: make(map[string]LibrarySyncState),
 	}
-}
-
-// NewLibraryColumn creates a column for displaying libraries
-func NewLibraryColumn(libraries []domain.Library) *ListColumn {
-	col := NewListColumn(ColumnTypeLibraries, "Libraries")
-	col.items = WrapLibraries(libraries)
-	return col
 }
 
 func (c *ListColumn) Update(msg tea.Msg) (*ListColumn, tea.Cmd) {
@@ -290,37 +290,31 @@ func (c *ListColumn) CanDrillInto() bool {
 	return c.items[idx].CanDrillDown()
 }
 
-func (c *ListColumn) SetLoading(loading bool) {
-	c.loading = loading
+// BeginLoad derives the presentation from whether a snapshot has arrived.
+// An empty successful snapshot is still content, and remains visible on refresh.
+func (c *ListColumn) BeginLoad() {
+	c.loadState = loadInitial
+	if c.hasContent {
+		c.loadState = loadRefreshing
+	}
 }
 
-func (c *ListColumn) IsLoading() bool {
-	return c.loading
+func (c *ListColumn) FinishLoad(failed bool) {
+	c.loadState = loadIdle
+	if failed {
+		c.loadState = loadFailed
+	}
 }
 
-// SetRefreshing marks a background refresh: items remain visible and
-// navigable, with a spinner shown next to the column title.
-func (c *ListColumn) SetRefreshing(refreshing bool) {
-	c.refreshing = refreshing
-}
-
-// SetLoadFailed marks the column's load as failed, replacing the infinite
-// spinner with an actionable retry hint.
-func (c *ListColumn) SetLoadFailed() {
-	c.loading = false
-	c.loadFailed = true
-}
-
-func (c *ListColumn) IsRefreshing() bool {
-	return c.refreshing
-}
+func (c *ListColumn) IsLoading() bool     { return c.loadState == loadInitial }
+func (c *ListColumn) IsRefreshing() bool  { return c.loadState == loadRefreshing }
+func (c *ListColumn) HasLoadFailed() bool { return c.loadState == loadFailed }
 
 func (c *ListColumn) HasContent() bool { return c.hasContent }
 
 func (c *ListColumn) SetItems(items []domain.ListItem) {
 	c.hasContent = true
-	c.loading = false
-	c.loadFailed = false
+	c.loadState = loadIdle
 	c.cursor = 0
 	c.offset = 0
 	c.clearFilter()
@@ -350,8 +344,6 @@ func (c *ListColumn) SetItems(items []domain.ListItem) {
 // Background refreshes use this so the list doesn't jump; on a column with no
 // prior content it behaves exactly like SetItems.
 func (c *ListColumn) ReplaceItems(items []domain.ListItem) {
-	c.refreshing = false
-
 	if !c.hasContent {
 		c.SetItems(items)
 		return
@@ -703,20 +695,20 @@ func (c *ListColumn) renderContent() string {
 	// Title line (styled, truncated to fit column width); background
 	// refreshes show a spinner next to the title while items stay visible
 	title := c.title
-	if c.refreshing {
+	if c.IsRefreshing() {
 		title = c.title + " " + styles.SpinnerFrames[c.spinnerFrame%len(styles.SpinnerFrames)]
 	}
 	titleLine := styles.AccentStyle.Render(styles.Truncate(title, itemWidth))
 
 	// Loading state
-	if c.loading {
+	if c.IsLoading() {
 		spinner := styles.SpinnerFrames[c.spinnerFrame%len(styles.SpinnerFrames)]
 		loadingLine := styles.DimStyle.Render(spinner + " Loading...")
 		return titleLine + "\n" + " " + "\n" + loadingLine + "\n" + " "
 	}
 
 	// Failed load: actionable dead-end instead of an infinite spinner
-	if c.loadFailed && len(c.items) == 0 {
+	if c.HasLoadFailed() && len(c.items) == 0 {
 		failedLine := styles.ErrorStyle.Render("✗ Failed to load")
 		retryLine := styles.DimStyle.Render("press r to retry")
 		return titleLine + "\n" + " " + "\n" + failedLine + "\n" + retryLine
@@ -752,7 +744,9 @@ func (c *ListColumn) renderContent() string {
 
 	// ALWAYS reserve space for header (even if empty) to prevent layout shifts
 	header := " "
-	if c.offset > 0 {
+	if c.HasLoadFailed() {
+		header = styles.ErrorStyle.Render(styles.Truncate("Refresh failed · r to retry", itemWidth))
+	} else if c.offset > 0 {
 		header = styles.DimStyle.Render("↑ more")
 	}
 

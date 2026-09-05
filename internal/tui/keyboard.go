@@ -422,6 +422,8 @@ func (m Model) handleGlobalSearchInput(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if selected {
 		if result := m.GlobalSearch.Selected(); result != nil {
 			m.GlobalSearch.Hide()
+			m.requests.stop("search")
+			m.searchSeq++
 			if navCmd := m.navigateToSearchResult(*result); navCmd != nil {
 				cmds = append(cmds, navCmd)
 			}
@@ -442,7 +444,7 @@ func (m Model) handleSortModalInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 		}
 		return true, m, nil
 	}
-	return false, m, nil
+	return true, m, nil
 }
 
 // handlePlaylistModalInput handles input when playlist modal is visible

@@ -58,9 +58,7 @@ func readResource(req request, cached, progress, done <-chan ResourceMsg) tea.Ms
 
 func MutationCmd(svc Catalog, req request, mutation catalog.Mutation) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(req.ctx, 30*time.Second)
-		defer cancel()
-		change, err := svc.Mutate(ctx, mutation)
+		change, err := svc.Mutate(req.ctx, mutation)
 		return ActionMsg{Request: req, Change: change, Err: err}
 	}
 }
@@ -79,9 +77,7 @@ func PlayItemCmd(svc Playback, req request, item domain.MediaItem, resume bool) 
 }
 func LoadPlaylistModalDataCmd(svc Catalog, req request, item domain.MediaItem) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(req.ctx, 30*time.Second)
-		defer cancel()
-		membership, err := svc.PlaylistMembership(ctx, item.ID)
+		membership, err := svc.PlaylistMembership(req.ctx, item.ID)
 		return PlaylistModalDataMsg{Request: req, Membership: membership, Item: item, Err: err}
 	}
 }

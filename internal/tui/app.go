@@ -91,11 +91,11 @@ type Model struct {
 	requests                                           *requests
 	resources                                          map[string]catalog.Resource
 	revisions                                          map[string]uint64
-	loaded                                             map[string]bool
-	backgroundStarted                                  map[string]uint64
-	searchSeq                                          uint64
-	LoggedOut                                          bool
-	loggingOut                                         bool
+
+	backgroundStarted map[string]uint64
+	searchSeq         uint64
+	LoggedOut         bool
+	loggingOut        bool
 }
 
 func NewModel(ctx context.Context, svc Catalog, playback Playback, index *search.Index, ui config.UIConfig) Model {
@@ -107,7 +107,7 @@ func NewModel(ctx context.Context, svc Catalog, playback Playback, index *search
 	root := catalog.Resource{Kind: catalog.Libraries}
 	col := components.NewListColumn(components.ColumnTypeLibraries, "Libraries")
 	col.SetContentID(root.Key())
-	col.SetLoading(true)
+	col.BeginLoad()
 	col.SetShowWatchStatus(ui.ShowWatchStatus)
 	col.SetShowLibraryCounts(ui.ShowLibraryCounts)
 	m.ColumnStack.Reset(col)
@@ -220,6 +220,9 @@ func (m Model) handleResource(msg ResourceMsg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, msg.Next)
 	}
 	if msg.Stage == loadProgress {
+		if msg.Request.Revision < m.revisions[r.Key()] {
+			return m, tea.Batch(cmds...)
+		}
 		if id := libraryStateID(r); id != "" {
 			state := m.LibraryStates[id]
 			state.Loaded = msg.Progress.Loaded
@@ -230,7 +233,9 @@ func (m Model) handleResource(msg ResourceMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 	}
 	hasSnapshot := !msg.Snapshot.FetchedAt.IsZero() || msg.Snapshot.FromCache || msg.Err == nil
-	accepted := hasSnapshot && msg.Snapshot.Revision >= m.revisions[r.Key()]
+	obsolete := hasSnapshot && msg.Snapshot.Revision < m.revisions[r.Key()] ||
+		!hasSnapshot && msg.Request.Revision < m.revisions[r.Key()]
+	accepted := hasSnapshot && !obsolete
 	if accepted {
 		m.revisions[r.Key()] = msg.Snapshot.Revision
 		if r.Kind == catalog.Libraries {
@@ -241,6 +246,9 @@ func (m Model) handleResource(msg ResourceMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.libraryColumn().ReplaceItems(components.WrapLibraries(m.allLibraryEntries()))
+			if msg.Stage == loadFinished && msg.Err == nil {
+				m.pruneLibraryRequests()
+			}
 
 			policy := catalog.Revalidate
 			if msg.Request.Policy == catalog.Refresh {
@@ -281,8 +289,7 @@ func (m Model) handleResource(msg ResourceMsg) (tea.Model, tea.Cmd) {
 	if msg.Stage == loadCached {
 		for i := 0; i < m.ColumnStack.Len(); i++ {
 			if col := m.ColumnStack.Get(i); col.ContentID() == r.Key() {
-				col.SetLoading(false)
-				col.SetRefreshing(true)
+				col.BeginLoad()
 			}
 		}
 	} else {
@@ -295,36 +302,41 @@ func (m Model) handleResource(msg ResourceMsg) (tea.Model, tea.Cmd) {
 			if col.ContentID() != r.Key() {
 				continue
 			}
-			col.SetRefreshing(viewPending || syncPending)
-			if msg.Err != nil && !col.HasContent() {
-				col.SetLoadFailed()
+			if viewPending || syncPending {
+				col.BeginLoad()
+			} else {
+				col.FinishLoad(!obsolete && msg.Err != nil && !errors.Is(msg.Err, context.Canceled))
 			}
 		}
 		if id := libraryStateID(r); id != "" {
 			state := m.LibraryStates[id]
-			state.Loaded = len(msg.Snapshot.Items)
-			state.Total = state.Loaded
-			state.FromCache = msg.Snapshot.FromCache
-			state.Error = msg.Err
+			if accepted {
+				state.Loaded = len(msg.Snapshot.Items)
+				state.Total = state.Loaded
+				state.FromCache = msg.Snapshot.FromCache
+			}
+			if !obsolete {
+				state.Error = msg.Err
+			}
 			switch {
 			case viewPending || syncPending:
 				state.Status = components.StatusSyncing
-			case msg.Err != nil:
+			case state.Error != nil:
 				state.Status = components.StatusError
 			default:
 				state.Status = components.StatusSynced
-				cmds = append(cmds, m.clearLibraryStatus(id, msg.Snapshot.Revision))
+				cmds = append(cmds, m.clearLibraryStatus(id, m.revisions[r.Key()]))
 			}
 			m.LibraryStates[id] = state
 			m.updateLibraryStates()
 		}
-		if msg.Err != nil {
+		if !obsolete && msg.Err != nil {
 			if m.navPlan != nil && m.navPlan.AwaitKey == r.Key() {
 				m.clearNavPlan()
 			}
 			cmds = append(cmds, m.notifyError("Loading "+m.resourceName(r), msg.Err))
 		}
-		if msg.Snapshot.Warning != nil {
+		if !obsolete && msg.Snapshot.Warning != nil {
 			cmds = append(cmds, m.notifyError("Loaded "+m.resourceName(r), msg.Snapshot.Warning))
 		}
 	}
@@ -356,8 +368,11 @@ func (m Model) handleAction(msg ActionMsg) (tea.Model, tea.Cmd) {
 		m.applyWatchState(change.Mutation.ItemID, change.Mutation.Played)
 	}
 	for _, r := range change.Resources {
-		// Reconcile all affected open projections; root playlists also updates its
-		// parent list/count after an item mutation.
+		// Playlist counts stay current even when their column is closed.
+		if r.Kind == catalog.Playlists {
+			cmds = append(cmds, m.loadResource(r, catalog.Revalidate, true))
+			continue
+		}
 		for i := 0; i < m.ColumnStack.Len(); i++ {
 			if m.ColumnStack.Get(i).ContentID() == r.Key() {
 				cmds = append(cmds, m.loadResource(r, catalog.Revalidate, false))
@@ -482,4 +497,24 @@ func (m *Model) applyWatchState(itemID string, played bool) {
 	}
 
 	m.updateInspector()
+}
+
+// pruneLibraryRequests detaches removed libraries after an authoritative root
+// refresh. Queued results cannot recreate removed rows or keep sync active.
+func (m *Model) pruneLibraryRequests() {
+	allowed := make(map[string]bool, len(m.Libraries))
+	for _, lib := range m.Libraries {
+		allowed[lib.ID] = true
+	}
+	for key, r := range m.resources {
+		if r.LibraryID == "" || allowed[r.LibraryID] {
+			continue
+		}
+		m.requests.stop(viewOwner(r))
+		m.requests.stop(syncOwner(r))
+		delete(m.resources, key)
+		delete(m.backgroundStarted, key)
+		delete(m.LibraryStates, r.LibraryID)
+	}
+	m.updateLibraryStates()
 }

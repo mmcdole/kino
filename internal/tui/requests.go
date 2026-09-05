@@ -27,6 +27,7 @@ type request struct {
 	Owner    string
 	Resource catalog.Resource
 	Policy   catalog.Policy
+	Revision uint64
 	ctx      context.Context
 	cancel   context.CancelFunc
 }
@@ -80,17 +81,15 @@ func (m *Model) loadResource(r catalog.Resource, policy catalog.Policy, backgrou
 		return nil
 	}
 	req := m.requests.begin(owner, r, policy)
+	req.Revision = m.revisions[r.Key()]
+	m.requests.active[owner] = req
 	m.resources[r.Key()] = r
 	for i := 0; i < m.ColumnStack.Len(); i++ {
 		col := m.ColumnStack.Get(i)
 		if col.ContentID() != r.Key() {
 			continue
 		}
-		if col.HasContent() {
-			col.SetRefreshing(true)
-		} else {
-			col.SetLoading(true)
-		}
+		col.BeginLoad()
 	}
 	if id := libraryStateID(r); id != "" {
 		state := m.LibraryStates[id]
