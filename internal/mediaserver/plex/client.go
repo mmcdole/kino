@@ -145,7 +145,10 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			lastErr = fmt.Errorf("%w: %v", domain.ErrServerOffline, err)
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			lastErr = fmt.Errorf("%w: %w", domain.ErrServerOffline, err)
 			c.logger.Warn("plex request failed", "error", err, "method", method, "path", path, "attempt", attempt)
 			continue
 		}
@@ -153,12 +156,17 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			return nil, fmt.Errorf("failed to read response: %w", err)
 		}
 
 		switch {
 		case resp.StatusCode == http.StatusUnauthorized:
 			return nil, domain.ErrAuthFailed
+		case resp.StatusCode == http.StatusNotFound:
+			return nil, domain.ErrItemNotFound
 		case resp.StatusCode >= 500:
 			lastErr = fmt.Errorf("server error: %d - %s", resp.StatusCode, truncateForLog(body))
 			c.logger.Warn("plex server error",
