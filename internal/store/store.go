@@ -69,7 +69,7 @@ func NewLibraryStore(baseCacheDir, serverURL, userID string) (*LibraryStore, err
 
 	// Create buckets
 	err = db.Update(func(tx *bolt.Tx) error {
-		for _, bucket := range [][]byte{bucketLibraries, bucketContent, bucketSeasons, bucketEpisodes, bucketPlaylists} {
+		for _, bucket := range [][]byte{bucketLibraries, bucketContent, bucketSeasons, bucketEpisodes, bucketPlaylists, bucketSnapshots} {
 			if _, err := tx.CreateBucketIfNotExists(bucket); err != nil {
 				return err
 			}
