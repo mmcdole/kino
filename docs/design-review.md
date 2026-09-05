@@ -1,5 +1,9 @@
 # Kino Design Review — July 2026
 
+Historical findings below describe the code at review time. See
+[Application architecture](architecture.md) for the current request, cache,
+loading, and lifecycle model.
+
 Full-codebase review (~12.6k lines Go) covering architecture, separation of concerns,
 consistency, UX, and security. Four review passes: TUI architecture, UX consistency,
 services/domain/store, backends/config/cross-cutting. Every finding was verified
