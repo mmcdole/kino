@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 const (
@@ -20,7 +20,7 @@ const (
 
 // Authenticate signs in to a Jellyfin server with a username and password.
 // The device ID must be unique per install (see buildAuthHeader).
-func Authenticate(ctx context.Context, serverURL, deviceID, username, password string, logger *slog.Logger) (*domain.Credentials, error) {
+func Authenticate(ctx context.Context, serverURL, deviceID, username, password string, logger *slog.Logger) (*media.Credentials, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -48,7 +48,7 @@ func Authenticate(ctx context.Context, serverURL, deviceID, username, password s
 	resp, err := (&http.Client{Timeout: authTimeout}).Do(req)
 	if err != nil {
 		logger.Error("Jellyfin auth request failed", "error", err)
-		return nil, fmt.Errorf("%w: %v", domain.ErrServerOffline, err)
+		return nil, fmt.Errorf("%w: %v", media.ErrServerOffline, err)
 	}
 	defer resp.Body.Close()
 
@@ -58,7 +58,7 @@ func Authenticate(ctx context.Context, serverURL, deviceID, username, password s
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("%w: check username and password", domain.ErrAuthFailed)
+		return nil, fmt.Errorf("%w: check username and password", media.ErrAuthFailed)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -71,7 +71,7 @@ func Authenticate(ctx context.Context, serverURL, deviceID, username, password s
 		return nil, fmt.Errorf("failed to parse auth response: %w", err)
 	}
 
-	return &domain.Credentials{
+	return &media.Credentials{
 		Token:    authResp.AccessToken,
 		UserID:   authResp.User.ID,
 		Username: authResp.User.Name,

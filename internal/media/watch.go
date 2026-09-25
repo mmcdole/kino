@@ -1,4 +1,4 @@
-package domain
+package media
 
 import "slices"
 
@@ -33,7 +33,7 @@ func (c WatchChange) Apply(lists map[string][]ListItem) map[string][]ListItem {
 	for key, items := range lists {
 		out := items
 		for i, item := range items {
-			m, ok := item.(*MediaItem)
+			m, ok := item.(*Item)
 			if !ok || m.ID != c.ItemID || (m.IsPlayed == c.Played && m.ViewOffset == 0) {
 				continue
 			}

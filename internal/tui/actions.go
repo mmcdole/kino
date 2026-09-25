@@ -3,7 +3,7 @@ package tui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 // mutationOwner identifies what a write changes. Adding and removing the same
@@ -33,7 +33,7 @@ func (m *Model) beginMutation(change catalog.Mutation) tea.Cmd {
 	return mutateCmd(m.catalog, req, change)
 }
 
-func (m *Model) beginPlayback(item domain.MediaItem, resume bool) tea.Cmd {
+func (m *Model) beginPlayback(item media.Item, resume bool) tea.Cmd {
 	owner := "playback:" + item.ID
 	if _, pending := m.requests.active[owner]; pending {
 		return nil

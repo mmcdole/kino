@@ -1,4 +1,4 @@
-package domain
+package media
 
 import "time"
 
@@ -16,18 +16,18 @@ type Credentials struct {
 	Username string // Display username
 }
 
-// MediaType distinguishes content types
-type MediaType int
+// Type distinguishes content types
+type Type int
 
 const (
-	MediaTypeMovie MediaType = iota
-	MediaTypeShow
-	MediaTypeSeason
-	MediaTypeEpisode
+	TypeMovie Type = iota
+	TypeShow
+	TypeSeason
+	TypeEpisode
 )
 
-// MediaItem represents a playable item (Movie or Episode)
-type MediaItem struct {
+// Item represents a playable item (Movie or Episode)
+type Item struct {
 	ID         string        // Server-specific unique identifier
 	Title      string        // Display title
 	SortTitle  string        // Title used for sorting
@@ -39,7 +39,7 @@ type MediaItem struct {
 	Duration   time.Duration // Total runtime
 	ViewOffset time.Duration // Watch progress
 	IsPlayed   bool          // Whether item is marked as watched
-	Type       MediaType     // Movie or Episode
+	Type       Type          // Movie or Episode
 
 	// Episode-specific fields (empty for movies)
 	ShowTitle  string // Parent show name
@@ -70,7 +70,7 @@ type MediaItem struct {
 }
 
 // WatchStatus returns the watch status of the media item
-func (m MediaItem) WatchStatus() WatchStatus {
+func (m Item) WatchStatus() WatchStatus {
 	if m.IsPlayed {
 		return WatchStatusWatched
 	}
@@ -81,14 +81,14 @@ func (m MediaItem) WatchStatus() WatchStatus {
 }
 
 // ShouldResume returns true if playback should resume from saved position
-func (m MediaItem) ShouldResume() bool {
+func (m Item) ShouldResume() bool {
 	return m.ViewOffset > 0 && !m.IsPlayed
 }
 
 // ListItem interface implementation for MediaItem
 
-func (m *MediaItem) GetID() string    { return m.ID }
-func (m *MediaItem) GetTitle() string { return m.Title }
+func (m *Item) GetID() string    { return m.ID }
+func (m *Item) GetTitle() string { return m.Title }
 
 // Show represents a TV series container
 type Show struct {

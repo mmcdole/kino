@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/search"
 )
 
@@ -33,7 +33,7 @@ func (m *Model) runSearch(msg searchDebounceMsg) tea.Cmd {
 		return nil
 	}
 	req := m.requests.begin("search", catalog.Resource{}, catalog.Browse)
-	libraries := append([]domain.Library(nil), m.libraries...)
+	libraries := append([]media.Library(nil), m.libraries...)
 	index := m.searchIndex
 	return func() tea.Msg {
 		return searchResultsMsg{Request: req, Results: index.Search(req.ctx, msg.Query, libraries)}
@@ -66,6 +66,6 @@ func (m *Model) navigateToSearchResult(item search.Entry) tea.Cmd {
 	}
 	m.libraryColumn().SetSelectedByID(lib.ID)
 	r := catalog.LibraryResource(*lib)
-	m.pendingSelect = &pendingSelect{key: r.Key(), id: item.Item.GetID(), open: item.Type == domain.MediaTypeShow}
+	m.pendingSelect = &pendingSelect{key: r.Key(), id: item.Item.GetID(), open: item.Type == media.TypeShow}
 	return tea.Batch(m.pushColumn(r, lib.Name), m.trySelect(r.Key(), false))
 }

@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/tui/components"
 )
 
@@ -49,7 +49,7 @@ func (m *Model) pushColumn(r catalog.Resource, title string) tea.Cmd {
 	m.columns.Push(col)
 	m.track(r)
 	if st := m.collection(r); st.Known {
-		col.ReplaceItems(domain.CloneItems(st.Snapshot.Items))
+		col.ReplaceItems(media.CloneItems(st.Snapshot.Items))
 	}
 	m.updateLayout()
 	return m.loadResource(r, catalog.Browse, false)
@@ -62,20 +62,20 @@ func (m *Model) drillSelected() tea.Cmd {
 	}
 	parent, _ := m.topResource()
 	switch item := top.SelectedItem().(type) {
-	case *domain.Library:
+	case *media.Library:
 		if item.ID == playlistsLibraryID {
 			return m.pushColumn(catalog.Resource{Kind: catalog.Playlists}, "Playlists")
 		}
 		return m.pushColumn(catalog.LibraryResource(*item), item.Name)
-	case *domain.Show:
+	case *media.Show:
 		return m.pushColumn(catalog.Resource{Kind: catalog.Seasons, ID: item.ID, LibraryID: parent.LibraryID, ShowID: item.ID}, item.Title)
-	case *domain.Season:
+	case *media.Season:
 		title := fmt.Sprintf("%s - S%02d", item.ShowTitle, item.SeasonNum)
 		if item.SeasonNum == 0 {
 			title = item.ShowTitle + " - Specials"
 		}
 		return m.pushColumn(catalog.Resource{Kind: catalog.Episodes, ID: item.ID, LibraryID: parent.LibraryID, ShowID: parent.ShowID}, title)
-	case *domain.Playlist:
+	case *media.Playlist:
 		return m.pushColumn(catalog.Resource{Kind: catalog.PlaylistItems, ID: item.ID}, item.Title)
 	}
 	return nil

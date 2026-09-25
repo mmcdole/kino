@@ -1,5 +1,5 @@
 // Package httpx is the HTTP transport shared by the media server backends.
-// It owns retries and the mapping from transport failures to domain errors.
+// It owns retries and the mapping from transport failures to the media package errors.
 package httpx
 
 import (
@@ -12,7 +12,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 // Request describes one API call. Only idempotent requests may set Retry:
@@ -37,8 +37,8 @@ type Client struct {
 }
 
 // Do sends r and returns the response body of a 2xx response. A 401 maps to
-// domain.ErrAuthFailed, 404 to domain.ErrItemNotFound, and a transport failure
-// to domain.ErrServerOffline wrapping its cause. Retried requests repeat on
+// media.ErrAuthFailed, 404 to media.ErrItemNotFound, and a transport failure
+// to media.ErrServerOffline wrapping its cause. Retried requests repeat on
 // transport failures and 5xx responses. Cancellation is returned as-is.
 func (c *Client) Do(ctx context.Context, r Request) ([]byte, error) {
 	target := c.BaseURL + r.Path
@@ -70,12 +70,12 @@ func (c *Client) Do(ctx context.Context, r Request) ([]byte, error) {
 		case err != nil && ctx.Err() != nil:
 			return nil, ctx.Err()
 		case err != nil:
-			lastErr = fmt.Errorf("%w: %w", domain.ErrServerOffline, err)
+			lastErr = fmt.Errorf("%w: %w", media.ErrServerOffline, err)
 			c.Logger.Warn("request failed", "backend", c.Name, "error", err, "method", r.Method, "path", r.Path, "attempt", attempt)
 		case status == http.StatusUnauthorized:
-			return nil, domain.ErrAuthFailed
+			return nil, media.ErrAuthFailed
 		case status == http.StatusNotFound:
-			return nil, domain.ErrItemNotFound
+			return nil, media.ErrItemNotFound
 		case status >= 500:
 			lastErr = fmt.Errorf("server error: %d - %s", status, truncate(body))
 			c.Logger.Warn("server error", "backend", c.Name, "status", status, "method", r.Method, "path", r.Path, "attempt", attempt)

@@ -22,7 +22,7 @@ flowchart LR
   the cache, persist changes, search the index, or perform network I/O. View renders
   state; layout belongs to Update. Inspector selection is reconciled after every
   model update, including filtering that changes the item without moving its index.
-- **Domain:** entity identity, metadata, and watch-state semantics. Collection
+- **Media:** entity identity, metadata, and watch-state semantics. Collection
   consumers require only identity and title. TUI presenters supply formatting,
   navigation affordances, and sort metadata.
 - **Catalog:** resource identity, cache freshness, shared fetches, pagination,
@@ -149,7 +149,7 @@ and sync status, so late responses cannot recreate them.
 Catalog serializes remote writes and reconciles before returning their result.
 Watch updates patch, in one transaction, every cached snapshot that contains the
 item or its show and season, and adjust parent counters once; the rollup rules
-live in `domain.WatchChange`. Only the patched collections are revised and
+live in `media.WatchChange`. Only the patched collections are revised and
 published, including show and season parents, so the TUI never infers watch
 changes from open columns. Missing or invalid cached projections require server
 revalidation. Playlist changes expire affected snapshots while retaining offline

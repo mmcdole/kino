@@ -2,7 +2,7 @@ package tui
 
 import (
 	"github.com/mmcdole/kino/internal/catalog"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/search"
 )
 
@@ -19,7 +19,7 @@ type loadDoneMsg struct {
 type actionMsg struct {
 	Request  request
 	Change   catalog.Change
-	Item     domain.MediaItem
+	Item     media.Item
 	Playback bool
 	Err      error
 }
@@ -27,7 +27,7 @@ type actionMsg struct {
 type playlistModalDataMsg struct {
 	Request    request
 	Membership catalog.Membership
-	Item       domain.MediaItem
+	Item       media.Item
 	Err        error
 }
 

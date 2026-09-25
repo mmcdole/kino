@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/search"
 	"github.com/mmcdole/kino/internal/tui/components"
 )
@@ -22,8 +22,8 @@ type Catalog interface {
 
 // Playback opens a media item in an external player.
 type Playback interface {
-	Play(context.Context, domain.MediaItem) error
-	Resume(context.Context, domain.MediaItem) error
+	Play(context.Context, media.Item) error
+	Resume(context.Context, media.Item) error
 }
 
 // Session ends the signed-in session. The cache is cleared by the caller
@@ -62,7 +62,7 @@ type Model struct {
 	playlistModal components.PlaylistModal
 	inputModal    components.InputModal
 
-	libraries     []domain.Library
+	libraries     []media.Library
 	libraryStates map[string]components.CollectionFeedback
 	collections   map[string]catalog.State
 	indicators    map[string]uint64 // key → server attempt whose spinner is due
@@ -72,7 +72,7 @@ type Model struct {
 	noticeSeq     int
 	searchSeq     uint64
 	pendingSelect *pendingSelect
-	confirmDelete *domain.Playlist // the playlist overlayConfirmDelete asks about
+	confirmDelete *media.Playlist // the playlist overlayConfirmDelete asks about
 }
 
 func NewModel(ctx context.Context, svc Catalog, playback Playback, session Session, index *search.Index, opts Options) *Model {

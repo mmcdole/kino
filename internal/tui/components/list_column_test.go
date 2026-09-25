@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 func TestLibraryCountVisibilityIsIndependentOfActivity(t *testing.T) {
@@ -15,7 +15,7 @@ func TestLibraryCountVisibilityIsIndependentOfActivity(t *testing.T) {
 			for _, active := range []bool{false, true} {
 				c := NewListColumn("Libraries", ColumnOptions{})
 				c.SetShowLibraryCounts(show)
-				c.SetItems([]domain.ListItem{&domain.Library{ID: "lib", Name: "Movies"}})
+				c.SetItems([]media.ListItem{&media.Library{ID: "lib", Name: "Movies"}})
 				c.SetSize(40, 20)
 				c.SetLibraryStates(map[string]CollectionFeedback{"lib": {
 					Summary:  CollectionSummary{Known: true, Count: count},
@@ -59,10 +59,10 @@ func TestFailedRefreshKeepsKnownEmptyCollectionAndRetry(t *testing.T) {
 	}
 }
 
-func testMovies(titles ...string) []domain.ListItem {
-	items := make([]domain.ListItem, len(titles))
+func testMovies(titles ...string) []media.ListItem {
+	items := make([]media.ListItem, len(titles))
 	for i, t := range titles {
-		items[i] = &domain.MediaItem{ID: "id-" + t, Title: t, Type: domain.MediaTypeMovie}
+		items[i] = &media.Item{ID: "id-" + t, Title: t, Type: media.TypeMovie}
 	}
 	return items
 }
@@ -151,7 +151,7 @@ func TestReplaceItemsOnEmptyColumn(t *testing.T) {
 }
 
 func TestRowsFollowItemTypeNotColumn(t *testing.T) {
-	episode := &domain.MediaItem{ID: "e", Title: "Pilot", Type: domain.MediaTypeEpisode, ShowTitle: "Show", SeasonNum: 1, EpisodeNum: 1}
+	episode := &media.Item{ID: "e", Title: "Pilot", Type: media.TypeEpisode, ShowTitle: "Show", SeasonNum: 1, EpisodeNum: 1}
 	for _, test := range []struct {
 		opts ColumnOptions
 		want string
@@ -162,7 +162,7 @@ func TestRowsFollowItemTypeNotColumn(t *testing.T) {
 		c := NewListColumn("test", test.opts)
 		c.SetSize(60, 10)
 		c.SetItems(nil)
-		c.ReplaceItems([]domain.ListItem{episode, &domain.Show{ID: "s", Title: "Mixed Show", Year: 2020}})
+		c.ReplaceItems([]media.ListItem{episode, &media.Show{ID: "s", Title: "Mixed Show", Year: 2020}})
 		view := c.View()
 		if !strings.Contains(view, test.want) || !strings.Contains(view, "Mixed Show (2020)") {
 			t.Fatalf("rows ignored item types: %s", view)

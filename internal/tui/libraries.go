@@ -2,7 +2,7 @@ package tui
 
 import (
 	"github.com/mmcdole/kino/internal/catalog"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/tui/components"
 )
 
@@ -11,8 +11,8 @@ import (
 const playlistsLibraryID = "__playlists__"
 
 // playlistsLibraryEntry returns the synthetic library entry for playlists
-func playlistsLibraryEntry() domain.Library {
-	return domain.Library{
+func playlistsLibraryEntry() media.Library {
+	return media.Library{
 		ID:   playlistsLibraryID,
 		Name: "Playlists",
 		Type: "playlist",
@@ -22,8 +22,8 @@ func playlistsLibraryEntry() domain.Library {
 // allLibraryEntries returns libraries plus the synthetic Playlists entry in a
 // new slice. Appending to m.libraries directly could write into its spare
 // capacity, and the library column keeps pointers into the returned slice.
-func (m *Model) allLibraryEntries() []domain.Library {
-	entries := make([]domain.Library, 0, len(m.libraries)+1)
+func (m *Model) allLibraryEntries() []media.Library {
+	entries := make([]media.Library, 0, len(m.libraries)+1)
 	entries = append(entries, m.libraries...)
 	return append(entries, playlistsLibraryEntry())
 }
@@ -43,7 +43,7 @@ func libraryStateID(r catalog.Resource) string {
 
 func (m *Model) libraryColumn() *components.ListColumn { return m.columns.Get(0) }
 
-func (m *Model) findLibrary(id string) *domain.Library {
+func (m *Model) findLibrary(id string) *media.Library {
 	for _, lib := range m.libraries {
 		if lib.ID == id {
 			return &lib

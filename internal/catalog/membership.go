@@ -7,12 +7,12 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 // Membership lists every playlist and whether each one holds an item.
 type Membership struct {
-	Playlists []*domain.Playlist
+	Playlists []*media.Playlist
 	Present   map[string]bool
 }
 
@@ -34,7 +34,7 @@ func (s *Service) PlaylistMembership(ctx context.Context, itemID string) (Member
 	}
 	result := Membership{Present: make(map[string]bool)}
 	for _, item := range snapshot.Items {
-		if p, ok := item.(*domain.Playlist); ok {
+		if p, ok := item.(*media.Playlist); ok {
 			result.Playlists = append(result.Playlists, p)
 		}
 	}
@@ -56,7 +56,7 @@ func (s *Service) PlaylistMembership(ctx context.Context, itemID string) (Member
 		wg.Go(func() {
 			defer func() { <-slots }()
 			items, err := s.Load(ctx, Resource{Kind: PlaylistItems, ID: playlist.ID}, Revalidate)
-			present := slices.ContainsFunc(items.Items, func(item domain.ListItem) bool { return item.GetID() == itemID })
+			present := slices.ContainsFunc(items.Items, func(item media.ListItem) bool { return item.GetID() == itemID })
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {

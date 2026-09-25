@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/store"
 )
 
@@ -39,7 +39,7 @@ func TestUncertainMutationDoesNotRestoreRemovedLibrary(t *testing.T) {
 	write := m.requests.begin("mutation:watch:movie", catalog.Resource{}, catalog.Browse)
 	root := catalog.Resource{Kind: catalog.Libraries}
 	m = publish(m, catalog.State{Resource: root, Known: true, Snapshot: snapshot(root, 1)})
-	m = updateModel(m, actionMsg{Request: write, Change: catalog.Change{Resources: []catalog.Resource{r}}, Err: domain.ErrServerOffline})
+	m = updateModel(m, actionMsg{Request: write, Change: catalog.Change{Resources: []catalog.Resource{r}}, Err: media.ErrServerOffline})
 	if _, ok := m.collections[r.Key()]; ok {
 		t.Fatal("mutation recovery recreated a removed collection")
 	}
@@ -59,13 +59,13 @@ func TestWatchCompletionAfterBackUpdatesParent(t *testing.T) {
 	episodes := catalog.Resource{Kind: catalog.Episodes, ID: "season", ShowID: "show", LibraryID: "a"}
 	for _, entry := range []struct {
 		r    catalog.Resource
-		item domain.ListItem
+		item media.ListItem
 	}{
-		{shows, &domain.Show{ID: "show", Title: "Show", EpisodeCount: 1, UnwatchedCount: 1}},
-		{seasons, &domain.Season{ID: "season", ShowID: "show", EpisodeCount: 1, UnwatchedCount: 1}},
-		{episodes, &domain.MediaItem{ID: "episode", ShowID: "show", ParentID: "season"}},
+		{shows, &media.Show{ID: "show", Title: "Show", EpisodeCount: 1, UnwatchedCount: 1}},
+		{seasons, &media.Season{ID: "season", ShowID: "show", EpisodeCount: 1, UnwatchedCount: 1}},
+		{episodes, &media.Item{ID: "episode", ShowID: "show", ParentID: "season"}},
 	} {
-		if err := cache.Save(entry.r.Key(), domain.CachedList{Items: []domain.ListItem{entry.item}, FetchedAt: time.Now()}); err != nil {
+		if err := cache.Save(entry.r.Key(), media.CachedList{Items: []media.ListItem{entry.item}, FetchedAt: time.Now()}); err != nil {
 			t.Fatal(err)
 		}
 		m = await(t, m, svc, start(m.pushColumn(entry.r, "Content")))
@@ -73,7 +73,7 @@ func TestWatchCompletionAfterBackUpdatesParent(t *testing.T) {
 	cmd := m.beginMutation(catalog.Mutation{Kind: catalog.MutationWatch, ItemID: "episode", ShowID: "show", SeasonID: "season", LibraryID: "a", Played: true})
 	m.handleBack()
 	m = await(t, m, svc, start(cmd))
-	if m.columns.Top().SelectedItem().(*domain.Season).UnwatchedCount != 0 || m.columns.Get(1).SelectedItem().(*domain.Show).UnwatchedCount != 0 {
+	if m.columns.Top().SelectedItem().(*media.Season).UnwatchedCount != 0 || m.columns.Get(1).SelectedItem().(*media.Show).UnwatchedCount != 0 {
 		t.Fatal("successful episode watch after Back leaves visible parent counts unchanged")
 	}
 }

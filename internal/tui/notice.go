@@ -7,7 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 // authFailedStatusMsg tells the user how to recover from a revoked/expired
@@ -18,7 +18,7 @@ func (m *Model) notifyError(scope string, err error) tea.Cmd {
 	if err == nil || errors.Is(err, context.Canceled) {
 		return nil
 	}
-	if errors.Is(err, domain.ErrAuthFailed) {
+	if errors.Is(err, media.ErrAuthFailed) {
 		return m.notify(noticeAlert, authFailedStatusMsg)
 	}
 	return m.notify(noticeError, fmt.Sprintf("%s: %v", scope, err))

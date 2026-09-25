@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 func ids(v *listView) []string {
@@ -16,10 +16,10 @@ func ids(v *listView) []string {
 }
 
 func TestListViewSortAndFilter(t *testing.T) {
-	items := []domain.ListItem{
-		&domain.MediaItem{ID: "b", Title: "Bravo", Year: 2001, Rating: 7},
-		&domain.MediaItem{ID: "a", Title: "Alpha", Year: 1999, Rating: 9},
-		&domain.MediaItem{ID: "c", Title: "Charlie", Year: 2010, Rating: 5},
+	items := []media.ListItem{
+		&media.Item{ID: "b", Title: "Bravo", Year: 2001, Rating: 7},
+		&media.Item{ID: "a", Title: "Alpha", Year: 1999, Rating: 9},
+		&media.Item{ID: "c", Title: "Charlie", Year: 2010, Rating: 5},
 	}
 	tests := []struct {
 		name  string
@@ -52,10 +52,10 @@ func TestListViewSortAndFilter(t *testing.T) {
 
 func TestListViewEpisodeOrder(t *testing.T) {
 	v := &listView{sortField: SortEpisodeNum}
-	v.setItems([]domain.ListItem{
-		&domain.MediaItem{ID: "s2e1", SeasonNum: 2, EpisodeNum: 1},
-		&domain.MediaItem{ID: "s1e2", SeasonNum: 1, EpisodeNum: 2},
-		&domain.MediaItem{ID: "s1e1", SeasonNum: 1, EpisodeNum: 1},
+	v.setItems([]media.ListItem{
+		&media.Item{ID: "s2e1", SeasonNum: 2, EpisodeNum: 1},
+		&media.Item{ID: "s1e2", SeasonNum: 1, EpisodeNum: 2},
+		&media.Item{ID: "s1e1", SeasonNum: 1, EpisodeNum: 1},
 	})
 	if got := ids(v); !slices.Equal(got, []string{"s1e1", "s1e2", "s2e1"}) {
 		t.Fatalf("order = %v", got)

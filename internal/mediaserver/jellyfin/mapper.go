@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/mediaserver/normalize"
 )
 
@@ -14,9 +14,9 @@ const (
 	ticksPerSecond      = 10000000
 )
 
-// mapLibraries converts Jellyfin virtual folders to domain libraries
-func mapLibraries(items []baseItem) []domain.Library {
-	libraries := make([]domain.Library, 0, len(items))
+// mapLibraries converts Jellyfin virtual folders to media libraries
+func mapLibraries(items []baseItem) []media.Library {
+	libraries := make([]media.Library, 0, len(items))
 	for _, item := range items {
 		lib := mapLibrary(item)
 		if lib != nil {
@@ -26,8 +26,8 @@ func mapLibraries(items []baseItem) []domain.Library {
 	return libraries
 }
 
-// mapLibrary converts a single Jellyfin item to a domain library
-func mapLibrary(item baseItem) *domain.Library {
+// mapLibrary converts a single Jellyfin item to a media library
+func mapLibrary(item baseItem) *media.Library {
 	// Map Jellyfin CollectionType to our library type
 	var libType string
 	switch item.CollectionType {
@@ -51,7 +51,7 @@ func mapLibrary(item baseItem) *domain.Library {
 		}
 	}
 
-	return &domain.Library{
+	return &media.Library{
 		ID:        item.ID,
 		Name:      item.Name,
 		Type:      libType,
@@ -59,9 +59,9 @@ func mapLibrary(item baseItem) *domain.Library {
 	}
 }
 
-// mapMovies converts Jellyfin items to domain media items (movies)
-func mapMovies(items []baseItem, serverURL string) []*domain.MediaItem {
-	movies := make([]*domain.MediaItem, 0, len(items))
+// mapMovies converts Jellyfin items to media items (movies)
+func mapMovies(items []baseItem, serverURL string) []*media.Item {
+	movies := make([]*media.Item, 0, len(items))
 	for _, item := range items {
 		if item.Type != "Movie" {
 			continue
@@ -72,9 +72,9 @@ func mapMovies(items []baseItem, serverURL string) []*domain.MediaItem {
 	return movies
 }
 
-// mapMovie converts a single Jellyfin movie item to a domain media item
-func mapMovie(item baseItem, serverURL string) domain.MediaItem {
-	mi := domain.MediaItem{
+// mapMovie converts a single Jellyfin movie item to a media item
+func mapMovie(item baseItem, serverURL string) media.Item {
+	mi := media.Item{
 		ID:        item.ID,
 		Title:     item.Name,
 		SortTitle: item.SortName,
@@ -82,7 +82,7 @@ func mapMovie(item baseItem, serverURL string) domain.MediaItem {
 		Summary:   item.Overview,
 		Year:      item.ProductionYear,
 		Duration:  ticksToDuration(item.RunTimeTicks),
-		Type:      domain.MediaTypeMovie,
+		Type:      media.TypeMovie,
 	}
 
 	if mi.SortTitle == "" {
@@ -124,9 +124,9 @@ func mapMovie(item baseItem, serverURL string) domain.MediaItem {
 	return mi
 }
 
-// mapShows converts Jellyfin items to domain shows
-func mapShows(items []baseItem, serverURL string) []*domain.Show {
-	shows := make([]*domain.Show, 0, len(items))
+// mapShows converts Jellyfin items to media shows
+func mapShows(items []baseItem, serverURL string) []*media.Show {
+	shows := make([]*media.Show, 0, len(items))
 	for _, item := range items {
 		if item.Type != "Series" {
 			continue
@@ -137,9 +137,9 @@ func mapShows(items []baseItem, serverURL string) []*domain.Show {
 	return shows
 }
 
-// mapShow converts a single Jellyfin series item to a domain show
-func mapShow(item baseItem, serverURL string) domain.Show {
-	show := domain.Show{
+// mapShow converts a single Jellyfin series item to a media show
+func mapShow(item baseItem, serverURL string) media.Show {
+	show := media.Show{
 		ID:           item.ID,
 		Title:        item.Name,
 		SortTitle:    item.SortName,
@@ -188,9 +188,9 @@ func mapShow(item baseItem, serverURL string) domain.Show {
 	return show
 }
 
-// mapSeasons converts Jellyfin items to domain seasons
-func mapSeasons(items []baseItem, serverURL string) []*domain.Season {
-	seasons := make([]*domain.Season, 0, len(items))
+// mapSeasons converts Jellyfin items to media seasons
+func mapSeasons(items []baseItem, serverURL string) []*media.Season {
+	seasons := make([]*media.Season, 0, len(items))
 	for _, item := range items {
 		if item.Type != "Season" {
 			continue
@@ -201,9 +201,9 @@ func mapSeasons(items []baseItem, serverURL string) []*domain.Season {
 	return seasons
 }
 
-// mapSeason converts a single Jellyfin season item to a domain season
-func mapSeason(item baseItem, serverURL string) domain.Season {
-	season := domain.Season{
+// mapSeason converts a single Jellyfin season item to a media season
+func mapSeason(item baseItem, serverURL string) media.Season {
+	season := media.Season{
 		ID:           item.ID,
 		ShowID:       item.SeriesID,
 		ShowTitle:    item.SeriesName,
@@ -225,9 +225,9 @@ func mapSeason(item baseItem, serverURL string) domain.Season {
 	return season
 }
 
-// mapEpisodes converts Jellyfin items to domain media items (episodes)
-func mapEpisodes(items []baseItem, serverURL string) []*domain.MediaItem {
-	episodes := make([]*domain.MediaItem, 0, len(items))
+// mapEpisodes converts Jellyfin items to media items (episodes)
+func mapEpisodes(items []baseItem, serverURL string) []*media.Item {
+	episodes := make([]*media.Item, 0, len(items))
 	for _, item := range items {
 		if item.Type != "Episode" {
 			continue
@@ -238,16 +238,16 @@ func mapEpisodes(items []baseItem, serverURL string) []*domain.MediaItem {
 	return episodes
 }
 
-// mapEpisode converts a single Jellyfin episode item to a domain media item
-func mapEpisode(item baseItem, serverURL string) domain.MediaItem {
-	mi := domain.MediaItem{
+// mapEpisode converts a single Jellyfin episode item to a media item
+func mapEpisode(item baseItem, serverURL string) media.Item {
+	mi := media.Item{
 		ID:         item.ID,
 		Title:      item.Name,
 		SortTitle:  item.SortName,
 		Summary:    item.Overview,
 		Year:       item.ProductionYear,
 		Duration:   ticksToDuration(item.RunTimeTicks),
-		Type:       domain.MediaTypeEpisode,
+		Type:       media.TypeEpisode,
 		ShowTitle:  item.SeriesName,
 		ShowID:     item.SeriesID,
 		SeasonNum:  item.ParentIndexNumber,
@@ -371,9 +371,9 @@ func extractResolution(item baseItem) (int, int) {
 	return 0, 0
 }
 
-// mapPlaylists converts Jellyfin items to domain playlists
-func mapPlaylists(items []baseItem, serverURL string) []*domain.Playlist {
-	playlists := make([]*domain.Playlist, 0, len(items))
+// mapPlaylists converts Jellyfin items to media playlists
+func mapPlaylists(items []baseItem, serverURL string) []*media.Playlist {
+	playlists := make([]*media.Playlist, 0, len(items))
 	for _, item := range items {
 		if item.Type != "Playlist" {
 			continue
@@ -384,9 +384,9 @@ func mapPlaylists(items []baseItem, serverURL string) []*domain.Playlist {
 	return playlists
 }
 
-// mapPlaylist converts a single Jellyfin playlist item to a domain playlist
-func mapPlaylist(item baseItem, serverURL string) domain.Playlist {
-	p := domain.Playlist{
+// mapPlaylist converts a single Jellyfin playlist item to a media playlist
+func mapPlaylist(item baseItem, serverURL string) media.Playlist {
+	p := media.Playlist{
 		ID:           item.ID,
 		Title:        item.Name,
 		PlaylistType: "video", // Jellyfin playlists don't have a type field; default to video
@@ -405,11 +405,11 @@ func mapPlaylist(item baseItem, serverURL string) domain.Playlist {
 	return p
 }
 
-// mapLibraryContent converts Jellyfin items to domain.ListItem for mixed libraries.
+// mapLibraryContent converts Jellyfin items to media.ListItem for mixed libraries.
 // This handles both Movies and Series in a single response, returning them as
 // a polymorphic slice that the UI can display uniformly.
-func mapLibraryContent(items []baseItem, serverURL string) []domain.ListItem {
-	result := make([]domain.ListItem, 0, len(items))
+func mapLibraryContent(items []baseItem, serverURL string) []media.ListItem {
+	result := make([]media.ListItem, 0, len(items))
 	for _, item := range items {
 		switch item.Type {
 		case "Movie":

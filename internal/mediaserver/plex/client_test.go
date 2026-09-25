@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 func testClient(t *testing.T, handler http.Handler) *Client {
@@ -44,7 +44,7 @@ func TestMutations401MapToErrAuthFailed(t *testing.T) {
 	}
 
 	for name, err := range calls {
-		if !errors.Is(err, domain.ErrAuthFailed) {
+		if !errors.Is(err, media.ErrAuthFailed) {
 			t.Errorf("%s: 401 not mapped to ErrAuthFailed, got %v", name, err)
 		}
 	}
@@ -54,10 +54,10 @@ func TestMutations401MapToErrAuthFailed(t *testing.T) {
 func TestNetworkErrorWrapsServerOffline(t *testing.T) {
 	c := NewClient(closedURL(t), "tok", "client1", nil)
 	err := c.DeletePlaylist(context.Background(), "p")
-	if !errors.Is(err, domain.ErrServerOffline) {
+	if !errors.Is(err, media.ErrServerOffline) {
 		t.Fatalf("network error not mapped: %v", err)
 	}
-	if err.Error() == domain.ErrServerOffline.Error() {
+	if err.Error() == media.ErrServerOffline.Error() {
 		t.Fatalf("underlying cause discarded: %v", err)
 	}
 }
@@ -132,7 +132,7 @@ func TestPlaylistIdentityIsLazySharedAndRetryable(t *testing.T) {
 			}))
 			defer srv.Close()
 			c := NewClient(srv.URL, "token", "client", nil)
-			if err := c.AddToPlaylist(context.Background(), "p", []string{"m"}); !errors.Is(err, domain.ErrAuthFailed) {
+			if err := c.AddToPlaylist(context.Background(), "p", []string{"m"}); !errors.Is(err, media.ErrAuthFailed) {
 				t.Fatalf("identity error lost classification: %v", err)
 			}
 			if writes.Load() != 0 {

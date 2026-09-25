@@ -1,4 +1,4 @@
-package domain
+package media
 
 import (
 	"testing"
@@ -6,16 +6,16 @@ import (
 )
 
 func TestWatchChangeApply(t *testing.T) {
-	episode := func(played bool, offset time.Duration) *MediaItem {
-		return &MediaItem{ID: "e", Type: MediaTypeEpisode, ShowID: "show", ParentID: "season", IsPlayed: played, ViewOffset: offset}
+	episode := func(played bool, offset time.Duration) *Item {
+		return &Item{ID: "e", Type: TypeEpisode, ShowID: "show", ParentID: "season", IsPlayed: played, ViewOffset: offset}
 	}
-	lists := func(e *MediaItem, unwatched int) map[string][]ListItem {
+	lists := func(e *Item, unwatched int) map[string][]ListItem {
 		return map[string][]ListItem{
 			"episodes": {e},
-			"playlist": {&MediaItem{ID: "other"}, e},
+			"playlist": {&Item{ID: "other"}, e},
 			"shows":    {&Show{ID: "show", EpisodeCount: 10, UnwatchedCount: unwatched}},
 			"seasons":  {&Season{ID: "season", EpisodeCount: 10, UnwatchedCount: unwatched}},
-			"movies":   {&MediaItem{ID: "m"}},
+			"movies":   {&Item{ID: "m"}},
 		}
 	}
 	tests := []struct {
@@ -48,7 +48,7 @@ func TestWatchChangeApply(t *testing.T) {
 				t.Fatalf("show unwatched = %d, want %d", shows[0].(*Show).UnwatchedCount, test.unwatched)
 			}
 			if items, ok := got["playlist"]; ok {
-				if e := items[1].(*MediaItem); e.IsPlayed != test.played || e.ViewOffset != 0 {
+				if e := items[1].(*Item); e.IsPlayed != test.played || e.ViewOffset != 0 {
 					t.Fatalf("playlist copy not patched: %+v", e)
 				}
 			}
@@ -57,7 +57,7 @@ func TestWatchChangeApply(t *testing.T) {
 }
 
 func TestWatchChangeLeavesInputUntouched(t *testing.T) {
-	e := &MediaItem{ID: "e", ShowID: "show"}
+	e := &Item{ID: "e", ShowID: "show"}
 	show := &Show{ID: "show", EpisodeCount: 2, UnwatchedCount: 2}
 	input := map[string][]ListItem{"a": {e}, "b": {show}}
 	WatchChange{ItemID: "e", ShowID: "show", Played: true}.Apply(input)

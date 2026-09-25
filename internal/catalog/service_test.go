@@ -7,21 +7,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/store"
 )
 
 type fakeBackend struct {
 	Backend
-	movies    func(context.Context) ([]*domain.MediaItem, int, error)
-	libraries func(context.Context) ([]domain.Library, error)
+	movies    func(context.Context) ([]*media.Item, int, error)
+	libraries func(context.Context) ([]media.Library, error)
 	count     func(context.Context) (int, error)
 }
 
-func (f fakeBackend) GetMovies(ctx context.Context, _ string, _, _ int) ([]*domain.MediaItem, int, error) {
+func (f fakeBackend) GetMovies(ctx context.Context, _ string, _, _ int) ([]*media.Item, int, error) {
 	return f.movies(ctx)
 }
-func (f fakeBackend) GetLibraries(ctx context.Context) ([]domain.Library, error) {
+func (f fakeBackend) GetLibraries(ctx context.Context) ([]media.Library, error) {
 	return f.libraries(ctx)
 }
 func (f fakeBackend) GetLibraryItemCount(ctx context.Context, _, _ string) (int, error) {
@@ -66,13 +66,13 @@ func waitSubscribers(t *testing.T, s *Service, r Resource, n int) {
 func TestRefreshFencesOlderFetchAndSharesReplacement(t *testing.T) {
 	started, release := make(chan struct{}), make(chan struct{})
 	var calls atomic.Int32
-	svc, cache := testService(t, fakeBackend{movies: func(ctx context.Context) ([]*domain.MediaItem, int, error) {
+	svc, cache := testService(t, fakeBackend{movies: func(ctx context.Context) ([]*media.Item, int, error) {
 		if calls.Add(1) == 1 {
 			close(started)
 			<-release
-			return []*domain.MediaItem{{ID: "old"}}, 1, nil
+			return []*media.Item{{ID: "old"}}, 1, nil
 		}
-		return []*domain.MediaItem{{ID: "new"}}, 1, nil
+		return []*media.Item{{ID: "new"}}, 1, nil
 	}})
 	r := Resource{Kind: Movies, ID: "lib", LibraryID: "lib"}
 	oldDone := make(chan Snapshot, 1)
@@ -96,13 +96,13 @@ func TestRefreshFencesOlderFetchAndSharesReplacement(t *testing.T) {
 func TestConcurrentBrowseSharesFetchAndDetachedResults(t *testing.T) {
 	release := make(chan struct{})
 	var calls atomic.Int32
-	svc, cache := testService(t, fakeBackend{movies: func(ctx context.Context) ([]*domain.MediaItem, int, error) {
+	svc, cache := testService(t, fakeBackend{movies: func(ctx context.Context) ([]*media.Item, int, error) {
 		calls.Add(1)
 		<-release
-		return []*domain.MediaItem{{ID: "new"}}, 1, nil
+		return []*media.Item{{ID: "new"}}, 1, nil
 	}})
 	r := Resource{Kind: Movies, ID: "lib", LibraryID: "lib"}
-	cache.Save(r.Key(), domain.CachedList{Items: []domain.ListItem{&domain.MediaItem{ID: "cached"}}})
+	cache.Save(r.Key(), media.CachedList{Items: []media.ListItem{&media.Item{ID: "cached"}}})
 	result := make(chan Snapshot, 2)
 	for range 2 {
 		go func() {
@@ -119,7 +119,7 @@ func TestConcurrentBrowseSharesFetchAndDetachedResults(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Fatalf("duplicate requests: %d", calls.Load())
 	}
-	a.Items[0].(*domain.MediaItem).Title = "changed by consumer"
+	a.Items[0].(*media.Item).Title = "changed by consumer"
 	if b.Items[0].GetTitle() != "" {
 		t.Fatal("consumers share mutable entities")
 	}
@@ -143,14 +143,14 @@ func TestLibraryContentAndWatchStateAgeSeparately(t *testing.T) {
 			var fetches atomic.Int32
 			svc, cache := testService(t, fakeBackend{
 				count: func(context.Context) (int, error) { return 1, nil },
-				movies: func(context.Context) ([]*domain.MediaItem, int, error) {
+				movies: func(context.Context) ([]*media.Item, int, error) {
 					fetches.Add(1)
-					return []*domain.MediaItem{{ID: "movie", IsPlayed: true}}, 1, nil
+					return []*media.Item{{ID: "movie", IsPlayed: true}}, 1, nil
 				},
 			})
 			r := Resource{Kind: Movies, ID: "lib", LibraryID: "lib", Version: test.version}
 			fetched := time.Now().Add(-test.age)
-			cache.Save(r.Key(), domain.CachedList{Items: []domain.ListItem{&domain.MediaItem{ID: "movie"}}, Version: 100, FetchedAt: fetched})
+			cache.Save(r.Key(), media.CachedList{Items: []media.ListItem{&media.Item{ID: "movie"}}, Version: 100, FetchedAt: fetched})
 			result, err := svc.Load(context.Background(), r, test.policy)
 			if err != nil {
 				t.Fatal(err)
@@ -161,7 +161,7 @@ func TestLibraryContentAndWatchStateAgeSeparately(t *testing.T) {
 			if !test.wantFetch && (!result.Validated || !result.FetchedAt.Equal(fetched)) {
 				t.Fatal("count check did not validate, or renewed the list's age")
 			}
-			if test.wantFetch && !result.Items[0].(*domain.MediaItem).IsPlayed {
+			if test.wantFetch && !result.Items[0].(*media.Item).IsPlayed {
 				t.Fatal("expired user state was accepted as fresh")
 			}
 		})
@@ -169,11 +169,11 @@ func TestLibraryContentAndWatchStateAgeSeparately(t *testing.T) {
 }
 
 func TestFailedStartupAndRefreshPreserveCacheAndError(t *testing.T) {
-	for _, failure := range []error{domain.ErrServerOffline, domain.ErrAuthFailed, context.DeadlineExceeded} {
+	for _, failure := range []error{media.ErrServerOffline, media.ErrAuthFailed, context.DeadlineExceeded} {
 		t.Run(failure.Error(), func(t *testing.T) {
-			svc, cache := testService(t, fakeBackend{libraries: func(context.Context) ([]domain.Library, error) { return nil, failure }})
+			svc, cache := testService(t, fakeBackend{libraries: func(context.Context) ([]media.Library, error) { return nil, failure }})
 			r := Resource{Kind: Libraries}
-			cache.Save(r.Key(), domain.CachedList{Items: []domain.ListItem{&domain.Library{ID: "lib"}}})
+			cache.Save(r.Key(), media.CachedList{Items: []media.ListItem{&media.Library{ID: "lib"}}})
 			result, err := svc.Load(context.Background(), r, Refresh)
 			st := svc.state(r)
 			if !errors.Is(err, failure) || !st.Known || !errors.Is(st.Err, failure) || !result.Stale || len(result.Items) != 1 {
@@ -190,7 +190,7 @@ func TestCountValidationDoesNotExtendFreshness(t *testing.T) {
 	svc, cache := testService(t, fakeBackend{count: func(context.Context) (int, error) { return 1, nil }})
 	r := Resource{Kind: Movies, ID: "lib", LibraryID: "lib"}
 	fetched := time.Now().Add(-time.Minute)
-	cache.Save(r.Key(), domain.CachedList{Items: []domain.ListItem{&domain.MediaItem{ID: "movie"}}, FetchedAt: fetched})
+	cache.Save(r.Key(), media.CachedList{Items: []media.ListItem{&media.Item{ID: "movie"}}, FetchedAt: fetched})
 	result, err := svc.Load(context.Background(), r, Revalidate)
 	if err != nil {
 		t.Fatal(err)
@@ -202,7 +202,7 @@ func TestCountValidationDoesNotExtendFreshness(t *testing.T) {
 
 func TestLastSubscriberCancellationStopsNetworkWork(t *testing.T) {
 	started, stopped := make(chan struct{}), make(chan struct{})
-	svc, _ := testService(t, fakeBackend{movies: func(ctx context.Context) ([]*domain.MediaItem, int, error) {
+	svc, _ := testService(t, fakeBackend{movies: func(ctx context.Context) ([]*media.Item, int, error) {
 		close(started)
 		<-ctx.Done()
 		close(stopped)
@@ -228,7 +228,7 @@ type failingCache struct {
 	fail bool
 }
 
-func (c *failingCache) Save(key string, entry domain.CachedList) error {
+func (c *failingCache) Save(key string, entry media.CachedList) error {
 	if c.fail {
 		return errors.New("disk full")
 	}
@@ -238,14 +238,14 @@ func (c *failingCache) Save(key string, entry domain.CachedList) error {
 func TestFailedPersistenceCannotMakeOldPayloadFresh(t *testing.T) {
 	var calls atomic.Int32
 	svc, cache := testService(t, fakeBackend{
-		movies: func(context.Context) ([]*domain.MediaItem, int, error) {
+		movies: func(context.Context) ([]*media.Item, int, error) {
 			calls.Add(1)
-			return []*domain.MediaItem{{ID: "new"}, {ID: "second"}}, 2, nil
+			return []*media.Item{{ID: "new"}, {ID: "second"}}, 2, nil
 		},
 		count: func(context.Context) (int, error) { return 2, nil },
 	})
 	r := Resource{Kind: Movies, ID: "lib", LibraryID: "lib"}
-	cache.Save(r.Key(), domain.CachedList{Items: []domain.ListItem{&domain.MediaItem{ID: "old"}}, FetchedAt: time.Now()})
+	cache.Save(r.Key(), media.CachedList{Items: []media.ListItem{&media.Item{ID: "old"}}, FetchedAt: time.Now()})
 	svc.cache = &failingCache{Cache: cache, fail: true}
 	result, err := svc.Load(context.Background(), r, Revalidate)
 	if err != nil || result.Warning == nil || result.Items[0].GetID() != "new" {
@@ -262,12 +262,12 @@ func TestLoadReportsNetworkWorkSeparatelyFromPayloadSource(t *testing.T) {
 		t.Run(map[Policy]string{Browse: "cache", Revalidate: "count check", Refresh: "full fetch"}[policy], func(t *testing.T) {
 			svc, cache := testService(t, fakeBackend{
 				count: func(context.Context) (int, error) { return 1, nil },
-				movies: func(context.Context) ([]*domain.MediaItem, int, error) {
-					return []*domain.MediaItem{{ID: "movie"}}, 1, nil
+				movies: func(context.Context) ([]*media.Item, int, error) {
+					return []*media.Item{{ID: "movie"}}, 1, nil
 				},
 			})
 			r := Resource{Kind: Movies, ID: "lib", LibraryID: "lib"}
-			if err := cache.Save(r.Key(), domain.CachedList{Items: []domain.ListItem{&domain.MediaItem{ID: "movie"}}, FetchedAt: time.Now()}); err != nil {
+			if err := cache.Save(r.Key(), media.CachedList{Items: []media.ListItem{&media.Item{ID: "movie"}}, FetchedAt: time.Now()}); err != nil {
 				t.Fatal(err)
 			}
 			result, err := svc.Load(context.Background(), r, policy)

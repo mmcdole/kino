@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 // Plex-specific errors
@@ -74,7 +74,7 @@ func (a *AuthClient) GetPIN(ctx context.Context) (pin string, id int, err error)
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		a.logger.Error("PIN request failed", "error", err)
-		return "", 0, fmt.Errorf("%w: %v", domain.ErrServerOffline, err)
+		return "", 0, fmt.Errorf("%w: %v", media.ErrServerOffline, err)
 	}
 	defer resp.Body.Close()
 
@@ -115,7 +115,7 @@ func (a *AuthClient) CheckPIN(ctx context.Context, pinID int) (token string, cla
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		a.logger.Error("PIN check failed", "error", err)
-		return "", false, fmt.Errorf("%w: %v", domain.ErrServerOffline, err)
+		return "", false, fmt.Errorf("%w: %v", media.ErrServerOffline, err)
 	}
 	defer resp.Body.Close()
 

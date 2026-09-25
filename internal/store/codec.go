@@ -4,17 +4,17 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 // listItemWrapper wraps ListItem for JSON serialization
 type listItemWrapper struct {
-	Type     string            `json:"type"`
-	Movie    *domain.MediaItem `json:"movie,omitempty"`
-	Show     *domain.Show      `json:"show,omitempty"`
-	Season   *domain.Season    `json:"season,omitempty"`
-	Library  *domain.Library   `json:"library,omitempty"`
-	Playlist *domain.Playlist  `json:"playlist,omitempty"`
+	Type     string          `json:"type"`
+	Movie    *media.Item     `json:"movie,omitempty"`
+	Show     *media.Show     `json:"show,omitempty"`
+	Season   *media.Season   `json:"season,omitempty"`
+	Library  *media.Library  `json:"library,omitempty"`
+	Playlist *media.Playlist `json:"playlist,omitempty"`
 }
 
 type storedSnapshot struct {
@@ -23,41 +23,41 @@ type storedSnapshot struct {
 	Version   int64             `json:"version"`
 }
 
-func decodeSnapshot(data []byte) (domain.CachedList, bool) {
+func decodeSnapshot(data []byte) (media.CachedList, bool) {
 	var snapshot storedSnapshot
 	if data == nil || json.Unmarshal(data, &snapshot) != nil {
-		return domain.CachedList{}, false
+		return media.CachedList{}, false
 	}
-	return domain.CachedList{Items: unwrapListItems(snapshot.Items), FetchedAt: snapshot.FetchedAt, Version: snapshot.Version}, true
+	return media.CachedList{Items: unwrapListItems(snapshot.Items), FetchedAt: snapshot.FetchedAt, Version: snapshot.Version}, true
 }
 
-func encodeSnapshot(l domain.CachedList) ([]byte, error) {
+func encodeSnapshot(l media.CachedList) ([]byte, error) {
 	return json.Marshal(storedSnapshot{Items: wrapListItems(l.Items), FetchedAt: l.FetchedAt, Version: l.Version})
 }
 
-// wrapListItems converts domain.ListItem slice to serializable wrappers
-func wrapListItems(items []domain.ListItem) []listItemWrapper {
+// wrapListItems converts media.ListItem slice to serializable wrappers
+func wrapListItems(items []media.ListItem) []listItemWrapper {
 	wrappers := make([]listItemWrapper, len(items))
 	for i, item := range items {
 		switch v := item.(type) {
-		case *domain.MediaItem:
+		case *media.Item:
 			wrappers[i] = listItemWrapper{Type: "movie", Movie: v}
-		case *domain.Show:
+		case *media.Show:
 			wrappers[i] = listItemWrapper{Type: "show", Show: v}
-		case *domain.Season:
+		case *media.Season:
 			wrappers[i] = listItemWrapper{Type: "season", Season: v}
-		case *domain.Library:
+		case *media.Library:
 			wrappers[i] = listItemWrapper{Type: "library", Library: v}
-		case *domain.Playlist:
+		case *media.Playlist:
 			wrappers[i] = listItemWrapper{Type: "playlist", Playlist: v}
 		}
 	}
 	return wrappers
 }
 
-// unwrapListItems converts wrappers back to domain.ListItem slice
-func unwrapListItems(wrappers []listItemWrapper) []domain.ListItem {
-	items := make([]domain.ListItem, 0, len(wrappers))
+// unwrapListItems converts wrappers back to media.ListItem slice
+func unwrapListItems(wrappers []listItemWrapper) []media.ListItem {
+	items := make([]media.ListItem, 0, len(wrappers))
 	for _, w := range wrappers {
 		switch w.Type {
 		case "movie":

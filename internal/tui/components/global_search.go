@@ -9,7 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/search"
 	"github.com/mmcdole/kino/internal/tui/styles"
 )
@@ -316,23 +316,23 @@ func highlightMatches(text string, matchedIndexes []int, selected bool) string {
 func (o GlobalSearch) renderResult(result search.Result, selected bool, width int) string {
 	var badge string
 	switch result.Type {
-	case domain.MediaTypeMovie:
+	case media.TypeMovie:
 		badge = "MOV"
-	case domain.MediaTypeShow:
+	case media.TypeShow:
 		badge = "SHOW"
-	case domain.MediaTypeEpisode:
+	case media.TypeEpisode:
 		badge = "EP"
 	}
 	prefix := styles.DimBadgeStyle.Render(badge) + " "
 	title := result.Title
 	matchedIndexes := result.MatchedIndexes
-	if item, ok := result.Item.(*domain.MediaItem); ok {
+	if item, ok := result.Item.(*media.Item); ok {
 		switch result.Type {
-		case domain.MediaTypeEpisode:
+		case media.TypeEpisode:
 			title = fmt.Sprintf("%s - %s %s", item.ShowTitle, episodeCode(*item), item.Title)
 			// Match positions refer to the indexed title, not the episode display label.
 			matchedIndexes = nil
-		case domain.MediaTypeMovie:
+		case media.TypeMovie:
 			if item.Year > 0 {
 				title = fmt.Sprintf("%s (%d)", item.Title, item.Year)
 			}

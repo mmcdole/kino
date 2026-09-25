@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 func TestStatusMapping(t *testing.T) {
@@ -21,8 +21,8 @@ func TestStatusMapping(t *testing.T) {
 	}{
 		{http.StatusOK, true, nil, 1},
 		{http.StatusNoContent, false, nil, 1},
-		{http.StatusUnauthorized, true, domain.ErrAuthFailed, 1},
-		{http.StatusNotFound, true, domain.ErrItemNotFound, 1},
+		{http.StatusUnauthorized, true, media.ErrAuthFailed, 1},
+		{http.StatusNotFound, true, media.ErrItemNotFound, 1},
 		{http.StatusBadRequest, true, nil, 1},
 		{http.StatusBadGateway, true, nil, 3},
 		{http.StatusBadGateway, false, nil, 1},

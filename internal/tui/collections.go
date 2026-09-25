@@ -3,7 +3,7 @@ package tui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 // Collections hold the catalog's latest published state. The catalog decides
@@ -113,15 +113,15 @@ func (m *Model) project(snapshot catalog.Snapshot) tea.Cmd {
 	if r.Kind == catalog.Libraries {
 		m.libraries = nil
 		for _, item := range snapshot.Items {
-			if lib, ok := item.(*domain.Library); ok {
+			if lib, ok := item.(*media.Library); ok {
 				m.libraries = append(m.libraries, *lib)
 			}
 		}
-		m.libraryColumn().ReplaceItems(domain.LibraryItems(m.allLibraryEntries()))
+		m.libraryColumn().ReplaceItems(media.LibraryItems(m.allLibraryEntries()))
 	} else {
 		for i := 0; i < m.columns.Len(); i++ {
 			if col := m.columns.Get(i); col.ContentID() == r.Key() {
-				col.ReplaceItems(domain.CloneItems(snapshot.Items))
+				col.ReplaceItems(media.CloneItems(snapshot.Items))
 			}
 		}
 	}

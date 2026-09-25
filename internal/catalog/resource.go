@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 // Kind is the type of collection a Resource names.
@@ -38,7 +38,7 @@ func (r Resource) Key() string {
 }
 
 // LibraryResource names a library's contents, picking the kind from its type.
-func LibraryResource(lib domain.Library) Resource {
+func LibraryResource(lib media.Library) Resource {
 	kind := Mixed
 	switch lib.Type {
 	case "movie":

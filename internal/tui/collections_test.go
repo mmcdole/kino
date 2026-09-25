@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/mmcdole/kino/internal/catalog"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/search"
 )
 
@@ -60,9 +60,9 @@ func TestRefreshFailureRetainsContentAndStopsSpinner(t *testing.T) {
 	m.pushColumn(r, "A")
 	req := m.requests.active[viewOwner(r)]
 	failed := state(r, 1, "old")
-	failed.Err = domain.ErrServerOffline
+	failed.Err = media.ErrServerOffline
 	m = publish(m, failed)
-	m = updateModel(m, loadDoneMsg{Request: req, Err: domain.ErrServerOffline})
+	m = updateModel(m, loadDoneMsg{Request: req, Err: media.ErrServerOffline})
 	col := m.columns.Top()
 	if col.IsLoading() || col.IsRefreshing() || col.ItemCount() != 1 || !col.HasLoadFailed() {
 		t.Fatal("failed refresh discarded usable view, left spinner, or hid retry")
@@ -78,7 +78,7 @@ func TestColdStartupFailureKeepsRetryableRoot(t *testing.T) {
 	m.loadResource(catalog.Resource{Kind: catalog.Libraries}, catalog.Revalidate, false)
 	r := catalog.Resource{Kind: catalog.Libraries}
 	req := m.requests.active[viewOwner(r)]
-	m = updateModel(m, loadDoneMsg{Request: req, Err: domain.ErrServerOffline})
+	m = updateModel(m, loadDoneMsg{Request: req, Err: media.ErrServerOffline})
 	if m.columns.Top() == nil || m.columns.Top().IsLoading() {
 		t.Fatal("failed startup has no retryable root")
 	}

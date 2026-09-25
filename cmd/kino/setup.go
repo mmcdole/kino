@@ -14,7 +14,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/mmcdole/kino/internal/config"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/mediaserver"
 	"github.com/mmcdole/kino/internal/mediaserver/jellyfin"
 	"github.com/mmcdole/kino/internal/mediaserver/plex"
@@ -77,7 +77,7 @@ func runSetupFlow(cfg *config.Config, logger *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	var result *domain.Credentials
+	var result *media.Credentials
 	var err error
 	switch serverType {
 	case config.Plex:
@@ -168,7 +168,7 @@ func detectServerWithSpinner(serverURL string) (config.ServerType, error) {
 
 // signInPlex links this install through plex.tv: the user enters a PIN at
 // plex.tv/link and the token arrives once it is claimed.
-func signInPlex(ctx context.Context, deviceID string, logger *slog.Logger) (*domain.Credentials, error) {
+func signInPlex(ctx context.Context, deviceID string, logger *slog.Logger) (*media.Credentials, error) {
 	auth := plex.NewAuthClient(deviceID, logger)
 
 	fmt.Println()
@@ -196,11 +196,11 @@ func signInPlex(ctx context.Context, deviceID string, logger *slog.Logger) (*dom
 	fmt.Println("Authentication successful!")
 
 	// Plex API calls need only the token.
-	return &domain.Credentials{Token: token}, nil
+	return &media.Credentials{Token: token}, nil
 }
 
 // signInJellyfin prompts for a username and password and signs in.
-func signInJellyfin(ctx context.Context, serverURL, deviceID string, logger *slog.Logger) (*domain.Credentials, error) {
+func signInJellyfin(ctx context.Context, serverURL, deviceID string, logger *slog.Logger) (*media.Credentials, error) {
 	fmt.Println()
 	fmt.Println("Jellyfin Authentication")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━")

@@ -4,20 +4,20 @@ import (
 	"context"
 	"testing"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 func TestIndexRejectsStaleUpdatesAndReturnsDetachedResults(t *testing.T) {
 	index := NewIndex()
-	index.ReplaceLibrary("lib", 2, []domain.ListItem{&domain.Show{ID: "show", Title: "Current"}})
-	index.ReplaceLibrary("lib", 2, []domain.ListItem{&domain.Show{ID: "show", Title: "Duplicate"}})
-	index.ReplaceLibrary("lib", 1, []domain.ListItem{&domain.Show{ID: "show", Title: "Obsolete"}})
-	libs := []domain.Library{{ID: "lib"}}
+	index.ReplaceLibrary("lib", 2, []media.ListItem{&media.Show{ID: "show", Title: "Current"}})
+	index.ReplaceLibrary("lib", 2, []media.ListItem{&media.Show{ID: "show", Title: "Duplicate"}})
+	index.ReplaceLibrary("lib", 1, []media.ListItem{&media.Show{ID: "show", Title: "Obsolete"}})
+	libs := []media.Library{{ID: "lib"}}
 	found := index.Search(context.Background(), "Current", libs)
-	if len(found) != 1 || found[0].Type != domain.MediaTypeShow {
+	if len(found) != 1 || found[0].Type != media.TypeShow {
 		t.Fatal("new snapshot lost from index")
 	}
-	found[0].Item.(*domain.Show).Title = "mutated"
+	found[0].Item.(*media.Show).Title = "mutated"
 	if again := index.Search(context.Background(), "Current", libs); again[0].Item.GetTitle() != "Current" {
 		t.Fatal("consumer mutated the index")
 	}

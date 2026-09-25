@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/store"
 )
 
@@ -21,7 +21,7 @@ type browsingBackend struct {
 	offline bool
 }
 
-func (b *browsingBackend) GetMovies(ctx context.Context, _ string, _, _ int) ([]*domain.MediaItem, int, error) {
+func (b *browsingBackend) GetMovies(ctx context.Context, _ string, _, _ int) ([]*media.Item, int, error) {
 	select {
 	case <-ctx.Done():
 		return nil, 0, ctx.Err()
@@ -30,9 +30,9 @@ func (b *browsingBackend) GetMovies(ctx context.Context, _ string, _, _ int) ([]
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.offline {
-		return nil, 0, domain.ErrServerOffline
+		return nil, 0, media.ErrServerOffline
 	}
-	return []*domain.MediaItem{{ID: "movie", Title: "Fresh title", IsPlayed: b.played}}, 1, nil
+	return []*media.Item{{ID: "movie", Title: "Fresh title", IsPlayed: b.played}}, 1, nil
 }
 func (b *browsingBackend) GetLibraryItemCount(context.Context, string, string) (int, error) {
 	return 1, nil
@@ -110,8 +110,8 @@ func TestCatalogDiskCacheAndTUIRequestLifecycle(t *testing.T) {
 	m := testModel(t)
 	m.catalog = svc
 	r := catalog.LibraryResource(m.libraries[0])
-	if err := cache.Save(r.Key(), domain.CachedList{
-		Items:     []domain.ListItem{&domain.MediaItem{ID: "movie", Title: "Cached title"}},
+	if err := cache.Save(r.Key(), media.CachedList{
+		Items:     []media.ListItem{&media.Item{ID: "movie", Title: "Cached title"}},
 		FetchedAt: time.Now().Add(-time.Hour),
 	}); err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func TestCatalogDiskCacheAndTUIRequestLifecycle(t *testing.T) {
 	req := m.requests.begin("mutation:watch:movie", catalog.Resource{}, catalog.Browse)
 	m = await(t, m, svc, start(mutateCmd(svc, req, mutation)))
 	persisted, ok := cache.Load(r.Key())
-	if !ok || !persisted.Items[0].(*domain.MediaItem).IsPlayed || !col.SelectedMediaItem().IsPlayed {
+	if !ok || !persisted.Items[0].(*media.Item).IsPlayed || !col.SelectedMediaItem().IsPlayed {
 		t.Fatal("watch change did not reconcile persistence and view")
 	}
 
@@ -159,7 +159,7 @@ func TestCatalogDiskCacheAndTUIRequestLifecycle(t *testing.T) {
 	}
 	defer reopened.Close()
 	saved, ok := reopened.Load(r.Key())
-	if !ok || !saved.Items[0].(*domain.MediaItem).IsPlayed {
+	if !ok || !saved.Items[0].(*media.Item).IsPlayed {
 		t.Fatal("offline fallback did not survive reopening disk cache")
 	}
 }

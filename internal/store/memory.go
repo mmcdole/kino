@@ -5,7 +5,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 // Memory is a snapshot cache that lasts for the life of the process. It is
@@ -13,21 +13,21 @@ import (
 // callers never share entities with the cache.
 type Memory struct {
 	mu        sync.RWMutex
-	snapshots map[string]domain.CachedList
+	snapshots map[string]media.CachedList
 }
 
 func NewMemory() *Memory {
-	return &Memory{snapshots: make(map[string]domain.CachedList)}
+	return &Memory{snapshots: make(map[string]media.CachedList)}
 }
 
-func (m *Memory) Load(key string) (domain.CachedList, bool) {
+func (m *Memory) Load(key string) (media.CachedList, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	l, ok := m.snapshots[key]
 	return detach(l), ok
 }
 
-func (m *Memory) Save(key string, l domain.CachedList) error {
+func (m *Memory) Save(key string, l media.CachedList) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.snapshots[key] = detach(l)
@@ -36,10 +36,10 @@ func (m *Memory) Save(key string, l domain.CachedList) error {
 
 // Update hands every snapshot to fn and saves the ones it returns. The memory
 // cache is small enough that it does not filter by ids.
-func (m *Memory) Update(ids []string, fn func(map[string]domain.CachedList) map[string]domain.CachedList) ([]string, error) {
+func (m *Memory) Update(ids []string, fn func(map[string]media.CachedList) map[string]media.CachedList) ([]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	lists := make(map[string]domain.CachedList, len(m.snapshots))
+	lists := make(map[string]media.CachedList, len(m.snapshots))
 	for key, l := range m.snapshots {
 		lists[key] = detach(l)
 	}
@@ -52,7 +52,7 @@ func (m *Memory) Update(ids []string, fn func(map[string]domain.CachedList) map[
 
 func (m *Memory) Close() error { return nil }
 
-func detach(l domain.CachedList) domain.CachedList {
-	l.Items = domain.CloneItems(l.Items)
+func detach(l media.CachedList) media.CachedList {
+	l.Items = media.CloneItems(l.Items)
 	return l
 }

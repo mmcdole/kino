@@ -5,14 +5,14 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/sahilm/fuzzy"
 )
 
 // listView is a list's view state: which items are shown, in what order, and
 // which one is selected. It knows nothing about rendering.
 type listView struct {
-	items   []domain.ListItem
+	items   []media.ListItem
 	visible []int // indexes into items: sorted, then narrowed by the filter
 	cursor  int   // position in visible
 	offset  int   // first visible position on screen
@@ -25,7 +25,7 @@ type listView struct {
 
 // setItems replaces the items, keeping the sort, the filter, and the selected
 // item when it is still present; otherwise the cursor keeps its position.
-func (v *listView) setItems(items []domain.ListItem) {
+func (v *listView) setItems(items []media.ListItem) {
 	selected := v.selected()
 	cursor := v.cursor
 	v.items = slices.Clone(items)
@@ -84,7 +84,7 @@ func (v *listView) rebuild() {
 	}
 }
 
-func compareBy(field SortField, a, b domain.ListItem, ka, kb itemPresentation) int {
+func compareBy(field SortField, a, b media.ListItem, ka, kb itemPresentation) int {
 	switch field {
 	case SortTitle:
 		return cmp.Compare(strings.ToLower(ka.SortTitle), strings.ToLower(kb.SortTitle))
@@ -99,8 +99,8 @@ func compareBy(field SortField, a, b domain.ListItem, ka, kb itemPresentation) i
 	case SortRating:
 		return cmp.Compare(ka.Rating, kb.Rating)
 	case SortEpisodeNum:
-		ea, okA := a.(*domain.MediaItem)
-		eb, okB := b.(*domain.MediaItem)
+		ea, okA := a.(*media.Item)
+		eb, okB := b.(*media.Item)
 		if !okA || !okB {
 			return 0
 		}
@@ -111,9 +111,9 @@ func compareBy(field SortField, a, b domain.ListItem, ka, kb itemPresentation) i
 
 func (v *listView) len() int { return len(v.visible) }
 
-func (v *listView) at(pos int) domain.ListItem { return v.items[v.visible[pos]] }
+func (v *listView) at(pos int) media.ListItem { return v.items[v.visible[pos]] }
 
-func (v *listView) selected() domain.ListItem {
+func (v *listView) selected() media.ListItem {
 	if v.cursor >= len(v.visible) {
 		return nil
 	}

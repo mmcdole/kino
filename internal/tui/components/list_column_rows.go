@@ -6,24 +6,24 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/tui/styles"
 )
 
 // renderRow renders one item. The row's layout follows the item's type.
-func (c *ListColumn) renderRow(item domain.ListItem, selected bool, width int) string {
+func (c *ListColumn) renderRow(item media.ListItem, selected bool, width int) string {
 	switch v := item.(type) {
-	case *domain.Library:
+	case *media.Library:
 		return c.renderLibraryItem(*v, selected, width)
-	case *domain.Show:
+	case *media.Show:
 		return c.renderShowItem(*v, selected, width)
-	case *domain.Season:
+	case *media.Season:
 		return c.renderSeasonItem(*v, selected, width)
-	case *domain.Playlist:
+	case *media.Playlist:
 		return c.renderPlaylistItem(*v, selected, width)
-	case *domain.MediaItem:
+	case *media.Item:
 		switch {
-		case v.Type != domain.MediaTypeEpisode:
+		case v.Type != media.TypeEpisode:
 			return c.renderMovieItem(*v, selected, width)
 		case c.opts.ShowParent:
 			return c.renderEpisodeWithShow(*v, selected, width)
@@ -34,7 +34,7 @@ func (c *ListColumn) renderRow(item domain.ListItem, selected bool, width int) s
 	return ""
 }
 
-func (c *ListColumn) renderLibraryItem(lib domain.Library, selected bool, width int) string {
+func (c *ListColumn) renderLibraryItem(lib media.Library, selected bool, width int) string {
 	// Get the summary and activity for this library (works for playlists too via playlistsLibraryID)
 	state := c.libraryStates[lib.ID]
 
@@ -67,7 +67,7 @@ func (c *ListColumn) renderLibraryItem(lib domain.Library, selected bool, width 
 	return styles.RenderListRow(parts, selected, width)
 }
 
-func (c *ListColumn) renderMovieItem(item domain.MediaItem, selected bool, width int) string {
+func (c *ListColumn) renderMovieItem(item media.Item, selected bool, width int) string {
 	var indicatorChar string
 	var indicatorFg lipgloss.Color
 	if c.showWatchStatus {
@@ -100,7 +100,7 @@ func (c *ListColumn) renderMovieItem(item domain.MediaItem, selected bool, width
 	return styles.RenderListRow(parts, selected, width)
 }
 
-func (c *ListColumn) renderShowItem(show domain.Show, selected bool, width int) string {
+func (c *ListColumn) renderShowItem(show media.Show, selected bool, width int) string {
 	var indicatorChar string
 	var indicatorFg lipgloss.Color
 	if c.showWatchStatus {
@@ -133,7 +133,7 @@ func (c *ListColumn) renderShowItem(show domain.Show, selected bool, width int) 
 	return styles.RenderListRow(parts, selected, width)
 }
 
-func (c *ListColumn) renderSeasonItem(season domain.Season, selected bool, width int) string {
+func (c *ListColumn) renderSeasonItem(season media.Season, selected bool, width int) string {
 	var indicatorChar string
 	var indicatorFg lipgloss.Color
 	if c.showWatchStatus {
@@ -159,7 +159,7 @@ func (c *ListColumn) renderSeasonItem(season domain.Season, selected bool, width
 	return styles.RenderListRow(parts, selected, width)
 }
 
-func (c *ListColumn) renderEpisodeItem(item domain.MediaItem, selected bool, width int) string {
+func (c *ListColumn) renderEpisodeItem(item media.Item, selected bool, width int) string {
 	var indicatorChar string
 	var indicatorFg lipgloss.Color
 	if c.showWatchStatus {
@@ -191,7 +191,7 @@ func (c *ListColumn) renderEpisodeItem(item domain.MediaItem, selected bool, wid
 	return styles.RenderListRow(parts, selected, width)
 }
 
-func (c *ListColumn) renderPlaylistItem(playlist domain.Playlist, selected bool, width int) string {
+func (c *ListColumn) renderPlaylistItem(playlist media.Playlist, selected bool, width int) string {
 	// Playlist icon and count
 	prefix := "▶ "
 	prefixFg := styles.PlexOrange
@@ -217,7 +217,7 @@ func (c *ListColumn) renderPlaylistItem(playlist domain.Playlist, selected bool,
 }
 
 // renderEpisodeWithShow names the episode's show, for lists that mix shows.
-func (c *ListColumn) renderEpisodeWithShow(item domain.MediaItem, selected bool, width int) string {
+func (c *ListColumn) renderEpisodeWithShow(item media.Item, selected bool, width int) string {
 	var indicatorChar string
 	var indicatorFg lipgloss.Color
 	if c.showWatchStatus {
@@ -227,7 +227,7 @@ func (c *ListColumn) renderEpisodeWithShow(item domain.MediaItem, selected bool,
 	}
 
 	title := item.Title
-	if item.Type == domain.MediaTypeEpisode && item.ShowTitle != "" {
+	if item.Type == media.TypeEpisode && item.ShowTitle != "" {
 		// Show episode with show context: "Show - S01E05 Title"
 		title = fmt.Sprintf("%s - %s %s", item.ShowTitle, episodeCode(item), item.Title)
 	} else if item.Year > 0 {
@@ -250,11 +250,11 @@ func (c *ListColumn) renderEpisodeWithShow(item domain.MediaItem, selected bool,
 }
 
 // watchIndicator returns the character and color for a watch status
-func watchIndicator(status domain.WatchStatus) (string, lipgloss.Color) {
+func watchIndicator(status media.WatchStatus) (string, lipgloss.Color) {
 	switch status {
-	case domain.WatchStatusWatched:
+	case media.WatchStatusWatched:
 		return styles.PlayedChar, styles.Green
-	case domain.WatchStatusInProgress:
+	case media.WatchStatusInProgress:
 		return styles.InProgressChar, styles.PlexOrange
 	default:
 		return styles.UnplayedChar, styles.PlexOrange
@@ -262,7 +262,7 @@ func watchIndicator(status domain.WatchStatus) (string, lipgloss.Color) {
 }
 
 // mediaItemWatchIndicator returns the character and color for a media item's watch status
-func mediaItemWatchIndicator(item domain.MediaItem) (string, lipgloss.Color) {
+func mediaItemWatchIndicator(item media.Item) (string, lipgloss.Color) {
 	if item.IsPlayed {
 		return styles.PlayedChar, styles.Green
 	}
@@ -274,7 +274,7 @@ func mediaItemWatchIndicator(item domain.MediaItem) (string, lipgloss.Color) {
 
 // sortTag returns a right-aligned tag string for the current sort field, or "" if
 // sorting by the default field or the value is zero/empty.
-func (c *ListColumn) sortTag(item domain.ListItem) string {
+func (c *ListColumn) sortTag(item media.ListItem) string {
 	if c.view.sortField == SortTitle || c.view.sortField == SortEpisodeNum {
 		return ""
 	}
@@ -310,7 +310,7 @@ func (c *ListColumn) sortTag(item domain.ListItem) string {
 		return formatMonthYear(ts)
 	case SortReleased:
 		// Movie and show rows already include the year in the title
-		if m, ok := item.(*domain.MediaItem); !ok || m.Type != domain.MediaTypeEpisode {
+		if m, ok := item.(*media.Item); !ok || m.Type != media.TypeEpisode {
 			return ""
 		}
 		y := present(item).Year

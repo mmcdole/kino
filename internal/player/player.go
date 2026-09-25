@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 // URLResolver is the backend operation playback consumes.
@@ -35,17 +35,17 @@ func New(command string, args []string, seekFlag string, resolver URLResolver, l
 }
 
 // Play starts playback of a media item from the beginning
-func (s *Player) Play(ctx context.Context, item domain.MediaItem) error {
+func (s *Player) Play(ctx context.Context, item media.Item) error {
 	return s.playItem(ctx, item, 0)
 }
 
 // Resume starts playback from the saved position
-func (s *Player) Resume(ctx context.Context, item domain.MediaItem) error {
+func (s *Player) Resume(ctx context.Context, item media.Item) error {
 	return s.playItem(ctx, item, item.ViewOffset)
 }
 
 // playItem resolves URL and launches player
-func (s *Player) playItem(ctx context.Context, item domain.MediaItem, offset time.Duration) error {
+func (s *Player) playItem(ctx context.Context, item media.Item, offset time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	url, err := s.resolver.ResolvePlayableURL(ctx, item.ID)

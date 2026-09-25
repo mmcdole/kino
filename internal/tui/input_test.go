@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 func TestOverlayReceivesKeysBeforeColumnsAndGlobalKeys(t *testing.T) {
@@ -19,7 +19,7 @@ func TestOverlayReceivesKeysBeforeColumnsAndGlobalKeys(t *testing.T) {
 		t.Fatal("esc did not close search")
 	}
 
-	m.overlay, m.confirmDelete = overlayConfirmDelete, &domain.Playlist{ID: "p", Title: "P"}
+	m.overlay, m.confirmDelete = overlayConfirmDelete, &media.Playlist{ID: "p", Title: "P"}
 	m = updateModel(m, tea.KeyMsg{Type: tea.KeyEsc})
 	if m.overlay != overlayNone || m.confirmDelete != nil || m.columns.Len() != 1 {
 		t.Fatal("esc on a confirmation did more than cancel it")

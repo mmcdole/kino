@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 // latest reads updates until pred holds for r's state or the deadline passes.
@@ -34,8 +34,8 @@ func latest(t *testing.T, svc *Service, r Resource, pred func(State) bool) State
 func TestSlowConsumerStillSeesFinalState(t *testing.T) {
 	r := Resource{Kind: Movies, ID: "a", LibraryID: "a"}
 	backend := fakeBackend{}
-	backend.movies = func(context.Context) ([]*domain.MediaItem, int, error) {
-		return []*domain.MediaItem{{ID: "m"}}, 1, nil
+	backend.movies = func(context.Context) ([]*media.Item, int, error) {
+		return []*media.Item{{ID: "m"}}, 1, nil
 	}
 	svc, _ := testService(t, backend)
 	for range 50 {
@@ -52,21 +52,21 @@ func TestSlowConsumerStillSeesFinalState(t *testing.T) {
 func TestCacheHitDoesNotClearErrorButValidatedResultDoes(t *testing.T) {
 	r := Resource{Kind: Movies, ID: "a", LibraryID: "a"}
 	fail := true
-	backend := fakeBackend{movies: func(context.Context) ([]*domain.MediaItem, int, error) {
+	backend := fakeBackend{movies: func(context.Context) ([]*media.Item, int, error) {
 		if fail {
-			return nil, 0, domain.ErrServerOffline
+			return nil, 0, media.ErrServerOffline
 		}
-		return []*domain.MediaItem{{ID: "m"}}, 1, nil
+		return []*media.Item{{ID: "m"}}, 1, nil
 	}}
 	svc, cache := testService(t, backend)
-	if err := cache.Save(r.Key(), domain.CachedList{Items: []domain.ListItem{&domain.MediaItem{ID: "old"}}}); err != nil {
+	if err := cache.Save(r.Key(), media.CachedList{Items: []media.ListItem{&media.Item{ID: "old"}}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.Load(context.Background(), r, Refresh); !errors.Is(err, domain.ErrServerOffline) {
+	if _, err := svc.Load(context.Background(), r, Refresh); !errors.Is(err, media.ErrServerOffline) {
 		t.Fatalf("expected offline error, got %v", err)
 	}
 	st := latest(t, svc, r, func(st State) bool { return !st.Fetching })
-	if !st.Known || !errors.Is(st.Err, domain.ErrServerOffline) {
+	if !st.Known || !errors.Is(st.Err, media.ErrServerOffline) {
 		t.Fatalf("failed refresh lost cached data or error: %+v", st)
 	}
 
@@ -83,7 +83,7 @@ func TestCacheHitDoesNotClearErrorButValidatedResultDoes(t *testing.T) {
 func TestWatchPublishesPatchedSnapshot(t *testing.T) {
 	svc, cache := testService(t, watchBackend{watch: func(context.Context) error { return nil }})
 	r := Resource{Kind: Movies, ID: "a", LibraryID: "a"}
-	if err := cache.Save(r.Key(), domain.CachedList{FetchedAt: time.Now(), Items: []domain.ListItem{&domain.MediaItem{ID: "movie"}}}); err != nil {
+	if err := cache.Save(r.Key(), media.CachedList{FetchedAt: time.Now(), Items: []media.ListItem{&media.Item{ID: "movie"}}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.Load(context.Background(), r, Browse); err != nil {
@@ -92,5 +92,5 @@ func TestWatchPublishesPatchedSnapshot(t *testing.T) {
 	if _, err := svc.Mutate(context.Background(), Mutation{Kind: MutationWatch, ItemID: "movie", LibraryID: "a", Played: true}); err != nil {
 		t.Fatal(err)
 	}
-	latest(t, svc, r, func(st State) bool { return st.Snapshot.Items[0].(*domain.MediaItem).IsPlayed })
+	latest(t, svc, r, func(st State) bool { return st.Snapshot.Items[0].(*media.Item).IsPlayed })
 }

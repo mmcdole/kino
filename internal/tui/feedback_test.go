@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/mmcdole/kino/internal/catalog"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/tui/styles"
 )
 
@@ -83,7 +83,7 @@ func TestProgressDoesNotReplaceCompleteCount(t *testing.T) {
 	if !lib.Summary.Known || lib.Summary.Count != 2 || lib.Activity.Loaded != 1 || lib.Activity.Total != 10 {
 		t.Fatalf("progress and collection summary conflated: %+v", lib)
 	}
-	st.Fetching, st.Err = false, domain.ErrServerOffline
+	st.Fetching, st.Err = false, media.ErrServerOffline
 	m = publish(m, st)
 	if m.libraryStates[r.LibraryID].Summary.Count != 2 {
 		t.Fatal("failure discarded known count")
@@ -94,9 +94,9 @@ func TestErrorShowsRetryUntilValidatedResult(t *testing.T) {
 	m := testModel(t)
 	r := catalog.LibraryResource(m.libraries[0])
 	m.pushColumn(r, "A")
-	m = updateModel(m, loadDoneMsg{Request: m.requests.active[viewOwner(r)], Err: domain.ErrItemNotFound})
+	m = updateModel(m, loadDoneMsg{Request: m.requests.active[viewOwner(r)], Err: media.ErrItemNotFound})
 	failed := state(r, 4, "one", "two")
-	failed.Err = domain.ErrItemNotFound
+	failed.Err = media.ErrItemNotFound
 	m = publish(m, failed)
 	if lib := m.libraryStates[r.LibraryID]; lib.Summary.Count != 2 || lib.Error == nil || !m.columns.Top().HasLoadFailed() {
 		t.Fatal("failure replaced cached summary or lost its retry state")

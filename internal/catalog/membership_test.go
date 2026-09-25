@@ -7,42 +7,42 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 type playlistBackend struct {
 	Backend
-	items     func(context.Context, string) ([]*domain.MediaItem, error)
-	playlists []*domain.Playlist
+	items     func(context.Context, string) ([]*media.Item, error)
+	playlists []*media.Playlist
 }
 
-func (b playlistBackend) GetPlaylists(context.Context) ([]*domain.Playlist, error) {
+func (b playlistBackend) GetPlaylists(context.Context) ([]*media.Playlist, error) {
 	return b.playlists, nil
 }
-func (b playlistBackend) GetPlaylistItems(ctx context.Context, id string) ([]*domain.MediaItem, error) {
+func (b playlistBackend) GetPlaylistItems(ctx context.Context, id string) ([]*media.Item, error) {
 	return b.items(ctx, id)
 }
 
 func TestMembershipNeverReportsUnknownAsAbsent(t *testing.T) {
-	svc, _ := testService(t, playlistBackend{playlists: []*domain.Playlist{{ID: "one", Title: "One"}, {ID: "two", Title: "Two"}}, items: func(ctx context.Context, id string) ([]*domain.MediaItem, error) {
+	svc, _ := testService(t, playlistBackend{playlists: []*media.Playlist{{ID: "one", Title: "One"}, {ID: "two", Title: "Two"}}, items: func(ctx context.Context, id string) ([]*media.Item, error) {
 		if id == "two" {
-			return nil, domain.ErrAuthFailed
+			return nil, media.ErrAuthFailed
 		}
-		return []*domain.MediaItem{{ID: "movie"}}, nil
+		return []*media.Item{{ID: "movie"}}, nil
 	}})
 	result, err := svc.PlaylistMembership(context.Background(), "movie")
-	if !errors.Is(err, domain.ErrAuthFailed) || result.Present != nil {
+	if !errors.Is(err, media.ErrAuthFailed) || result.Present != nil {
 		t.Fatalf("incomplete membership published as editable: %+v %v", result, err)
 	}
 }
 
 func TestMembershipRevalidatesEvenFreshCachedItems(t *testing.T) {
 	var calls atomic.Int32
-	svc, cache := testService(t, playlistBackend{playlists: []*domain.Playlist{{ID: "p"}}, items: func(context.Context, string) ([]*domain.MediaItem, error) {
+	svc, cache := testService(t, playlistBackend{playlists: []*media.Playlist{{ID: "p"}}, items: func(context.Context, string) ([]*media.Item, error) {
 		calls.Add(1)
-		return []*domain.MediaItem{{ID: "movie"}}, nil
+		return []*media.Item{{ID: "movie"}}, nil
 	}})
-	cache.Save((Resource{Kind: PlaylistItems, ID: "p"}).Key(), domain.CachedList{FetchedAt: time.Now()})
+	cache.Save((Resource{Kind: PlaylistItems, ID: "p"}).Key(), media.CachedList{FetchedAt: time.Now()})
 	result, err := svc.PlaylistMembership(context.Background(), "movie")
 	if err != nil || !result.Present["p"] || calls.Load() != 1 {
 		t.Fatalf("membership trusted stale cached absence: %+v %v", result, err)

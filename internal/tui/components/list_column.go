@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/tui/styles"
 )
 
@@ -153,10 +153,10 @@ func (c *ListColumn) SetFocused(focused bool) { c.focused = focused }
 func (c *ListColumn) Title() string           { return c.title }
 
 // SelectedItem returns the item under the cursor, or nil.
-func (c *ListColumn) SelectedItem() domain.ListItem { return c.view.selected() }
-func (c *ListColumn) SelectedIndex() int            { return c.view.cursor }
-func (c *ListColumn) SetSelectedIndex(pos int)      { c.view.moveTo(pos) }
-func (c *ListColumn) ItemCount() int                { return c.view.len() }
+func (c *ListColumn) SelectedItem() media.ListItem { return c.view.selected() }
+func (c *ListColumn) SelectedIndex() int           { return c.view.cursor }
+func (c *ListColumn) SetSelectedIndex(pos int)     { c.view.moveTo(pos) }
+func (c *ListColumn) ItemCount() int               { return c.view.len() }
 
 func (c *ListColumn) CanDrillInto() bool {
 	item := c.SelectedItem()
@@ -171,7 +171,7 @@ func (c *ListColumn) HasLoadFailed() bool                     { return !c.feedba
 func (c *ListColumn) HasContent() bool                        { return c.hasContent }
 
 // SetItems shows items as a fresh list: default sort, no filter, cursor at the top.
-func (c *ListColumn) SetItems(items []domain.ListItem) {
+func (c *ListColumn) SetItems(items []media.ListItem) {
 	c.hasContent = true
 	c.clearFilter()
 	c.view = listView{rows: c.view.rows, sortField: c.opts.DefaultSort}
@@ -181,7 +181,7 @@ func (c *ListColumn) SetItems(items []domain.ListItem) {
 // ReplaceItems swaps the column's content while preserving the user's view
 // state: the selected item, sort, and filter all survive. On a column with no
 // prior content it behaves like SetItems.
-func (c *ListColumn) ReplaceItems(items []domain.ListItem) {
+func (c *ListColumn) ReplaceItems(items []media.ListItem) {
 	if !c.hasContent {
 		c.SetItems(items)
 		return
@@ -213,20 +213,20 @@ func (c *ListColumn) SetContentID(id string) { c.contentID = id }
 func (c *ListColumn) ContentID() string      { return c.contentID }
 
 // SelectedLibrary returns the selected library, if a library is selected.
-func (c *ListColumn) SelectedLibrary() *domain.Library {
-	lib, _ := c.SelectedItem().(*domain.Library)
+func (c *ListColumn) SelectedLibrary() *media.Library {
+	lib, _ := c.SelectedItem().(*media.Library)
 	return lib
 }
 
 // SelectedMediaItem returns the selected movie or episode, if one is selected.
-func (c *ListColumn) SelectedMediaItem() *domain.MediaItem {
-	item, _ := c.SelectedItem().(*domain.MediaItem)
+func (c *ListColumn) SelectedMediaItem() *media.Item {
+	item, _ := c.SelectedItem().(*media.Item)
 	return item
 }
 
 // SelectedPlaylist returns the selected playlist, if one is selected.
-func (c *ListColumn) SelectedPlaylist() *domain.Playlist {
-	playlist, _ := c.SelectedItem().(*domain.Playlist)
+func (c *ListColumn) SelectedPlaylist() *media.Playlist {
+	playlist, _ := c.SelectedItem().(*media.Playlist)
 	return playlist
 }
 

@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/mediaserver"
 	"github.com/mmcdole/kino/internal/mediaserver/jellyfin"
 	"github.com/mmcdole/kino/internal/mediaserver/plex"
@@ -34,7 +34,7 @@ func TestBackendCancellationAndNotFound(t *testing.T) {
 			} else {
 				client = jellyfin.NewClient(server.URL, "token", "user", "device", nil)
 			}
-			if err := client.MarkPlayed(context.Background(), "missing"); !errors.Is(err, domain.ErrItemNotFound) {
+			if err := client.MarkPlayed(context.Background(), "missing"); !errors.Is(err, media.ErrItemNotFound) {
 				t.Fatalf("404: %v", err)
 			}
 			ctx, cancel := context.WithCancel(context.Background())
@@ -43,7 +43,7 @@ func TestBackendCancellationAndNotFound(t *testing.T) {
 			go func() { done <- client.MarkPlayed(ctx, "item") }()
 			<-started
 			cancel()
-			if err := <-done; !errors.Is(err, context.Canceled) || errors.Is(err, domain.ErrServerOffline) {
+			if err := <-done; !errors.Is(err, context.Canceled) || errors.Is(err, media.ErrServerOffline) {
 				t.Fatalf("canceled request: %v", err)
 			}
 		})

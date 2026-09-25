@@ -4,19 +4,19 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/mediaserver/normalize"
 )
 
-// mapLibraries converts Plex directories to domain libraries
-func mapLibraries(dirs []directory) []domain.Library {
-	libraries := make([]domain.Library, 0, len(dirs))
+// mapLibraries converts Plex directories to media libraries
+func mapLibraries(dirs []directory) []media.Library {
+	libraries := make([]media.Library, 0, len(dirs))
 	for _, d := range dirs {
 		// Only include movie and show libraries
 		if d.Type != "movie" && d.Type != "show" {
 			continue
 		}
-		libraries = append(libraries, domain.Library{
+		libraries = append(libraries, media.Library{
 			ID:        d.Key,
 			Name:      d.Title,
 			Type:      d.Type,
@@ -26,9 +26,9 @@ func mapLibraries(dirs []directory) []domain.Library {
 	return libraries
 }
 
-// mapMovies converts Plex metadata to domain media items (movies)
-func mapMovies(metadata []metadataItem, serverURL string) []*domain.MediaItem {
-	items := make([]*domain.MediaItem, 0, len(metadata))
+// mapMovies converts Plex metadata to media items (movies)
+func mapMovies(metadata []metadataItem, serverURL string) []*media.Item {
+	items := make([]*media.Item, 0, len(metadata))
 	for _, m := range metadata {
 		if m.Type != "movie" {
 			continue
@@ -39,9 +39,9 @@ func mapMovies(metadata []metadataItem, serverURL string) []*domain.MediaItem {
 	return items
 }
 
-// mapMovie converts a single movie metadata to domain media item
-func mapMovie(m metadataItem, serverURL string) domain.MediaItem {
-	item := domain.MediaItem{
+// mapMovie converts a single movie metadata to media item
+func mapMovie(m metadataItem, serverURL string) media.Item {
+	item := media.Item{
 		ID:         m.RatingKey,
 		Title:      m.Title,
 		SortTitle:  m.TitleSort,
@@ -53,7 +53,7 @@ func mapMovie(m metadataItem, serverURL string) domain.MediaItem {
 		Duration:   time.Duration(m.Duration) * time.Millisecond,
 		ViewOffset: time.Duration(m.ViewOffset) * time.Millisecond,
 		IsPlayed:   m.ViewCount > 0,
-		Type:       domain.MediaTypeMovie,
+		Type:       media.TypeMovie,
 	}
 
 	if item.SortTitle == "" {
@@ -75,25 +75,25 @@ func mapMovie(m metadataItem, serverURL string) domain.MediaItem {
 
 	item.ContentRating = normalize.ContentRating(m.ContentRating)
 	if len(m.Media) > 0 {
-		media := m.Media[0]
-		item.Bitrate = media.Bitrate
-		item.Width = media.Width
-		item.Height = media.Height
-		item.VideoCodec = normalize.VideoCodec(media.VideoCodec)
-		item.AudioCodec = normalize.AudioCodec(media.AudioCodec)
-		item.AudioChannels = media.AudioChannels
-		item.Container = normalize.Container(media.Container)
-		if len(media.Part) > 0 {
-			item.FileSize = media.Part[0].Size
+		version := m.Media[0]
+		item.Bitrate = version.Bitrate
+		item.Width = version.Width
+		item.Height = version.Height
+		item.VideoCodec = normalize.VideoCodec(version.VideoCodec)
+		item.AudioCodec = normalize.AudioCodec(version.AudioCodec)
+		item.AudioChannels = version.AudioChannels
+		item.Container = normalize.Container(version.Container)
+		if len(version.Part) > 0 {
+			item.FileSize = version.Part[0].Size
 		}
 	}
 
 	return item
 }
 
-// mapShows converts Plex metadata to domain shows
-func mapShows(metadata []metadataItem, serverURL string) []*domain.Show {
-	shows := make([]*domain.Show, 0, len(metadata))
+// mapShows converts Plex metadata to media shows
+func mapShows(metadata []metadataItem, serverURL string) []*media.Show {
+	shows := make([]*media.Show, 0, len(metadata))
 	for _, m := range metadata {
 		if m.Type != "show" {
 			continue
@@ -104,9 +104,9 @@ func mapShows(metadata []metadataItem, serverURL string) []*domain.Show {
 	return shows
 }
 
-// mapShow converts a single show metadata to domain show
-func mapShow(m metadataItem, serverURL string) domain.Show {
-	show := domain.Show{
+// mapShow converts a single show metadata to media show
+func mapShow(m metadataItem, serverURL string) media.Show {
+	show := media.Show{
 		ID:             m.RatingKey,
 		Title:          m.Title,
 		SortTitle:      m.TitleSort,
@@ -142,9 +142,9 @@ func mapShow(m metadataItem, serverURL string) domain.Show {
 	return show
 }
 
-// mapSeasons converts Plex metadata to domain seasons
-func mapSeasons(metadata []metadataItem, serverURL string) []*domain.Season {
-	seasons := make([]*domain.Season, 0, len(metadata))
+// mapSeasons converts Plex metadata to media seasons
+func mapSeasons(metadata []metadataItem, serverURL string) []*media.Season {
+	seasons := make([]*media.Season, 0, len(metadata))
 	for _, m := range metadata {
 		if m.Type != "season" {
 			continue
@@ -155,9 +155,9 @@ func mapSeasons(metadata []metadataItem, serverURL string) []*domain.Season {
 	return seasons
 }
 
-// mapSeason converts a single season metadata to domain season
-func mapSeason(m metadataItem, serverURL string) domain.Season {
-	season := domain.Season{
+// mapSeason converts a single season metadata to media season
+func mapSeason(m metadataItem, serverURL string) media.Season {
+	season := media.Season{
 		ID:             m.RatingKey,
 		ShowID:         m.ParentRatingKey,
 		ShowTitle:      m.ParentTitle,
@@ -174,9 +174,9 @@ func mapSeason(m metadataItem, serverURL string) domain.Season {
 	return season
 }
 
-// mapEpisodes converts Plex metadata to domain media items (episodes)
-func mapEpisodes(metadata []metadataItem, serverURL string) []*domain.MediaItem {
-	items := make([]*domain.MediaItem, 0, len(metadata))
+// mapEpisodes converts Plex metadata to media items (episodes)
+func mapEpisodes(metadata []metadataItem, serverURL string) []*media.Item {
+	items := make([]*media.Item, 0, len(metadata))
 	for _, m := range metadata {
 		if m.Type != "episode" {
 			continue
@@ -187,9 +187,9 @@ func mapEpisodes(metadata []metadataItem, serverURL string) []*domain.MediaItem 
 	return items
 }
 
-// mapEpisode converts a single episode metadata to domain media item
-func mapEpisode(m metadataItem, serverURL string) domain.MediaItem {
-	item := domain.MediaItem{
+// mapEpisode converts a single episode metadata to media item
+func mapEpisode(m metadataItem, serverURL string) media.Item {
+	item := media.Item{
 		ID:         m.RatingKey,
 		Title:      m.Title,
 		SortTitle:  m.TitleSort,
@@ -201,7 +201,7 @@ func mapEpisode(m metadataItem, serverURL string) domain.MediaItem {
 		Duration:   time.Duration(m.Duration) * time.Millisecond,
 		ViewOffset: time.Duration(m.ViewOffset) * time.Millisecond,
 		IsPlayed:   m.ViewCount > 0,
-		Type:       domain.MediaTypeEpisode,
+		Type:       media.TypeEpisode,
 		ShowTitle:  m.GrandparentTitle,
 		ShowID:     m.GrandparentRatingKey,
 		SeasonNum:  m.ParentIndex,
@@ -228,26 +228,26 @@ func mapEpisode(m metadataItem, serverURL string) domain.MediaItem {
 
 	item.ContentRating = normalize.ContentRating(m.ContentRating)
 	if len(m.Media) > 0 {
-		media := m.Media[0]
-		item.Bitrate = media.Bitrate
-		item.Width = media.Width
-		item.Height = media.Height
-		item.VideoCodec = normalize.VideoCodec(media.VideoCodec)
-		item.AudioCodec = normalize.AudioCodec(media.AudioCodec)
-		item.AudioChannels = media.AudioChannels
-		item.Container = normalize.Container(media.Container)
-		if len(media.Part) > 0 {
-			item.FileSize = media.Part[0].Size
+		version := m.Media[0]
+		item.Bitrate = version.Bitrate
+		item.Width = version.Width
+		item.Height = version.Height
+		item.VideoCodec = normalize.VideoCodec(version.VideoCodec)
+		item.AudioCodec = normalize.AudioCodec(version.AudioCodec)
+		item.AudioChannels = version.AudioChannels
+		item.Container = normalize.Container(version.Container)
+		if len(version.Part) > 0 {
+			item.FileSize = version.Part[0].Size
 		}
 	}
 
 	return item
 }
 
-// mapVideoItems converts Plex metadata to playable domain media items
+// mapVideoItems converts Plex metadata to playable media items
 // (movies and episodes)
-func mapVideoItems(metadata []metadataItem, serverURL string) []*domain.MediaItem {
-	items := make([]*domain.MediaItem, 0, len(metadata))
+func mapVideoItems(metadata []metadataItem, serverURL string) []*media.Item {
+	items := make([]*media.Item, 0, len(metadata))
 	for _, m := range metadata {
 		switch m.Type {
 		case "movie":
@@ -261,9 +261,9 @@ func mapVideoItems(metadata []metadataItem, serverURL string) []*domain.MediaIte
 	return items
 }
 
-// mapPlaylists converts Plex metadata to domain playlists
-func mapPlaylists(metadata []metadataItem, serverURL string) []*domain.Playlist {
-	playlists := make([]*domain.Playlist, 0, len(metadata))
+// mapPlaylists converts Plex metadata to media playlists
+func mapPlaylists(metadata []metadataItem, serverURL string) []*media.Playlist {
+	playlists := make([]*media.Playlist, 0, len(metadata))
 	for _, m := range metadata {
 		if m.Type != "playlist" {
 			continue
@@ -274,9 +274,9 @@ func mapPlaylists(metadata []metadataItem, serverURL string) []*domain.Playlist 
 	return playlists
 }
 
-// mapPlaylist converts a single Plex playlist metadata to domain playlist
-func mapPlaylist(m metadataItem, serverURL string) domain.Playlist {
-	return domain.Playlist{
+// mapPlaylist converts a single Plex playlist metadata to media playlist
+func mapPlaylist(m metadataItem, serverURL string) media.Playlist {
+	return media.Playlist{
 		ID:           m.RatingKey,
 		Title:        m.Title,
 		PlaylistType: "video",
@@ -287,11 +287,11 @@ func mapPlaylist(m metadataItem, serverURL string) domain.Playlist {
 	}
 }
 
-// mapLibraryContent converts Plex metadata to domain.ListItem for mixed libraries.
+// mapLibraryContent converts Plex metadata to media.ListItem for mixed libraries.
 // This handles both movies and shows in a single response, returning them as
 // a polymorphic slice that the UI can display uniformly.
-func mapLibraryContent(metadata []metadataItem, serverURL string) []domain.ListItem {
-	result := make([]domain.ListItem, 0, len(metadata))
+func mapLibraryContent(metadata []metadataItem, serverURL string) []media.ListItem {
+	result := make([]media.ListItem, 0, len(metadata))
 	for _, m := range metadata {
 		switch m.Type {
 		case "movie":

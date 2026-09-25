@@ -1,8 +1,8 @@
-package domain
+package media
 
 import "errors"
 
-// Sentinel errors for domain operations
+// Sentinel errors shared by the backends and the catalog
 var (
 	// ErrItemNotFound indicates the requested media item does not exist
 	ErrItemNotFound = errors.New("media item not found")

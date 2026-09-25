@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/store"
 )
 
@@ -21,12 +21,12 @@ func BenchmarkCachedLibraries(b *testing.B) {
 			defer cache.Close()
 			svc := NewService(context.Background(), fakeBackend{}, cache)
 			defer svc.Close()
-			items := make([]domain.ListItem, size)
+			items := make([]media.ListItem, size)
 			for i := range items {
-				items[i] = &domain.MediaItem{ID: fmt.Sprint(i), Title: "Movie title"}
+				items[i] = &media.Item{ID: fmt.Sprint(i), Title: "Movie title"}
 			}
 			r := Resource{Kind: Movies, ID: "lib", LibraryID: "lib"}
-			if err := cache.Save(r.Key(), domain.CachedList{Items: items, FetchedAt: time.Now()}); err != nil {
+			if err := cache.Save(r.Key(), media.CachedList{Items: items, FetchedAt: time.Now()}); err != nil {
 				b.Fatal(err)
 			}
 			b.ReportAllocs()

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 // MutationKind is the kind of write a Mutation makes.
@@ -46,7 +46,7 @@ func (m Mutation) itemIDs() []string {
 type Change struct {
 	Mutation  Mutation
 	Applied   bool
-	Playlist  *domain.Playlist
+	Playlist  *media.Playlist
 	Resources []Resource
 	Warning   error
 }
@@ -138,8 +138,8 @@ func (s *Service) reconcileWatch(m Mutation, change Change, err error) (Change, 
 
 	var saved []string
 	if err == nil {
-		watch := domain.WatchChange{ItemID: m.ItemID, ShowID: m.ShowID, SeasonID: m.SeasonID, Played: m.Played}
-		saved, change.Warning = s.cache.Update(watch.IDs(), func(lists map[string]domain.CachedList) map[string]domain.CachedList {
+		watch := media.WatchChange{ItemID: m.ItemID, ShowID: m.ShowID, SeasonID: m.SeasonID, Played: m.Played}
+		saved, change.Warning = s.cache.Update(watch.IDs(), func(lists map[string]media.CachedList) map[string]media.CachedList {
 			return patchLists(lists, watch.Apply)
 		})
 	}
@@ -155,7 +155,7 @@ func (s *Service) reconcileWatch(m Mutation, change Change, err error) (Change, 
 		return change, err
 	}
 
-	entries := make(map[string]domain.CachedList, len(saved))
+	entries := make(map[string]media.CachedList, len(saved))
 	for _, key := range saved {
 		if entry, ok := s.cache.Load(key); ok {
 			entries[key] = entry
@@ -206,7 +206,7 @@ func (s *Service) reconcilePlaylists(m Mutation, change Change, err error) (Chan
 	}
 	s.mu.Unlock()
 
-	entries := make(map[string]domain.CachedList)
+	entries := make(map[string]media.CachedList)
 	saved := make(map[string]error)
 	for _, r := range change.Resources {
 		if entry, ok := s.cache.Load(r.Key()); ok {
@@ -237,14 +237,14 @@ func (s *Service) reconcilePlaylists(m Mutation, change Change, err error) (Chan
 	return change, err
 }
 
-// patchLists adapts a domain rule over item lists to cached snapshots,
+// patchLists adapts a media rule over item lists to cached snapshots,
 // keeping each snapshot's fetch time and server version.
-func patchLists(lists map[string]domain.CachedList, apply func(map[string][]domain.ListItem) map[string][]domain.ListItem) map[string]domain.CachedList {
-	items := make(map[string][]domain.ListItem, len(lists))
+func patchLists(lists map[string]media.CachedList, apply func(map[string][]media.ListItem) map[string][]media.ListItem) map[string]media.CachedList {
+	items := make(map[string][]media.ListItem, len(lists))
 	for key, l := range lists {
 		items[key] = l.Items
 	}
-	changed := make(map[string]domain.CachedList)
+	changed := make(map[string]media.CachedList)
 	for key, patched := range apply(items) {
 		l := lists[key]
 		l.Items = patched

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/store"
 )
 
@@ -17,7 +17,7 @@ type gatedCache struct {
 	blocked          atomic.Bool
 }
 
-func (c *gatedCache) Load(key string) (domain.CachedList, bool) {
+func (c *gatedCache) Load(key string) (media.CachedList, bool) {
 	entry, ok := c.Cache.Load(key)
 	if key == c.key && c.blocked.CompareAndSwap(false, true) {
 		close(c.started)
@@ -32,7 +32,7 @@ func TestCacheDecodeDoesNotBlockUnrelatedLoads(t *testing.T) {
 	a := Resource{Kind: Movies, ID: "a", LibraryID: "a"}
 	b := Resource{Kind: Movies, ID: "b", LibraryID: "b"}
 	for _, r := range []Resource{a, b} {
-		if err := cache.Save(r.Key(), domain.CachedList{FetchedAt: time.Now()}); err != nil {
+		if err := cache.Save(r.Key(), media.CachedList{FetchedAt: time.Now()}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -58,7 +58,7 @@ func TestMutationDuringCacheDecodeRejectsOldPayload(t *testing.T) {
 	cache := store.NewMemory()
 	defer cache.Close()
 	r := Resource{Kind: Movies, ID: "a", LibraryID: "a"}
-	if err := cache.Save(r.Key(), domain.CachedList{FetchedAt: time.Now(), Items: []domain.ListItem{&domain.MediaItem{ID: "movie"}}}); err != nil {
+	if err := cache.Save(r.Key(), media.CachedList{FetchedAt: time.Now(), Items: []media.ListItem{&media.Item{ID: "movie"}}}); err != nil {
 		t.Fatal(err)
 	}
 	gate := &gatedCache{Cache: cache, key: r.Key(), started: make(chan struct{}), release: make(chan struct{})}
@@ -73,7 +73,7 @@ func TestMutationDuringCacheDecodeRejectsOldPayload(t *testing.T) {
 		t.Fatal(err)
 	}
 	snapshot := <-done
-	if !change.Applied || !snapshot.Items[0].(*domain.MediaItem).IsPlayed || snapshot.Revision != svc.state(r).Snapshot.Revision {
+	if !change.Applied || !snapshot.Items[0].(*media.Item).IsPlayed || snapshot.Revision != svc.state(r).Snapshot.Revision {
 		t.Fatal("cache payload decoded before the mutation escaped its revision fence")
 	}
 }
@@ -83,7 +83,7 @@ type slowSaveCache struct {
 	started, release chan struct{}
 }
 
-func (c *slowSaveCache) Save(key string, l domain.CachedList) error {
+func (c *slowSaveCache) Save(key string, l media.CachedList) error {
 	close(c.started)
 	<-c.release
 	return c.Cache.Save(key, l)
@@ -93,12 +93,12 @@ func TestSlowCacheWriteDoesNotBlockCacheHits(t *testing.T) {
 	cache := store.NewMemory()
 	a := Resource{Kind: Movies, ID: "a", LibraryID: "a"}
 	b := Resource{Kind: Movies, ID: "b", LibraryID: "b"}
-	if err := cache.Save(b.Key(), domain.CachedList{FetchedAt: time.Now()}); err != nil {
+	if err := cache.Save(b.Key(), media.CachedList{FetchedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 	slow := &slowSaveCache{Cache: cache, started: make(chan struct{}), release: make(chan struct{})}
-	backend := fakeBackend{movies: func(context.Context) ([]*domain.MediaItem, int, error) {
-		return []*domain.MediaItem{{ID: "m"}}, 1, nil
+	backend := fakeBackend{movies: func(context.Context) ([]*media.Item, int, error) {
+		return []*media.Item{{ID: "m"}}, 1, nil
 	}}
 	svc := NewService(context.Background(), backend, slow)
 	defer svc.Close()

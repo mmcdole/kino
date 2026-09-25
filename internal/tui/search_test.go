@@ -10,7 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mmcdole/kino/internal/catalog"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/search"
 	"github.com/mmcdole/kino/internal/store"
 )
@@ -30,7 +30,7 @@ func TestGlobalSearchRapidTypingKeepsModalAndResultsStable(t *testing.T) {
 		items := make([]search.Result, n)
 		for i := range items {
 			title := fmt.Sprintf("%s %02d", prefix, i)
-			items[i] = search.Result{Entry: search.Entry{Item: &domain.MediaItem{ID: title, Title: title}, Title: title, LibraryID: "a"}}
+			items[i] = search.Result{Entry: search.Entry{Item: &media.Item{ID: title, Title: title}, Title: title, LibraryID: "a"}}
 		}
 		return items
 	}
@@ -95,10 +95,10 @@ func TestSearchNavigationCompletesFromFreshCache(t *testing.T) {
 	defer svc.Close()
 	m.catalog = svc
 	r := catalog.LibraryResource(m.libraries[0])
-	if err := cache.Save(r.Key(), domain.CachedList{
-		Items: []domain.ListItem{
-			&domain.MediaItem{ID: "first", Title: "First"},
-			&domain.MediaItem{ID: "target", Title: "Prince of Darkness"},
+	if err := cache.Save(r.Key(), media.CachedList{
+		Items: []media.ListItem{
+			&media.Item{ID: "first", Title: "First"},
+			&media.Item{ID: "target", Title: "Prince of Darkness"},
 		},
 		FetchedAt: time.Now(),
 	}); err != nil {
@@ -107,7 +107,7 @@ func TestSearchNavigationCompletesFromFreshCache(t *testing.T) {
 	// Background sync has already published the library's snapshot.
 	m = await(t, m, svc, start(m.loadResource(r, catalog.Browse, true)))
 
-	entry := search.Entry{Item: &domain.MediaItem{ID: "target", Title: "Prince of Darkness"}, LibraryID: r.LibraryID, Type: domain.MediaTypeMovie}
+	entry := search.Entry{Item: &media.Item{ID: "target", Title: "Prince of Darkness"}, LibraryID: r.LibraryID, Type: media.TypeMovie}
 	m = await(t, m, svc, start(m.navigateToSearchResult(entry)))
 	if m.pendingSelect != nil {
 		t.Fatal("navigation still waiting for a state the catalog never publishes")
@@ -121,11 +121,11 @@ func TestSearchNavigationCompletesFromFreshCache(t *testing.T) {
 func TestSearchNavigationOpensShow(t *testing.T) {
 	m := testModel(t)
 	r := catalog.LibraryResource(m.libraries[0])
-	entry := search.Entry{Item: &domain.Show{ID: "show", Title: "Show"}, LibraryID: r.LibraryID, Type: domain.MediaTypeShow}
+	entry := search.Entry{Item: &media.Show{ID: "show", Title: "Show"}, LibraryID: r.LibraryID, Type: media.TypeShow}
 	m.navigateToSearchResult(entry)
 
 	st := state(r, 1)
-	st.Snapshot.Items = []domain.ListItem{&domain.Show{ID: "other", Title: "Other"}, &domain.Show{ID: "show", Title: "Show"}}
+	st.Snapshot.Items = []media.ListItem{&media.Show{ID: "other", Title: "Other"}, &media.Show{ID: "show", Title: "Show"}}
 	m = publish(m, st)
 	if m.pendingSelect != nil {
 		t.Fatal("selection still pending after its content arrived")

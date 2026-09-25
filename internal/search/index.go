@@ -5,14 +5,14 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 // Entry is one searchable title in the index.
 type Entry struct {
-	Item      domain.ListItem // *MediaItem or *Show
+	Item      media.ListItem // *MediaItem or *Show
 	Title     string
-	Type      domain.MediaType
+	Type      media.Type
 	LibraryID string
 }
 
@@ -41,7 +41,7 @@ func NewIndex() *Index { return &Index{libraries: make(map[string]indexedLibrary
 
 // ReplaceLibrary indexes a library's items unless a newer revision is already
 // indexed.
-func (ix *Index) ReplaceLibrary(id string, revision uint64, items []domain.ListItem) {
+func (ix *Index) ReplaceLibrary(id string, revision uint64, items []media.ListItem) {
 	ix.mu.RLock()
 	old, exists := ix.libraries[id]
 	ix.mu.RUnlock()
@@ -49,13 +49,13 @@ func (ix *Index) ReplaceLibrary(id string, revision uint64, items []domain.ListI
 		return
 	}
 	entry := indexedLibrary{revision: revision}
-	for _, item := range domain.CloneItems(items) {
-		var kind domain.MediaType
+	for _, item := range media.CloneItems(items) {
+		var kind media.Type
 		switch v := item.(type) {
-		case *domain.MediaItem:
+		case *media.Item:
 			kind = v.Type
-		case *domain.Show:
-			kind = domain.MediaTypeShow
+		case *media.Show:
+			kind = media.TypeShow
 		default:
 			continue
 		}
@@ -71,7 +71,7 @@ func (ix *Index) ReplaceLibrary(id string, revision uint64, items []domain.ListI
 }
 
 // Search matches query against the given libraries, best match first.
-func (ix *Index) Search(ctx context.Context, query string, libraries []domain.Library) []Result {
+func (ix *Index) Search(ctx context.Context, query string, libraries []media.Library) []Result {
 	if query == "" || ctx.Err() != nil {
 		return nil
 	}
@@ -91,7 +91,7 @@ func (ix *Index) Search(ctx context.Context, query string, libraries []domain.Li
 			return nil
 		}
 		item := items[match.Index]
-		item.Item = domain.CloneItems([]domain.ListItem{item.Item})[0]
+		item.Item = media.CloneItems([]media.ListItem{item.Item})[0]
 		results = append(results, Result{Entry: item, MatchedIndexes: match.MatchedIndexes, Score: match.Score})
 	}
 	return results

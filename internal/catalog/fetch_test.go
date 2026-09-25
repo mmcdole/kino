@@ -5,14 +5,14 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 func TestPaginationDeduplicatesAndHandlesUnknownTotal(t *testing.T) {
 	for _, total := range []int{0, 4} {
-		pages := [][]*domain.MediaItem{{{ID: "a"}, {ID: "b"}}, {{ID: "b"}, {ID: "c"}}}
+		pages := [][]*media.Item{{{ID: "a"}, {ID: "b"}}, {{ID: "b"}, {ID: "c"}}}
 		calls := 0
-		items, err := fetchAll(context.Background(), func(ctx context.Context, offset, limit int) ([]*domain.MediaItem, int, error) {
+		items, err := fetchAll(context.Background(), func(ctx context.Context, offset, limit int) ([]*media.Item, int, error) {
 			calls++
 			if offset/limit >= len(pages) {
 				return nil, total, nil
@@ -27,9 +27,9 @@ func TestPaginationDeduplicatesAndHandlesUnknownTotal(t *testing.T) {
 func TestPaginationCancellationDoesNotReturnPartialSuccess(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	calls := 0
-	items, err := fetchAll(ctx, func(context.Context, int, int) ([]*domain.MediaItem, int, error) {
+	items, err := fetchAll(ctx, func(context.Context, int, int) ([]*media.Item, int, error) {
 		calls++
-		return []*domain.MediaItem{{ID: "a"}}, 10, nil
+		return []*media.Item{{ID: "a"}}, 10, nil
 	}, 2, func(int, int) { cancel() })
 	if !errors.Is(err, context.Canceled) || items != nil || calls != 1 {
 		t.Fatalf("canceled pagination returned partial success: %v %v", items, err)
@@ -37,8 +37,8 @@ func TestPaginationCancellationDoesNotReturnPartialSuccess(t *testing.T) {
 }
 
 func TestPaginationAdvancesByReceivedPageSize(t *testing.T) {
-	source := []*domain.MediaItem{{ID: "a"}, {ID: "b"}, {ID: "c"}}
-	items, err := fetchAll(context.Background(), func(ctx context.Context, offset, limit int) ([]*domain.MediaItem, int, error) {
+	source := []*media.Item{{ID: "a"}, {ID: "b"}, {ID: "c"}}
+	items, err := fetchAll(context.Background(), func(ctx context.Context, offset, limit int) ([]*media.Item, int, error) {
 		// Server caps pages below the requested limit.
 		if offset >= len(source) {
 			return nil, len(source), nil

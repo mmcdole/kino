@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 // loadCmd asks the catalog to load a collection. Its content and
@@ -39,7 +39,7 @@ func mutateCmd(svc Catalog, req request, mutation catalog.Mutation) tea.Cmd {
 }
 
 // playCmd resolves an item's stream and hands it to the player.
-func playCmd(svc Playback, req request, item domain.MediaItem, resume bool) tea.Cmd {
+func playCmd(svc Playback, req request, item media.Item, resume bool) tea.Cmd {
 	return func() tea.Msg {
 		var err error
 		if resume {
@@ -52,7 +52,7 @@ func playCmd(svc Playback, req request, item domain.MediaItem, resume bool) tea.
 }
 
 // playlistMembershipCmd loads the playlists and which of them hold item.
-func playlistMembershipCmd(svc Catalog, req request, item domain.MediaItem) tea.Cmd {
+func playlistMembershipCmd(svc Catalog, req request, item media.Item) tea.Cmd {
 	return func() tea.Msg {
 		membership, err := svc.PlaylistMembership(req.ctx, item.ID)
 		return playlistModalDataMsg{Request: req, Membership: membership, Item: item, Err: err}

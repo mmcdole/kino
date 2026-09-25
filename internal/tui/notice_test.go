@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 func TestNotifySetsNoticeAndTimer(t *testing.T) {
@@ -77,11 +77,11 @@ func TestAllOperationErrorsUseAuthenticationAlert(t *testing.T) {
 			var msg tea.Msg
 			switch kind {
 			case "browse":
-				msg = loadDoneMsg{Request: req, Err: domain.ErrAuthFailed}
+				msg = loadDoneMsg{Request: req, Err: media.ErrAuthFailed}
 			case "modal":
-				msg = playlistModalDataMsg{Request: req, Err: domain.ErrAuthFailed}
+				msg = playlistModalDataMsg{Request: req, Err: media.ErrAuthFailed}
 			default:
-				msg = actionMsg{Request: req, Playback: kind == "playback", Err: domain.ErrAuthFailed}
+				msg = actionMsg{Request: req, Playback: kind == "playback", Err: media.ErrAuthFailed}
 			}
 			m = updateModel(m, msg)
 			if m.notice.Kind != noticeAlert || m.notice.Text != authFailedStatusMsg {

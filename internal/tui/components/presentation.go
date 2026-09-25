@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
-// itemPresentation is the TUI's view of a domain entity. Unsupported metadata
+// itemPresentation is the TUI's view of a media entity. Unsupported metadata
 // has its natural zero value; entities need no placeholder display methods.
 type itemPresentation struct {
 	Title, SortTitle   string
@@ -16,25 +16,25 @@ type itemPresentation struct {
 	AddedAt, UpdatedAt int64
 	Duration           time.Duration
 	Rating             float64
-	WatchStatus        domain.WatchStatus
+	WatchStatus        media.WatchStatus
 	DrillDown          bool
 }
 
-func present(item domain.ListItem) itemPresentation {
+func present(item media.ListItem) itemPresentation {
 	p := itemPresentation{Title: item.GetTitle()}
 	switch v := item.(type) {
-	case *domain.MediaItem:
+	case *media.Item:
 		p.SortTitle, p.Year, p.AddedAt, p.UpdatedAt = v.SortTitle, v.Year, v.AddedAt, v.UpdatedAt
 		p.Duration, p.Rating, p.WatchStatus = v.Duration, v.Rating, v.WatchStatus()
-	case *domain.Show:
+	case *media.Show:
 		p.SortTitle, p.Year, p.AddedAt, p.UpdatedAt = v.SortTitle, v.Year, v.AddedAt, v.UpdatedAt
 		p.Rating, p.WatchStatus, p.DrillDown = v.Rating, v.WatchStatus(), true
-	case *domain.Season:
+	case *media.Season:
 		p.Title = seasonTitle(*v)
 		p.WatchStatus, p.DrillDown = v.WatchStatus(), true
-	case *domain.Library:
+	case *media.Library:
 		p.UpdatedAt, p.DrillDown = v.UpdatedAt, true
-	case *domain.Playlist:
+	case *media.Playlist:
 		p.Duration, p.UpdatedAt, p.DrillDown = v.Duration, v.UpdatedAt, true
 	}
 	if p.SortTitle == "" {
@@ -44,7 +44,7 @@ func present(item domain.ListItem) itemPresentation {
 }
 
 // runtimeLabel formats an item's runtime as "1h 42m" or "48m".
-func runtimeLabel(m domain.MediaItem) string {
+func runtimeLabel(m media.Item) string {
 	h := int(m.Duration.Hours())
 	mins := int(m.Duration.Minutes()) % 60
 	if h > 0 {
@@ -67,14 +67,14 @@ func clockDuration(d time.Duration) string {
 	return fmt.Sprintf("%02d:%02d", minutes, seconds)
 }
 
-func episodeCode(m domain.MediaItem) string {
-	if m.Type != domain.MediaTypeEpisode {
+func episodeCode(m media.Item) string {
+	if m.Type != media.TypeEpisode {
 		return ""
 	}
 	return fmt.Sprintf("S%02dE%02d", m.SeasonNum, m.EpisodeNum)
 }
 
-func resolution(m domain.MediaItem) string {
+func resolution(m media.Item) string {
 	switch {
 	case m.Height >= 2160:
 		return "4K"
@@ -91,7 +91,7 @@ func resolution(m domain.MediaItem) string {
 	}
 }
 
-func formattedFileSize(m domain.MediaItem) string {
+func formattedFileSize(m media.Item) string {
 	if m.FileSize <= 0 {
 		return ""
 	}
@@ -107,7 +107,7 @@ func formattedFileSize(m domain.MediaItem) string {
 	}
 }
 
-func channelLayout(m domain.MediaItem) string {
+func channelLayout(m media.Item) string {
 	switch m.AudioChannels {
 	case 8:
 		return "7.1"
@@ -122,7 +122,7 @@ func channelLayout(m domain.MediaItem) string {
 	}
 }
 
-func seasonTitle(s domain.Season) string {
+func seasonTitle(s media.Season) string {
 	if s.SeasonNum == 0 {
 		return "Specials"
 	}

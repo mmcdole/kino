@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/mediaserver/httpx"
 )
 
@@ -149,7 +149,7 @@ func (c *Client) parseResponse(body []byte) (*mediaContainer, error) {
 }
 
 // GetLibraries returns all available libraries
-func (c *Client) GetLibraries(ctx context.Context) ([]domain.Library, error) {
+func (c *Client) GetLibraries(ctx context.Context) ([]media.Library, error) {
 	body, err := c.get(ctx, "/library/sections", nil)
 	if err != nil {
 		return nil, err
@@ -167,7 +167,7 @@ func (c *Client) GetLibraries(ctx context.Context) ([]domain.Library, error) {
 // Returns (items, totalSize, error)
 // Note: If limit=0, Plex uses its default page size (typically 50-100).
 // The SERVICE layer is responsible for pagination loops if "all" items are needed.
-func (c *Client) GetMovies(ctx context.Context, libID string, offset, limit int) ([]*domain.MediaItem, int, error) {
+func (c *Client) GetMovies(ctx context.Context, libID string, offset, limit int) ([]*media.Item, int, error) {
 	query := url.Values{}
 	query.Set("X-Plex-Container-Start", strconv.Itoa(offset))
 	if limit > 0 {
@@ -198,7 +198,7 @@ func (c *Client) GetMovies(ctx context.Context, libID string, offset, limit int)
 // Returns (items, totalSize, error)
 // Note: If limit=0, Plex uses its default page size (typically 50-100).
 // The SERVICE layer is responsible for pagination loops if "all" items are needed.
-func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) ([]*domain.Show, int, error) {
+func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) ([]*media.Show, int, error) {
 	query := url.Values{}
 	query.Set("X-Plex-Container-Start", strconv.Itoa(offset))
 	if limit > 0 {
@@ -251,7 +251,7 @@ func (c *Client) GetLibraryItemCount(ctx context.Context, libID, libType string)
 // Note: Plex doesn't truly support "mixed" libraries at the API level like Jellyfin,
 // so this method fetches all items and returns both types. For pure movie or show
 // libraries, this still works but is less efficient than GetMovies/GetShows.
-func (c *Client) GetMixedContent(ctx context.Context, libID string, offset, limit int) ([]domain.ListItem, int, error) {
+func (c *Client) GetMixedContent(ctx context.Context, libID string, offset, limit int) ([]media.ListItem, int, error) {
 	query := url.Values{}
 	query.Set("X-Plex-Container-Start", strconv.Itoa(offset))
 	if limit > 0 {
@@ -278,7 +278,7 @@ func (c *Client) GetMixedContent(ctx context.Context, libID string, offset, limi
 }
 
 // GetSeasons returns all seasons for a TV show
-func (c *Client) GetSeasons(ctx context.Context, showID string) ([]*domain.Season, error) {
+func (c *Client) GetSeasons(ctx context.Context, showID string) ([]*media.Season, error) {
 	path := fmt.Sprintf("/library/metadata/%s/children", showID)
 	body, err := c.get(ctx, path, nil)
 	if err != nil {
@@ -294,7 +294,7 @@ func (c *Client) GetSeasons(ctx context.Context, showID string) ([]*domain.Seaso
 }
 
 // GetEpisodes returns all episodes for a season
-func (c *Client) GetEpisodes(ctx context.Context, seasonID string) ([]*domain.MediaItem, error) {
+func (c *Client) GetEpisodes(ctx context.Context, seasonID string) ([]*media.Item, error) {
 	path := fmt.Sprintf("/library/metadata/%s/children", seasonID)
 	body, err := c.get(ctx, path, nil)
 	if err != nil {
@@ -323,18 +323,18 @@ func (c *Client) ResolvePlayableURL(ctx context.Context, itemID string) (string,
 	}
 
 	if len(container.Metadata) == 0 {
-		return "", domain.ErrItemNotFound
+		return "", media.ErrItemNotFound
 	}
 
 	// Extract media URL from the metadata
 	m := container.Metadata[0]
 	if len(m.Media) == 0 || len(m.Media[0].Part) == 0 {
-		return "", domain.ErrItemNotFound
+		return "", media.ErrItemNotFound
 	}
 
 	mediaPath := m.Media[0].Part[0].Key
 	if mediaPath == "" {
-		return "", domain.ErrItemNotFound
+		return "", media.ErrItemNotFound
 	}
 
 	// Add token to URL for direct play
@@ -362,7 +362,7 @@ func (c *Client) MarkUnplayed(ctx context.Context, itemID string) error {
 }
 
 // GetPlaylists returns all user playlists
-func (c *Client) GetPlaylists(ctx context.Context) ([]*domain.Playlist, error) {
+func (c *Client) GetPlaylists(ctx context.Context) ([]*media.Playlist, error) {
 	body, err := c.get(ctx, "/playlists", nil)
 	if err != nil {
 		return nil, err
@@ -377,7 +377,7 @@ func (c *Client) GetPlaylists(ctx context.Context) ([]*domain.Playlist, error) {
 }
 
 // GetPlaylistItems returns all items in a playlist
-func (c *Client) GetPlaylistItems(ctx context.Context, playlistID string) ([]*domain.MediaItem, error) {
+func (c *Client) GetPlaylistItems(ctx context.Context, playlistID string) ([]*media.Item, error) {
 	path := fmt.Sprintf("/playlists/%s/items", playlistID)
 	body, err := c.get(ctx, path, nil)
 	if err != nil {
@@ -394,7 +394,7 @@ func (c *Client) GetPlaylistItems(ctx context.Context, playlistID string) ([]*do
 
 // CreatePlaylist creates a new playlist with the given title and initial items.
 // Plex does not support creating empty playlists, so at least one itemID is required.
-func (c *Client) CreatePlaylist(ctx context.Context, title string, itemIDs []string) (*domain.Playlist, error) {
+func (c *Client) CreatePlaylist(ctx context.Context, title string, itemIDs []string) (*media.Playlist, error) {
 	if len(itemIDs) == 0 {
 		return nil, fmt.Errorf("plex does not support creating empty playlists")
 	}

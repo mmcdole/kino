@@ -9,7 +9,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -77,8 +77,8 @@ func (d *Disk) Close() error {
 }
 
 // Load returns a detached copy of the snapshot stored under key.
-func (d *Disk) Load(key string) (domain.CachedList, bool) {
-	var l domain.CachedList
+func (d *Disk) Load(key string) (media.CachedList, bool) {
+	var l media.CachedList
 	ok := false
 	d.db.View(func(tx *bolt.Tx) error {
 		l, ok = decodeSnapshot(tx.Bucket(bucketSnapshots).Get([]byte(key)))
@@ -88,7 +88,7 @@ func (d *Disk) Load(key string) (domain.CachedList, bool) {
 }
 
 // Save replaces the snapshot stored under key.
-func (d *Disk) Save(key string, l domain.CachedList) error {
+func (d *Disk) Save(key string, l media.CachedList) error {
 	data, err := encodeSnapshot(l)
 	if err != nil {
 		return err
@@ -101,7 +101,7 @@ func (d *Disk) Save(key string, l domain.CachedList) error {
 // Update hands every snapshot that mentions one of ids to fn and saves the
 // snapshots fn returns, all in one transaction. It returns the saved keys.
 // Matching is a cheap scan of the encoded data, so only candidates are decoded.
-func (d *Disk) Update(ids []string, fn func(map[string]domain.CachedList) map[string]domain.CachedList) ([]string, error) {
+func (d *Disk) Update(ids []string, fn func(map[string]media.CachedList) map[string]media.CachedList) ([]string, error) {
 	needles := make([][]byte, len(ids))
 	for i, id := range ids {
 		needles[i], _ = json.Marshal(id)
@@ -109,7 +109,7 @@ func (d *Disk) Update(ids []string, fn func(map[string]domain.CachedList) map[st
 	var saved []string
 	err := d.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucketSnapshots)
-		lists := make(map[string]domain.CachedList)
+		lists := make(map[string]media.CachedList)
 		err := b.ForEach(func(k, v []byte) error {
 			mentioned := slices.ContainsFunc(needles, func(n []byte) bool { return bytes.Contains(v, n) })
 			if l, ok := decodeSnapshot(v); mentioned && ok {

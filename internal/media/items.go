@@ -1,4 +1,4 @@
-package domain
+package media
 
 // CloneItems copies entity values so consumers can retain or modify snapshots
 // independently of other requests and projections.
@@ -6,7 +6,7 @@ func CloneItems(items []ListItem) []ListItem {
 	out := make([]ListItem, 0, len(items))
 	for _, item := range items {
 		switch v := item.(type) {
-		case *MediaItem:
+		case *Item:
 			c := *v
 			out = append(out, &c)
 		case *Show:

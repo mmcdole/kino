@@ -3,7 +3,7 @@ package catalog
 import (
 	"context"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 // State is the catalog's current view of one collection. Published snapshots
@@ -22,7 +22,7 @@ type State struct {
 // from and how far it can be trusted.
 type Snapshot struct {
 	Resource Resource
-	domain.CachedList
+	media.CachedList
 	Revision  uint64
 	fromCache bool
 	// Validated is true only when this result was checked against the server.
@@ -34,7 +34,7 @@ type Snapshot struct {
 }
 
 // Clone copies the items so the caller can keep or change them.
-func (s Snapshot) Clone() Snapshot { s.Items = domain.CloneItems(s.Items); return s }
+func (s Snapshot) Clone() Snapshot { s.Items = media.CloneItems(s.Items); return s }
 
 // Progress reports pagination of a large collection.
 type Progress struct{ Loaded, Total int }

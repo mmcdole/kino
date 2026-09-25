@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/tui/styles"
 )
 
@@ -24,7 +24,7 @@ type inspectorContent struct {
 
 // Inspector displays detailed metadata for the selected item
 type Inspector struct {
-	item          domain.ListItem
+	item          media.ListItem
 	width         int
 	height        int
 	offset        int // scroll offset
@@ -40,7 +40,7 @@ func NewInspector() Inspector {
 }
 
 // SetItem sets the item to display
-func (i *Inspector) SetItem(item domain.ListItem) {
+func (i *Inspector) SetItem(item media.ListItem) {
 	if item == nil || i.item == nil || item.GetID() != i.item.GetID() {
 		i.offset = 0
 	}
@@ -165,22 +165,22 @@ func (i Inspector) View() string {
 // renderInspector renders the inspector panel content as three zones
 func (i Inspector) renderInspector(width int) inspectorContent {
 	switch v := i.item.(type) {
-	case *domain.MediaItem:
+	case *media.Item:
 		return i.renderMediaItemInspector(*v, width)
-	case *domain.Show:
+	case *media.Show:
 		return i.renderShowInspector(*v, width)
-	case *domain.Season:
+	case *media.Season:
 		return inspectorContent{header: i.renderSeasonInspector(*v, width)}
-	case *domain.Library:
+	case *media.Library:
 		return inspectorContent{body: i.renderLibraryInspector(v, width)}
-	case *domain.Playlist:
+	case *media.Playlist:
 		return inspectorContent{body: i.renderPlaylistInspector(*v, width)}
 	default:
 		return inspectorContent{body: styles.DimStyle.Render("No item selected")}
 	}
 }
 
-func (i Inspector) renderMediaItemInspector(item domain.MediaItem, width int) inspectorContent {
+func (i Inspector) renderMediaItemInspector(item media.Item, width int) inspectorContent {
 	headerStr := renderMediaHeader(item, width)
 	bodyStr := renderMediaBody(item, width)
 	footerStr := renderMediaFooter(item, width)
@@ -191,12 +191,12 @@ func (i Inspector) renderMediaItemInspector(item domain.MediaItem, width int) in
 	}
 }
 
-func renderMediaHeader(item domain.MediaItem, width int) string {
+func renderMediaHeader(item media.Item, width int) string {
 	var b strings.Builder
 
 	// Title
 	title := item.Title
-	if item.Type == domain.MediaTypeEpisode {
+	if item.Type == media.TypeEpisode {
 		title = fmt.Sprintf("%s - %s", episodeCode(item), item.Title)
 	}
 	b.WriteString(styles.TitleStyle.Render(styles.Truncate(title, width)))
@@ -237,11 +237,11 @@ func renderMediaHeader(item domain.MediaItem, width int) string {
 	}
 
 	switch item.WatchStatus() {
-	case domain.WatchStatusWatched:
+	case media.WatchStatusWatched:
 		statusParts = append(statusParts, styles.PlayedStyle.Render("✓ Watched"))
-	case domain.WatchStatusInProgress:
+	case media.WatchStatusInProgress:
 		statusParts = append(statusParts, styles.InProgressStyle.Render(fmt.Sprintf("◐ %s", clockDuration(item.ViewOffset))))
-	case domain.WatchStatusUnwatched:
+	case media.WatchStatusUnwatched:
 		statusParts = append(statusParts, styles.DimStyle.Render("○ Unwatched"))
 	}
 
@@ -252,7 +252,7 @@ func renderMediaHeader(item domain.MediaItem, width int) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func renderMediaBody(item domain.MediaItem, width int) string {
+func renderMediaBody(item media.Item, width int) string {
 	if item.Summary == "" {
 		return ""
 	}
@@ -264,7 +264,7 @@ func renderMediaBody(item domain.MediaItem, width int) string {
 	return styles.SubtitleStyle.Render(summary)
 }
 
-func renderMediaFooter(item domain.MediaItem, width int) string {
+func renderMediaFooter(item media.Item, width int) string {
 	hasTech := item.VideoCodec != "" || item.AudioCodec != "" ||
 		item.Container != "" || item.FileSize > 0
 
@@ -335,7 +335,7 @@ func renderMediaFooter(item domain.MediaItem, width int) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func (i Inspector) renderShowInspector(show domain.Show, width int) inspectorContent {
+func (i Inspector) renderShowInspector(show media.Show, width int) inspectorContent {
 	var header strings.Builder
 
 	// Title
@@ -400,7 +400,7 @@ func (i Inspector) renderShowInspector(show domain.Show, width int) inspectorCon
 	}
 }
 
-func (i Inspector) renderSeasonInspector(season domain.Season, width int) string {
+func (i Inspector) renderSeasonInspector(season media.Season, width int) string {
 	var b strings.Builder
 
 	// Title
@@ -426,7 +426,7 @@ func (i Inspector) renderSeasonInspector(season domain.Season, width int) string
 	return b.String()
 }
 
-func (i Inspector) renderLibraryInspector(lib *domain.Library, width int) string {
+func (i Inspector) renderLibraryInspector(lib *media.Library, width int) string {
 	var b strings.Builder
 
 	// Handle synthetic "Playlists" entry
@@ -461,7 +461,7 @@ func (i Inspector) renderLibraryInspector(lib *domain.Library, width int) string
 	return b.String()
 }
 
-func (i Inspector) renderPlaylistInspector(playlist domain.Playlist, width int) string {
+func (i Inspector) renderPlaylistInspector(playlist media.Playlist, width int) string {
 	var b strings.Builder
 
 	// Playlist name as title

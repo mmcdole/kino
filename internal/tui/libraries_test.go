@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/mmcdole/kino/internal/catalog"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 func TestRemovedLibraryDetachesRequestsAndNavigation(t *testing.T) {
@@ -35,8 +35,8 @@ func TestRemovedLibraryDetachesRequestsAndNavigation(t *testing.T) {
 }
 
 func TestAllLibraryEntriesDoesNotAliasLibraries(t *testing.T) {
-	m := &Model{libraries: make([]domain.Library, 1, 2)}
-	m.libraries[0] = domain.Library{ID: "movies"}
+	m := &Model{libraries: make([]media.Library, 1, 2)}
+	m.libraries[0] = media.Library{ID: "movies"}
 
 	entries := m.allLibraryEntries()
 	entries[0].Name = "changed"

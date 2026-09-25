@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/mediaserver/httpx"
 )
 
@@ -76,7 +76,7 @@ func (c *Client) send(ctx context.Context, method, path string, query url.Values
 }
 
 // GetLibraries returns all available libraries (Views)
-func (c *Client) GetLibraries(ctx context.Context) ([]domain.Library, error) {
+func (c *Client) GetLibraries(ctx context.Context) ([]media.Library, error) {
 	path := fmt.Sprintf("/Users/%s/Views", c.userID)
 	body, err := c.get(ctx, path, nil)
 	if err != nil {
@@ -92,7 +92,7 @@ func (c *Client) GetLibraries(ctx context.Context) ([]domain.Library, error) {
 }
 
 // GetMovies returns paginated movies from a movie library
-func (c *Client) GetMovies(ctx context.Context, libID string, offset, limit int) ([]*domain.MediaItem, int, error) {
+func (c *Client) GetMovies(ctx context.Context, libID string, offset, limit int) ([]*media.Item, int, error) {
 	query := url.Values{}
 	query.Set("ParentId", libID)
 	query.Set("IncludeItemTypes", "Movie")
@@ -126,7 +126,7 @@ func (c *Client) GetMovies(ctx context.Context, libID string, offset, limit int)
 }
 
 // GetShows returns paginated TV shows from a show library
-func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) ([]*domain.Show, int, error) {
+func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) ([]*media.Show, int, error) {
 	query := url.Values{}
 	query.Set("ParentId", libID)
 	query.Set("IncludeItemTypes", "Series")
@@ -161,7 +161,7 @@ func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) 
 
 // GetMixedContent returns paginated content (movies AND shows) from a mixed library.
 // This fetches both types in a single API call with server-side sorting.
-func (c *Client) GetMixedContent(ctx context.Context, libID string, offset, limit int) ([]domain.ListItem, int, error) {
+func (c *Client) GetMixedContent(ctx context.Context, libID string, offset, limit int) ([]media.ListItem, int, error) {
 	query := url.Values{}
 	query.Set("ParentId", libID)
 	query.Set("IncludeItemTypes", "Movie,Series")
@@ -189,9 +189,9 @@ func (c *Client) GetMixedContent(ctx context.Context, libID string, offset, limi
 	// Set library ID for all items
 	for _, item := range items {
 		switch v := item.(type) {
-		case *domain.MediaItem:
+		case *media.Item:
 			v.LibraryID = libID
-		case *domain.Show:
+		case *media.Show:
 			v.LibraryID = libID
 		}
 	}
@@ -232,7 +232,7 @@ func (c *Client) GetLibraryItemCount(ctx context.Context, libID, libType string)
 }
 
 // GetSeasons returns all seasons for a TV show
-func (c *Client) GetSeasons(ctx context.Context, showID string) ([]*domain.Season, error) {
+func (c *Client) GetSeasons(ctx context.Context, showID string) ([]*media.Season, error) {
 	query := url.Values{}
 	query.Set("Fields", "ChildCount,RecursiveItemCount")
 
@@ -253,7 +253,7 @@ func (c *Client) GetSeasons(ctx context.Context, showID string) ([]*domain.Seaso
 // GetEpisodes returns all episodes for a season.
 // Queried by ParentId directly — no need for the extra round-trip that
 // looked up the season's series ID first.
-func (c *Client) GetEpisodes(ctx context.Context, seasonID string) ([]*domain.MediaItem, error) {
+func (c *Client) GetEpisodes(ctx context.Context, seasonID string) ([]*media.Item, error) {
 	query := url.Values{}
 	query.Set("ParentId", seasonID)
 	query.Set("Fields", "Overview,MediaSources,MediaStreams,DateCreated")
@@ -293,7 +293,7 @@ func (c *Client) ResolvePlayableURL(ctx context.Context, itemID string) (string,
 	}
 
 	if len(resp.MediaSources) == 0 {
-		return "", domain.ErrItemNotFound
+		return "", media.ErrItemNotFound
 	}
 
 	source := resp.MediaSources[0]
@@ -325,7 +325,7 @@ func (c *Client) MarkUnplayed(ctx context.Context, itemID string) error {
 }
 
 // GetPlaylists returns all user playlists
-func (c *Client) GetPlaylists(ctx context.Context) ([]*domain.Playlist, error) {
+func (c *Client) GetPlaylists(ctx context.Context) ([]*media.Playlist, error) {
 	query := url.Values{}
 	query.Set("IncludeItemTypes", "Playlist")
 	query.Set("Recursive", "true")
@@ -346,7 +346,7 @@ func (c *Client) GetPlaylists(ctx context.Context) ([]*domain.Playlist, error) {
 }
 
 // GetPlaylistItems returns all items in a playlist
-func (c *Client) GetPlaylistItems(ctx context.Context, playlistID string) ([]*domain.MediaItem, error) {
+func (c *Client) GetPlaylistItems(ctx context.Context, playlistID string) ([]*media.Item, error) {
 	query := url.Values{}
 	query.Set("UserId", c.userID)
 	query.Set("Fields", "Overview,MediaSources,DateCreated")
@@ -363,7 +363,7 @@ func (c *Client) GetPlaylistItems(ctx context.Context, playlistID string) ([]*do
 	}
 
 	// Map items (could be movies or episodes)
-	items := make([]*domain.MediaItem, 0, len(resp.Items))
+	items := make([]*media.Item, 0, len(resp.Items))
 	for _, item := range resp.Items {
 		switch item.Type {
 		case "Movie":
@@ -379,7 +379,7 @@ func (c *Client) GetPlaylistItems(ctx context.Context, playlistID string) ([]*do
 }
 
 // CreatePlaylist creates a new playlist with the given title and optional initial items
-func (c *Client) CreatePlaylist(ctx context.Context, title string, itemIDs []string) (*domain.Playlist, error) {
+func (c *Client) CreatePlaylist(ctx context.Context, title string, itemIDs []string) (*media.Playlist, error) {
 	reqBody := map[string]interface{}{
 		"Name":   title,
 		"UserId": c.userID,
@@ -402,7 +402,7 @@ func (c *Client) CreatePlaylist(ctx context.Context, title string, itemIDs []str
 	}
 
 	// Return a minimal playlist object - caller can refresh for full details
-	return &domain.Playlist{
+	return &media.Playlist{
 		ID:           createResp.ID,
 		Title:        title,
 		PlaylistType: "video",

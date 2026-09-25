@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 )
 
 // Policy says how much Load trusts cached data.
@@ -126,13 +126,13 @@ func (s *Service) Close() {
 	s.wg.Wait()
 }
 
-func (s *Service) fresh(r Resource, entry domain.CachedList) bool {
+func (s *Service) fresh(r Resource, entry media.CachedList) bool {
 	return s.younger(r, entry, MaxAge)
 }
 
 // countCheckable reports whether revalidation may confirm a library's cached
 // item list by its count instead of downloading it again.
-func (s *Service) countCheckable(r Resource, entry domain.CachedList) bool {
+func (s *Service) countCheckable(r Resource, entry media.CachedList) bool {
 	switch r.Kind {
 	case Movies, Shows, Mixed:
 		return s.younger(r, entry, ContentMaxAge)
@@ -140,7 +140,7 @@ func (s *Service) countCheckable(r Resource, entry domain.CachedList) bool {
 	return false
 }
 
-func (s *Service) younger(r Resource, entry domain.CachedList, limit time.Duration) bool {
+func (s *Service) younger(r Resource, entry media.CachedList, limit time.Duration) bool {
 	age := s.now().Sub(entry.FetchedAt)
 	return !entry.FetchedAt.IsZero() && age >= 0 && age < limit && (r.Version == 0 || entry.Version == r.Version)
 }
@@ -219,7 +219,7 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy) (Snapshot
 				policy = Browse
 				continue
 			}
-			if current.err != nil && ok && !errors.Is(current.err, context.Canceled) && !errors.Is(current.err, domain.ErrItemNotFound) {
+			if current.err != nil && ok && !errors.Is(current.err, context.Canceled) && !errors.Is(current.err, media.ErrItemNotFound) {
 				cached.Stale = true
 				return cached, current.err
 			}

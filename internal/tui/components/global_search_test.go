@@ -8,7 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/search"
 )
 
@@ -16,7 +16,7 @@ func searchResults(n int) []search.Result {
 	results := make([]search.Result, n)
 	for i := range results {
 		title := fmt.Sprintf("Movie %02d", i)
-		results[i] = search.Result{Entry: search.Entry{Item: &domain.MediaItem{ID: title, Title: title}, Title: title, LibraryID: "lib"}}
+		results[i] = search.Result{Entry: search.Entry{Item: &media.Item{ID: title, Title: title}, Title: title, LibraryID: "lib"}}
 	}
 	return results
 }

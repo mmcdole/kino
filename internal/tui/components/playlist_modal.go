@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/tui/styles"
 )
 
@@ -20,8 +20,8 @@ type PlaylistChange struct {
 // PlaylistModal is a modal for managing playlist membership
 type PlaylistModal struct {
 	loading    bool
-	item       *domain.MediaItem
-	playlists  []*domain.Playlist
+	item       *media.Item
+	playlists  []*media.Playlist
 	membership map[string]bool // Current membership: playlist ID -> is member
 	pending    map[string]bool // Toggled state: playlist ID -> should be member
 
@@ -48,7 +48,7 @@ func NewPlaylistModal() PlaylistModal {
 }
 
 // Show displays the modal with the given playlists and item
-func (m *PlaylistModal) Show(playlists []*domain.Playlist, membership map[string]bool, item *domain.MediaItem) {
+func (m *PlaylistModal) Show(playlists []*media.Playlist, membership map[string]bool, item *media.Item) {
 	m.loading = false
 	m.playlists = playlists
 	m.item = item
@@ -65,7 +65,7 @@ func (m *PlaylistModal) Show(playlists []*domain.Playlist, membership map[string
 	}
 }
 
-func (m *PlaylistModal) BeginLoading(item *domain.MediaItem) {
+func (m *PlaylistModal) BeginLoading(item *media.Item) {
 	m.Show(nil, nil, item)
 	m.loading = true
 }
@@ -77,7 +77,7 @@ func (m *PlaylistModal) IsCreateMode() bool {
 }
 
 // Item returns the media item being managed
-func (m *PlaylistModal) Item() *domain.MediaItem {
+func (m *PlaylistModal) Item() *media.Item {
 	return m.item
 }
 

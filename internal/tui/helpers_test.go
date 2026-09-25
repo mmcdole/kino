@@ -7,7 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
-	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/search"
 )
 
@@ -15,15 +15,15 @@ func testModel(t *testing.T) *Model {
 	t.Helper()
 	m := NewModel(context.Background(), nil, nil, nil, search.NewIndex(), Options{})
 	t.Cleanup(m.requests.cancel)
-	m.libraries = []domain.Library{{ID: "a", Name: "A", Type: "movie"}, {ID: "b", Name: "B", Type: "movie"}}
-	m.libraryColumn().SetItems(domain.LibraryItems(m.allLibraryEntries()))
+	m.libraries = []media.Library{{ID: "a", Name: "A", Type: "movie"}, {ID: "b", Name: "B", Type: "movie"}}
+	m.libraryColumn().SetItems(media.LibraryItems(m.allLibraryEntries()))
 	return m
 }
 
 func snapshot(r catalog.Resource, revision uint64, ids ...string) catalog.Snapshot {
-	result := catalog.Snapshot{Resource: r, Revision: revision, Validated: true, CachedList: domain.CachedList{FetchedAt: time.Now()}}
+	result := catalog.Snapshot{Resource: r, Revision: revision, Validated: true, CachedList: media.CachedList{FetchedAt: time.Now()}}
 	for _, id := range ids {
-		result.Items = append(result.Items, &domain.MediaItem{ID: id, Title: id})
+		result.Items = append(result.Items, &media.Item{ID: id, Title: id})
 	}
 	return result
 }
