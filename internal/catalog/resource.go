@@ -78,18 +78,8 @@ type Snapshot struct {
 
 func (s Snapshot) Clone() Snapshot { s.Items = domain.CloneItems(s.Items); return s }
 
-// Progress and cached snapshots are optional, nonblocking observations. The
-// final return value is always delivered, even if intermediate events coalesce.
+// Progress reports pagination of a large collection.
 type Progress struct{ Loaded, Total int }
-
-// Observer callbacks run on service goroutines and may overlap. They must
-// return promptly. Cached receives a detached snapshot owned by the caller.
-type Observer struct {
-	Cached func(Snapshot)
-	// Network reports that this caller is waiting on a server request, including shared work.
-	Network  func()
-	Progress func(Progress)
-}
 
 func (r Resource) Timeout() time.Duration {
 	switch r.Kind {

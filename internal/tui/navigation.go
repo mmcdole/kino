@@ -44,10 +44,9 @@ func (m *Model) pushColumn(r catalog.Resource, title string) tea.Cmd {
 	col.SetContentID(r.Key())
 	col.SetShowWatchStatus(m.UIConfig.ShowWatchStatus)
 	m.ColumnStack.Push(col)
-	state := m.collection(r)
-	state.Resource = r
-	if state.Known {
-		col.ReplaceItems(domain.CloneItems(state.Snapshot.Items))
+	m.track(r)
+	if st := m.collection(r); st.Known {
+		col.ReplaceItems(domain.CloneItems(st.Snapshot.Items))
 	}
 	if m.navPlan != nil {
 		m.navPlan.AwaitKey = r.Key()

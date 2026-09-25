@@ -36,6 +36,30 @@ func testService(t *testing.T, backend Backend) (*Service, *store.Memory) {
 	return service, cache
 }
 
+// state returns the published state of r.
+func (s *Service) state(r Resource) State {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.states[r.Key()]
+}
+
+// waitSubscribers blocks until n callers share r's in-flight fetch.
+func waitSubscribers(t *testing.T, s *Service, r Resource, n int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		s.mu.Lock()
+		f := s.active[r.Key()]
+		ok := f != nil && f.subscribers == n
+		s.mu.Unlock()
+		if ok {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("fetch for %s never had %d subscribers", r.Key(), n)
+}
+
 func TestRefreshFencesOlderFetchAndSharesReplacement(t *testing.T) {
 	started, release := make(chan struct{}), make(chan struct{})
 	var calls atomic.Int32
@@ -49,9 +73,9 @@ func TestRefreshFencesOlderFetchAndSharesReplacement(t *testing.T) {
 	}})
 	r := Resource{Kind: Movies, ID: "lib", LibraryID: "lib"}
 	oldDone := make(chan Snapshot, 1)
-	go func() { snap, _ := svc.Load(context.Background(), r, Browse, Observer{}); oldDone <- snap }()
+	go func() { snap, _ := svc.Load(context.Background(), r, Browse); oldDone <- snap }()
 	<-started
-	fresh, err := svc.Load(context.Background(), r, Refresh, Observer{})
+	fresh, err := svc.Load(context.Background(), r, Refresh)
 	close(release)
 	old := <-oldDone
 	if err != nil {
@@ -67,8 +91,8 @@ func TestRefreshFencesOlderFetchAndSharesReplacement(t *testing.T) {
 }
 
 func TestConcurrentBrowseSharesFetchAndDetachedResults(t *testing.T) {
-	registered, release := make(chan struct{}, 2), make(chan struct{})
-	var calls, networkObservers atomic.Int32
+	release := make(chan struct{})
+	var calls atomic.Int32
 	svc, cache := testService(t, fakeBackend{movies: func(ctx context.Context) ([]*domain.MediaItem, int, error) {
 		calls.Add(1)
 		<-release
@@ -79,17 +103,16 @@ func TestConcurrentBrowseSharesFetchAndDetachedResults(t *testing.T) {
 	result := make(chan Snapshot, 2)
 	for range 2 {
 		go func() {
-			snap, _ := svc.Load(context.Background(), r, Browse, Observer{Cached: func(Snapshot) { registered <- struct{}{} }, Network: func() { networkObservers.Add(1) }})
+			snap, _ := svc.Load(context.Background(), r, Browse)
 			result <- snap
 		}()
 	}
-	<-registered
-	<-registered
+	waitSubscribers(t, svc, r, 2)
+	if st := svc.state(r); !st.Known || !st.Fetching || st.Snapshot.Items[0].GetID() != "cached" {
+		t.Fatalf("cached data and shared fetch not published: %+v", st)
+	}
 	close(release)
 	a, b := <-result, <-result
-	if networkObservers.Load() != 2 {
-		t.Fatal("shared fetch did not report network activity to each subscriber")
-	}
 	if calls.Load() != 1 {
 		t.Fatalf("duplicate requests: %d", calls.Load())
 	}
@@ -107,7 +130,7 @@ func TestExpiredContentRefetchesDespiteUnchangedCountAndVersion(t *testing.T) {
 	}})
 	r := Resource{Kind: Movies, ID: "lib", LibraryID: "lib", Version: 100}
 	cache.Save(r.Key(), domain.CachedList{Items: []domain.ListItem{&domain.MediaItem{ID: "movie"}}, Version: 100, FetchedAt: time.Now().Add(-MaxAge - time.Second)})
-	result, err := svc.Load(context.Background(), r, Revalidate, Observer{})
+	result, err := svc.Load(context.Background(), r, Revalidate)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,9 +145,9 @@ func TestFailedStartupAndRefreshPreserveCacheAndError(t *testing.T) {
 			svc, cache := testService(t, fakeBackend{libraries: func(context.Context) ([]domain.Library, error) { return nil, failure }})
 			r := Resource{Kind: Libraries}
 			cache.Save(r.Key(), domain.CachedList{Items: []domain.ListItem{&domain.Library{ID: "lib"}}})
-			var cachedPublished bool
-			result, err := svc.Load(context.Background(), r, Refresh, Observer{Cached: func(Snapshot) { cachedPublished = true }})
-			if !errors.Is(err, failure) || !cachedPublished || !result.Stale || len(result.Items) != 1 {
+			result, err := svc.Load(context.Background(), r, Refresh)
+			st := svc.state(r)
+			if !errors.Is(err, failure) || !st.Known || !errors.Is(st.Err, failure) || !result.Stale || len(result.Items) != 1 {
 				t.Fatalf("fallback lost context: %+v, %v", result, err)
 			}
 			if data, ok := cache.Load(r.Key()); !ok || len(data.Items) != 1 {
@@ -139,7 +162,7 @@ func TestCountValidationDoesNotExtendFreshness(t *testing.T) {
 	r := Resource{Kind: Movies, ID: "lib", LibraryID: "lib"}
 	fetched := time.Now().Add(-time.Minute)
 	cache.Save(r.Key(), domain.CachedList{Items: []domain.ListItem{&domain.MediaItem{ID: "movie"}}, FetchedAt: fetched})
-	result, err := svc.Load(context.Background(), r, Revalidate, Observer{})
+	result, err := svc.Load(context.Background(), r, Revalidate)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +181,7 @@ func TestLastSubscriberCancellationStopsNetworkWork(t *testing.T) {
 	}})
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
-	go func() { _, err := svc.Load(ctx, Resource{Kind: Movies}, Browse, Observer{}); result <- err }()
+	go func() { _, err := svc.Load(ctx, Resource{Kind: Movies}, Browse); result <- err }()
 	<-started
 	cancel()
 	if err := <-result; !errors.Is(err, context.Canceled) {
@@ -195,11 +218,11 @@ func TestFailedPersistenceCannotMakeOldPayloadFresh(t *testing.T) {
 	r := Resource{Kind: Movies, ID: "lib", LibraryID: "lib"}
 	cache.Save(r.Key(), domain.CachedList{Items: []domain.ListItem{&domain.MediaItem{ID: "old"}}, FetchedAt: time.Now()})
 	svc.cache = &failingCache{Cache: cache, fail: true}
-	result, err := svc.Load(context.Background(), r, Revalidate, Observer{})
+	result, err := svc.Load(context.Background(), r, Revalidate)
 	if err != nil || result.Warning == nil || result.Items[0].GetID() != "new" {
 		t.Fatalf("usable network result or persistence warning lost: %+v %v", result, err)
 	}
-	next, err := svc.Load(context.Background(), r, Browse, Observer{})
+	next, err := svc.Load(context.Background(), r, Browse)
 	if err != nil || next.Items[0].GetID() != "new" || calls.Load() != 2 {
 		t.Fatal("old disk data was accepted as a fresh replacement")
 	}
@@ -218,14 +241,13 @@ func TestLoadReportsNetworkWorkSeparatelyFromPayloadSource(t *testing.T) {
 			if err := cache.Save(r.Key(), domain.CachedList{Items: []domain.ListItem{&domain.MediaItem{ID: "movie"}}, FetchedAt: time.Now()}); err != nil {
 				t.Fatal(err)
 			}
-			network := 0
-			result, err := svc.Load(context.Background(), r, policy, Observer{Network: func() { network++ }})
+			result, err := svc.Load(context.Background(), r, policy)
 			if err != nil {
 				t.Fatal(err)
 			}
 			wantNetwork := policy != Browse
-			if result.Validated != wantNetwork || (network == 1) != wantNetwork {
-				t.Fatalf("policy %v: network=%d validated=%v", policy, network, result.Validated)
+			if attempts := svc.state(r).Attempt; result.Validated != wantNetwork || (attempts == 1) != wantNetwork {
+				t.Fatalf("policy %v: attempts=%d validated=%v", policy, attempts, result.Validated)
 			}
 			if result.FromCache != (policy != Refresh) {
 				t.Fatal("payload source conflated with validation")

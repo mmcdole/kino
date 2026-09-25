@@ -33,7 +33,7 @@ func BenchmarkCachedLibraries(b *testing.B) {
 			b.ResetTimer()
 			b.RunParallel(func(pb *testing.PB) {
 				for pb.Next() {
-					if _, err := svc.Load(context.Background(), r, Browse, Observer{}); err != nil {
+					if _, err := svc.Load(context.Background(), r, Browse); err != nil {
 						b.Error(err)
 					}
 				}

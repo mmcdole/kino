@@ -10,37 +10,32 @@ import (
 
 const loadingIndicatorDelay = 200 * time.Millisecond
 
-func showLoadingCmd(req request) tea.Cmd {
-	return tea.Tick(loadingIndicatorDelay, func(time.Time) tea.Msg { return ShowLoadingMsg{Request: req} })
+// showLoadingCmd reveals the activity indicator for one server attempt if it
+// is still running after the delay, so quick loads never flash a spinner.
+func showLoadingCmd(key string, attempt uint64) tea.Cmd {
+	return tea.Tick(loadingIndicatorDelay, func(time.Time) tea.Msg { return ShowLoadingMsg{Key: key, Attempt: attempt} })
 }
 
+// updateResourceFeedback derives one feedback value from the collection's
+// state and this model's subscriptions, and hands it to every place that
+// shows the collection.
 func (m *Model) updateResourceFeedback(r catalog.Resource) {
-	result := m.collection(r)
-	var pending bool
+	key := r.Key()
+	st := m.collections[key]
+	_, view := m.requests.active[viewOwner(r)]
+	_, sync := m.requests.active[syncOwner(r)]
+	pending := view || sync
+
 	var activity components.LoadActivity
-	var progressID uint64
-	for _, owner := range []string{viewOwner(r), syncOwner(r)} {
-		req, ok := m.requests.active[owner]
-		if !ok {
-			continue
-		}
-		pending = true
-		if !req.IndicatorVisible {
-			continue
-		}
-		activity.Visible = true
-		if req.ID > progressID {
-			progressID = req.ID
-			activity.Loaded, activity.Total = req.Progress.Loaded, req.Progress.Total
-		}
+	if pending && st.Fetching && st.Attempt != 0 && m.indicators[key] == st.Attempt {
+		activity = components.LoadActivity{Visible: true, Loaded: st.Progress.Loaded, Total: st.Progress.Total}
 	}
 	feedback := components.CollectionFeedback{
-		Pending: pending, Activity: activity, Error: result.Error,
-		Summary: components.CollectionSummary{Count: len(result.Snapshot.Items), Known: result.Known,
-			Stale: result.Snapshot.Stale || result.Error != nil || result.Snapshot.Revision < result.RequiredRevision},
+		Pending: pending, Activity: activity, Error: st.Err,
+		Summary: components.CollectionSummary{Count: len(st.Snapshot.Items), Known: st.Known, Stale: st.Snapshot.Stale || st.Err != nil},
 	}
 	for i := 0; i < m.ColumnStack.Len(); i++ {
-		if col := m.ColumnStack.Get(i); col.ContentID() == r.Key() {
+		if col := m.ColumnStack.Get(i); col.ContentID() == key {
 			col.SetFeedback(feedback)
 		}
 	}

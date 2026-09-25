@@ -9,9 +9,16 @@ import (
 	"github.com/mmcdole/kino/internal/tui/styles"
 )
 
-func showNetwork(m Model, req request) Model {
-	m = updateModel(m, ResourceMsg{Request: req, Stage: loadNetwork})
-	return updateModel(m, ShowLoadingMsg{Request: req})
+// fetching is a state whose server attempt is in flight.
+func fetching(st catalog.State, attempt uint64) catalog.State {
+	st.Fetching, st.Attempt = true, attempt
+	return st
+}
+
+// showSpinner publishes st and lets its indicator delay elapse.
+func showSpinner(m Model, st catalog.State) Model {
+	m = publish(m, st)
+	return updateModel(m, ShowLoadingMsg{Key: st.Resource.Key(), Attempt: st.Attempt})
 }
 
 func TestCachedNavigationIsQuietAndHonorsCountPreference(t *testing.T) {
@@ -22,9 +29,10 @@ func TestCachedNavigationIsQuietAndHonorsCountPreference(t *testing.T) {
 		r := catalog.LibraryResource(m.Libraries[0])
 		m.pushColumn(r, "A")
 		req := m.requests.active[viewOwner(r)]
-		cached := snapshot(r, 1, "one", "two")
-		cached.FromCache, cached.Validated = true, false
-		m = updateModel(m, ResourceMsg{Request: req, Stage: loadFinished, Snapshot: cached})
+		cached := state(r, 1, "one", "two")
+		cached.Snapshot.FromCache, cached.Snapshot.Validated = true, false
+		m = publish(m, cached)
+		m = updateModel(m, LoadDoneMsg{Request: req})
 		row := m.libraryColumn().View()
 		if strings.Contains(row, "✓") || strings.Contains(row, styles.SpinnerFrames[0]) || m.activeSyncCount() != 0 {
 			t.Fatal("cache hit announced synchronization")
@@ -42,28 +50,24 @@ func TestNetworkIndicatorIsDelayedAndLateTimerCannotReviveIt(t *testing.T) {
 	m := testModel(t)
 	r := catalog.LibraryResource(m.Libraries[0])
 	m.pushColumn(r, "A")
-	req := m.requests.active[viewOwner(r)]
-	m = updateModel(m, ResourceMsg{Request: req, Stage: loadNetwork})
+	m = publish(m, fetching(catalog.State{Resource: r}, 1))
 	if m.activeSyncCount() != 0 {
 		t.Fatal("spinner shown before delay")
 	}
-	m = updateModel(m, ShowLoadingMsg{Request: req})
+	m = updateModel(m, ShowLoadingMsg{Key: r.Key(), Attempt: 1})
 	if m.activeSyncCount() != 1 {
 		t.Fatal("slow server request has no indicator")
 	}
-	m = updateModel(m, ResourceMsg{Request: req, Stage: loadFinished, Snapshot: snapshot(r, 1, "one")})
-	m = updateModel(m, ShowLoadingMsg{Request: req})
-	if m.activeSyncCount() != 0 || m.ColumnStack.Top().IsRefreshing() {
+	m = publish(m, state(r, 1, "one"))
+	m = updateModel(m, ShowLoadingMsg{Key: r.Key(), Attempt: 1})
+	if m.activeSyncCount() != 0 {
 		t.Fatal("late timer revived completed activity")
 	}
 
-	m.loadResource(r, catalog.Refresh, false)
-	replaced := m.requests.active[viewOwner(r)]
-	m = updateModel(m, ResourceMsg{Request: replaced, Stage: loadNetwork})
-	m.loadResource(r, catalog.Refresh, false)
-	m = updateModel(m, ShowLoadingMsg{Request: replaced})
+	m = publish(m, fetching(state(r, 1, "one"), 2))
+	m = updateModel(m, ShowLoadingMsg{Key: r.Key(), Attempt: 1})
 	if m.activeSyncCount() != 0 {
-		t.Fatal("replaced request's timer activated new request")
+		t.Fatal("an earlier attempt's timer activated a newer attempt")
 	}
 }
 
@@ -71,39 +75,33 @@ func TestProgressDoesNotReplaceCompleteCount(t *testing.T) {
 	m := testModel(t)
 	r := catalog.LibraryResource(m.Libraries[0])
 	m.pushColumn(r, "A")
-	req := m.requests.active[viewOwner(r)]
-	m = updateModel(m, ResourceMsg{Request: req, Stage: loadCached, Snapshot: snapshot(r, 4, "one", "two")})
-	m = showNetwork(m, req)
-	m = updateModel(m, ResourceMsg{Request: req, Stage: loadProgress, Progress: catalog.Progress{Loaded: 1, Total: 10}})
-	state := m.LibraryStates[r.LibraryID]
-	if !state.Summary.Known || state.Summary.Count != 2 || state.Activity.Loaded != 1 || state.Activity.Total != 10 {
-		t.Fatalf("progress and collection summary conflated: %+v", state)
+	st := fetching(state(r, 4, "one", "two"), 1)
+	m = showSpinner(m, st)
+	st.Progress = catalog.Progress{Loaded: 1, Total: 10}
+	m = publish(m, st)
+	lib := m.LibraryStates[r.LibraryID]
+	if !lib.Summary.Known || lib.Summary.Count != 2 || lib.Activity.Loaded != 1 || lib.Activity.Total != 10 {
+		t.Fatalf("progress and collection summary conflated: %+v", lib)
 	}
-	m = updateModel(m, ResourceMsg{Request: req, Stage: loadFinished, Err: domain.ErrServerOffline})
+	st.Fetching, st.Err = false, domain.ErrServerOffline
+	m = publish(m, st)
 	if m.LibraryStates[r.LibraryID].Summary.Count != 2 {
 		t.Fatal("failure discarded known count")
 	}
 }
 
-func TestCachedReadCannotClearRefreshError(t *testing.T) {
+func TestErrorShowsRetryUntilValidatedResult(t *testing.T) {
 	m := testModel(t)
 	r := catalog.LibraryResource(m.Libraries[0])
 	m.pushColumn(r, "A")
-	req := m.requests.active[viewOwner(r)]
-	cached := snapshot(r, 0, "one")
-	cached.FromCache, cached.Validated = true, false
-	m = updateModel(m, ResourceMsg{Request: req, Stage: loadFinished, Snapshot: cached, Err: domain.ErrServerOffline})
-	m.loadResource(r, catalog.Browse, false)
-	req = m.requests.active[viewOwner(r)]
-	m = updateModel(m, ResourceMsg{Request: req, Stage: loadFinished, Snapshot: cached})
-	if m.LibraryStates[r.LibraryID].Error == nil || !m.ColumnStack.Top().HasLoadFailed() {
-		t.Fatal("cache hit claimed server recovery")
+	m = updateModel(m, LoadDoneMsg{Request: m.requests.active[viewOwner(r)], Err: domain.ErrItemNotFound})
+	failed := state(r, 4, "one", "two")
+	failed.Err = domain.ErrItemNotFound
+	m = publish(m, failed)
+	if lib := m.LibraryStates[r.LibraryID]; lib.Summary.Count != 2 || lib.Error == nil || !m.ColumnStack.Top().HasLoadFailed() {
+		t.Fatal("failure replaced cached summary or lost its retry state")
 	}
-	// A server count check can clear the error while retaining the cached payload.
-	m.loadResource(r, catalog.Revalidate, true)
-	req = m.requests.active[syncOwner(r)]
-	cached.Validated, cached.Revision = true, 1
-	m = updateModel(m, ResourceMsg{Request: req, Stage: loadFinished, Snapshot: cached})
+	m = publish(m, state(r, 5, "one", "two"))
 	if m.LibraryStates[r.LibraryID].Error != nil || m.ColumnStack.Top().HasLoadFailed() {
 		t.Fatal("validated result did not clear error")
 	}
@@ -113,36 +111,16 @@ func TestNetworkIndicatorTracksAllSubscribersAndNavigation(t *testing.T) {
 	m := testModel(t)
 	r := catalog.LibraryResource(m.Libraries[0])
 	m.pushColumn(r, "A")
-	view := m.requests.active[viewOwner(r)]
 	m.loadResource(r, catalog.Revalidate, true)
 	sync := m.requests.active[syncOwner(r)]
-	m = showNetwork(showNetwork(m, view), sync)
-	m = updateModel(m, ResourceMsg{Request: sync, Stage: loadFinished, Snapshot: snapshot(r, 1, "one")})
+	m = showSpinner(m, fetching(catalog.State{Resource: r}, 1))
+	m = updateModel(m, LoadDoneMsg{Request: sync})
 	if m.activeSyncCount() != 1 {
 		t.Fatal("one subscriber stopped another's indicator")
 	}
 	next, _ := m.handleBack()
 	m = next.(Model)
-	m = updateModel(m, ShowLoadingMsg{Request: view})
 	if m.activeSyncCount() != 0 {
 		t.Fatal("abandoned view left library spinning")
-	}
-}
-
-func TestFailureAfterCachedObservationKeepsSummaryAndShowsRetry(t *testing.T) {
-	m := testModel(t)
-	r := catalog.LibraryResource(m.Libraries[0])
-	m.pushColumn(r, "A")
-	req := m.requests.active[viewOwner(r)]
-	cached := snapshot(r, 4, "one", "two")
-	cached.FromCache, cached.Validated = true, false
-	m = updateModel(m, ResourceMsg{Request: req, Stage: loadCached, Snapshot: cached})
-	// A missing resource has no usable fallback. A failed fetch's timestamp
-	// must not turn an empty failure payload into a new collection summary.
-	failed := snapshot(r, 0)
-	failed.Validated = false
-	m = updateModel(m, ResourceMsg{Request: req, Stage: loadFinished, Snapshot: failed, Err: domain.ErrItemNotFound})
-	if m.LibraryStates[r.LibraryID].Summary.Count != 2 || m.LibraryStates[r.LibraryID].Error == nil || !m.ColumnStack.Top().HasLoadFailed() {
-		t.Fatal("failed revalidation replaced cached summary or lost its retry state")
 	}
 }

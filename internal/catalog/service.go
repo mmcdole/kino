@@ -28,13 +28,13 @@ type Cache interface {
 }
 
 type flight struct {
-	resource  Resource
-	ctx       context.Context
-	cancel    context.CancelFunc
-	done      chan struct{}
-	observers map[uint64]Observer
-	result    Snapshot
-	err       error
+	resource    Resource
+	ctx         context.Context
+	cancel      context.CancelFunc
+	done        chan struct{}
+	subscribers int
+	result      Snapshot
+	err         error
 }
 
 type Service struct {
@@ -51,7 +51,6 @@ type Service struct {
 	known          map[string]Resource
 	cacheRevisions map[string]uint64
 	invalid        map[string]bool
-	nextObserver   uint64
 	states         map[string]State
 	changed        map[string]struct{}
 	signal         chan struct{}
@@ -90,7 +89,9 @@ func (s *Service) fresh(r Resource, entry domain.CachedList) bool {
 
 // Load is the single browsing path. Cached data, foreground loads, startup
 // sync, and explicit refresh use the same ownership and persistence rules.
-func (s *Service) Load(ctx context.Context, r Resource, policy Policy, observer Observer) (Snapshot, error) {
+// It returns when the collection settles; every intermediate state, including
+// cached data shown while the server is asked, is published through Updates.
+func (s *Service) Load(ctx context.Context, r Resource, policy Policy) (Snapshot, error) {
 	ctx, finish, err := s.operation(ctx, 0)
 	if err != nil {
 		return Snapshot{}, err
@@ -101,8 +102,6 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy, observer 
 		return Snapshot{}, err
 	}
 	key := r.Key()
-	published := false
-	networkPublished := false
 	for {
 		s.mu.Lock()
 		if err := s.ctx.Err(); err != nil {
@@ -156,30 +155,20 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy, observer 
 		}
 		if current == nil {
 			workCtx, cancel := context.WithTimeout(s.ctx, r.Timeout())
-			current = &flight{resource: r, ctx: workCtx, cancel: cancel, done: make(chan struct{}), observers: make(map[uint64]Observer)}
+			current = &flight{resource: r, ctx: workCtx, cancel: cancel, done: make(chan struct{})}
 			s.active[key] = current
 			s.startAttempt(r)
 			s.wg.Add(1)
 			go s.run(r, current, cached, policy == Revalidate && ok && !cached.Stale)
 		}
-		s.nextObserver++
-		observerID := s.nextObserver
-		current.observers[observerID] = observer
+		current.subscribers++
 		s.mu.Unlock()
-		if ok && !published && observer.Cached != nil {
-			observer.Cached(cached.Clone())
-			published = true
-		}
-		if !networkPublished && observer.Network != nil {
-			observer.Network()
-			networkPublished = true
-		}
 		select {
 		case <-ctx.Done():
-			s.release(key, current, observerID)
+			s.release(key, current)
 			return Snapshot{}, ctx.Err()
 		case <-current.done:
-			s.release(key, current, observerID)
+			s.release(key, current)
 			if ctx.Err() != nil {
 				return Snapshot{}, ctx.Err()
 			}
@@ -198,11 +187,12 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy, observer 
 	}
 }
 
-func (s *Service) release(key string, f *flight, id uint64) {
+// release drops one subscriber. The last one leaving cancels the fetch.
+func (s *Service) release(key string, f *flight) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(f.observers, id)
-	if len(f.observers) == 0 && s.active[key] == f {
+	f.subscribers--
+	if f.subscribers == 0 && s.active[key] == f {
 		f.cancel()
 		delete(s.active, key)
 		s.refreshState(key, nil)
@@ -214,18 +204,9 @@ func (s *Service) run(r Resource, f *flight, cached Snapshot, canCheckCount bool
 	defer f.cancel()
 	progress := func(loaded, total int) {
 		s.mu.Lock()
+		defer s.mu.Unlock()
 		if s.active[r.Key()] == f {
 			s.refreshState(r.Key(), func(st *State) { st.Progress = Progress{loaded, total} })
-		}
-		callbacks := make([]func(Progress), 0, len(f.observers))
-		for _, o := range f.observers {
-			if o.Progress != nil {
-				callbacks = append(callbacks, o.Progress)
-			}
-		}
-		s.mu.Unlock()
-		for _, callback := range callbacks {
-			callback(Progress{loaded, total})
 		}
 	}
 	// Counts are only an optimization while a complete snapshot is young.

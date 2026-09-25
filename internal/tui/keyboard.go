@@ -265,7 +265,10 @@ func (m Model) handleRefresh() (tea.Model, tea.Cmd) {
 
 func (m Model) handleRefreshAll() (tea.Model, tea.Cmd) {
 	m.clearNavPlan()
-	cmds := []tea.Cmd{m.loadResource(catalog.Resource{Kind: catalog.Libraries}, catalog.Refresh, false)}
+	cmds := []tea.Cmd{
+		m.loadResource(catalog.Resource{Kind: catalog.Libraries}, catalog.Refresh, false),
+		m.syncLibraries(catalog.Refresh),
+	}
 	for i := 1; i < m.ColumnStack.Len(); i++ {
 		r, _ := m.resource(m.ColumnStack.Get(i).ContentID())
 		if r.Kind == catalog.Seasons || r.Kind == catalog.Episodes || r.Kind == catalog.PlaylistItems {

@@ -53,7 +53,7 @@ func TestPlaylistFreshnessExpiresWithoutDiscardingOfflineFallback(t *testing.T) 
 	svc, cache := testService(t, playlistBackend{items: func(context.Context, string) ([]*domain.MediaItem, error) { return nil, domain.ErrServerOffline }})
 	r := Resource{Kind: PlaylistItems, ID: "p"}
 	cache.Save(r.Key(), domain.CachedList{Items: []domain.ListItem{&domain.MediaItem{ID: "movie"}}, FetchedAt: time.Now().Add(-MaxAge - time.Second)})
-	result, err := svc.Load(context.Background(), r, Browse, Observer{})
+	result, err := svc.Load(context.Background(), r, Browse)
 	if !errors.Is(err, domain.ErrServerOffline) || !result.Stale || len(result.Items) != 1 {
 		t.Fatalf("lost offline playlist: %+v %v", result, err)
 	}
@@ -102,7 +102,7 @@ func TestUncertainWatchWriteRequiresRevalidation(t *testing.T) {
 	if err := cache.Save(r.Key(), domain.CachedList{FetchedAt: time.Now(), Items: []domain.ListItem{&domain.MediaItem{ID: "movie"}}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.Load(context.Background(), r, Browse, Observer{}); err != nil {
+	if _, err := svc.Load(context.Background(), r, Browse); err != nil {
 		t.Fatal(err)
 	}
 	change, err := svc.Mutate(context.Background(), Mutation{Kind: Watch, ItemID: "movie", LibraryID: "lib", Played: true})
@@ -123,12 +123,12 @@ func TestWatchPatchDoesNotPromoteInvalidCachedPayload(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc.cache = &failingCache{Cache: cache, fail: true}
-	snapshot, err := svc.Load(context.Background(), r, Refresh, Observer{})
+	snapshot, err := svc.Load(context.Background(), r, Refresh)
 	if err != nil || snapshot.Warning == nil {
 		t.Fatal("expected usable content with a persistence warning")
 	}
 	change, err := svc.Mutate(context.Background(), Mutation{Kind: Watch, ItemID: "movie", LibraryID: "a", Played: true})
-	if err != nil || !change.Applied || len(change.Snapshots) != 0 || len(change.Resources) != 1 {
+	if err != nil || !change.Applied || len(change.Resources) != 1 || svc.state(r).Snapshot.Items[0].(*domain.MediaItem).IsPlayed {
 		t.Fatal("watch patch promoted invalid cache data instead of requiring revalidation")
 	}
 }
@@ -141,21 +141,19 @@ func TestWatchPublishesOnlyCollectionsContainingTheItem(t *testing.T) {
 		if err := cache.Save(r.Key(), domain.CachedList{FetchedAt: time.Now(), Items: []domain.ListItem{&domain.MediaItem{ID: id}}}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := svc.Load(context.Background(), r, Browse, Observer{}); err != nil {
+		if _, err := svc.Load(context.Background(), r, Browse); err != nil {
 			t.Fatal(err)
 		}
 	}
+	before := svc.state(other)
 	change, err := svc.Mutate(context.Background(), Mutation{Kind: Watch, ItemID: "movie", LibraryID: "a", Played: true})
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || len(change.Resources) != 0 {
+		t.Fatalf("unexpected revalidation: %+v %v", change, err)
 	}
-	if len(change.Snapshots) != 1 || change.Snapshots[0].Resource != holds || len(change.Resources) != 0 {
-		t.Fatalf("published %d snapshots and %d revalidations, want only %v", len(change.Snapshots), len(change.Resources), holds.Key())
-	}
-	if _, bumped := change.Revisions[other.Key()]; bumped {
-		t.Fatal("an unrelated collection was revised")
-	}
-	if !change.Snapshots[0].Items[0].(*domain.MediaItem).IsPlayed {
+	if !svc.state(holds).Snapshot.Items[0].(*domain.MediaItem).IsPlayed {
 		t.Fatal("published snapshot is not patched")
+	}
+	if after := svc.state(other); after.Snapshot.Revision != before.Snapshot.Revision || svc.revisions[other.Key()] != 0 {
+		t.Fatal("an unrelated collection was revised")
 	}
 }

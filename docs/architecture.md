@@ -42,49 +42,46 @@ flowchart LR
 
 ## Requests and ownership
 
-Every UI operation has an owner and a monotonically increasing request ID.
-Foreground views and background synchronization have separate owners, allowing
-both to subscribe to the same catalog fetch. Modal dismissal, navigation, and
-request replacement cancel the appropriate subscription. Successes, errors, and
-progress all require ownership before affecting the model.
+The catalog owns the current state of every collection: the latest snapshot,
+whether a server request is in flight, pagination progress, and the last error.
+It publishes changes through `Updates`, which returns the newest complete state
+of each collection that changed since the previous call. Because every state is
+complete, a consumer keeps only the latest one and never depends on ordering or
+on intermediate states it skipped. The TUI runs one listener command that feeds
+published states into the model.
+
+Every UI load has an owner and a monotonically increasing request ID. Foreground
+views and background synchronization have separate owners, allowing both to
+subscribe to the same catalog fetch. A request's context is its subscription:
+modal dismissal, navigation, and request replacement cancel it. A load's result
+message only reports its own error or persistence warning; content, activity and
+errors shown in columns come from published state.
 
 Catalog fetches are shared per resource. A refresh or mutation supersedes older
-work; the ownership check and cache commit happen under the same service lock.
-An obsolete fetch cannot persist after its replacement. Still-interested subscribers
-join replacement work, while removing the last subscriber cancels the fetch.
+work. Still-interested subscribers join replacement work, while removing the last
+subscriber cancels the fetch. An obsolete fetch cannot persist or publish after
+its replacement.
 
 Cache reads and decoding run outside the catalog mutex. The catalog registers a
 resource before reading and checks its revision after decoding; an intervening
 commit discards that observation and repeats the read. A fetch uses this same
-observation for count validation. Cache writes and mutation reconciliation remain
-inside the commit fence, so refresh and mutation ordering also governs persistence.
+observation for count validation. Cache writes and mutation reconciliation are
+ordered by a separate commit lock, so refresh and mutation ordering also governs
+persistence while cache hits never wait on a disk write.
 
-Snapshots and mutations also carry resource revisions. These fence responses that
-were already queued when a newer result or mutation reached the UI. Library counts
-and status obey the same rule as column contents. Cached payload revisions remain
-separate from committed result revisions if persistence fails.
+Snapshots carry per-collection revisions. The catalog only publishes a snapshot
+newer than the one it last published, so the state a consumer holds is always the
+newest committed data. Cached payload revisions remain separate from committed
+result revisions if persistence fails.
 
-The TUI stores one record per collection: resource identity, accepted snapshot,
-minimum acceptable revision, last error, and background subscription identity.
-The minimum acceptable revision is independent of the displayed snapshot revision.
-Rejecting an obsolete terminal response without a usable replacement schedules a
-read at the required revision. A failure from that recovery attempt stops with a
-retry hint. Error ordering follows the attempt, independently of the revision of
-any cached fallback payload.
+Opening a column projects the retained snapshot immediately, then starts a catalog
+request to check freshness. A state with an unchanged revision updates feedback
+without rebuilding column content or the search index. Columns retain their own
+cursor, sort, filter, and scroll state while navigation changes the focused column.
 
-Load results and mutation snapshots use the same acceptance and projection path.
-An equal revision updates feedback without rebuilding column content or the search
-index. Opening a column projects the retained snapshot immediately, then starts a
-catalog request to check freshness. Columns retain their own cursor, sort, filter,
-and scroll state while navigation changes the focused column.
-
-The catalog explicitly reports when a subscriber is waiting on network work.
-A result separately records whether it was validated against the server: count
+A published snapshot records whether it was validated against the server: count
 validation can reuse a cached payload, while a pure cache hit cannot clear a
 previous network error.
-
-Cached observations and progress may coalesce. A final result has its own buffered
-channel and cannot be dropped behind progress or strand a producer after cancellation.
 
 ## Freshness and offline behavior
 
@@ -136,7 +133,7 @@ a request. Inspector scrolling resets only when the selected identity changes.
 
 Routine reads and background completion are silent: there is no temporary library
 success checkmark or count-expiry timer. Indicator space is reserved to keep titles
-stationary. Delayed indicator messages require current request ownership, so quick
+stationary. Delayed indicator messages name the server attempt they belong to, so quick
 loads and canceled requests cannot flash a spinner afterward.
 
 One subscriber finishing cannot clear another subscriber's loading indication.
@@ -147,11 +144,12 @@ and sync status, so late responses cannot recreate them.
 ## Mutations and shutdown
 
 Catalog serializes remote writes and reconciles before returning their result.
-Watch updates patch all cached projections in one transaction and adjust parent
-counters once. Successful reconciliation returns detached snapshots for affected
-known collections, including show and season parents. The TUI applies these
-snapshots without inferring watch changes from open columns. Missing or invalid
-cached projections require server revalidation. Playlist changes expire affected snapshots while retaining offline
+Watch updates patch, in one transaction, every cached snapshot that contains the
+item or its show and season, and adjust parent counters once; the rollup rules
+live in `domain.WatchChange`. Only the patched collections are revised and
+published, including show and season parents, so the TUI never infers watch
+changes from open columns. Missing or invalid cached projections require server
+revalidation. Playlist changes expire affected snapshots while retaining offline
 fallbacks. Uncertain or partial remote writes return errors and affected resources
 for revalidation. Persistence failures remain explicit.
 
