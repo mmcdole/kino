@@ -1,14 +1,14 @@
 package jellyfin
 
-// AuthResponse represents the response from Jellyfin's AuthenticateByName endpoint
-type AuthResponse struct {
-	User        User   `json:"User"`
+// authResponse represents the response from Jellyfin's AuthenticateByName endpoint
+type authResponse struct {
+	User        user   `json:"User"`
 	AccessToken string `json:"AccessToken"`
 	ServerID    string `json:"ServerId"`
 }
 
-// User represents a Jellyfin user
-type User struct {
+// user represents a Jellyfin user
+type user struct {
 	ID                        string `json:"Id"`
 	Name                      string `json:"Name"`
 	ServerID                  string `json:"ServerId"`
@@ -17,8 +17,8 @@ type User struct {
 	HasConfiguredEasyPassword bool   `json:"HasConfiguredEasyPassword"`
 }
 
-// SystemInfo represents the public system info from Jellyfin
-type SystemInfo struct {
+// systemInfo represents the public system info from Jellyfin
+type systemInfo struct {
 	LocalAddress    string `json:"LocalAddress"`
 	ServerName      string `json:"ServerName"`
 	Version         string `json:"Version"`
@@ -27,15 +27,15 @@ type SystemInfo struct {
 	ID              string `json:"Id"`
 }
 
-// ItemsResponse represents a paginated list of items from Jellyfin
-type ItemsResponse struct {
-	Items            []Item `json:"Items"`
-	TotalRecordCount int    `json:"TotalRecordCount"`
-	StartIndex       int    `json:"StartIndex"`
+// itemsResponse represents a paginated list of items from Jellyfin
+type itemsResponse struct {
+	Items            []baseItem `json:"Items"`
+	TotalRecordCount int        `json:"TotalRecordCount"`
+	StartIndex       int        `json:"StartIndex"`
 }
 
-// Item represents a media item from Jellyfin (movie, show, season, episode, etc.)
-type Item struct {
+// baseItem is Jellyfin's BaseItemDto: a movie, show, season, episode, etc.
+type baseItem struct {
 	ID                 string        `json:"Id"`
 	Name               string        `json:"Name"`
 	SortName           string        `json:"SortName"`
@@ -48,7 +48,7 @@ type Item struct {
 	RunTimeTicks       int64         `json:"RunTimeTicks,omitempty"` // Duration in 100-nanosecond units
 	CommunityRating    float64       `json:"CommunityRating,omitempty"`
 	OfficialRating     string        `json:"OfficialRating,omitempty"`
-	ImageTags          ImageTags     `json:"ImageTags,omitempty"`
+	ImageTags          imageTags     `json:"ImageTags,omitempty"`
 	ParentID           string        `json:"ParentId,omitempty"`
 	SeriesID           string        `json:"SeriesId,omitempty"`
 	SeriesName         string        `json:"SeriesName,omitempty"`
@@ -59,22 +59,22 @@ type Item struct {
 	ChildCount         int           `json:"ChildCount,omitempty"`         // Number of child items (seasons for show, episodes for season)
 	RecursiveItemCount int           `json:"RecursiveItemCount,omitempty"` // Total items recursively (episodes for show)
 	PlaylistItemID     string        `json:"PlaylistItemId,omitempty"`     // Per-entry ID within a playlist
-	UserData           *UserData     `json:"UserData,omitempty"`
-	MediaSources       []MediaSource `json:"MediaSources,omitempty"`
+	UserData           *userData     `json:"UserData,omitempty"`
+	MediaSources       []mediaSource `json:"MediaSources,omitempty"`
 	Container          string        `json:"Container,omitempty"`
-	MediaStreams       []MediaStream `json:"MediaStreams,omitempty"`
+	MediaStreams       []mediaStream `json:"MediaStreams,omitempty"`
 }
 
-// ImageTags contains image tag IDs for various image types
-type ImageTags struct {
+// imageTags contains image tag IDs for various image types
+type imageTags struct {
 	Primary string `json:"Primary,omitempty"`
 	Thumb   string `json:"Thumb,omitempty"`
 	Banner  string `json:"Banner,omitempty"`
 	Logo    string `json:"Logo,omitempty"`
 }
 
-// UserData contains user-specific data for an item (watch status, progress)
-type UserData struct {
+// userData contains user-specific data for an item (watch status, progress)
+type userData struct {
 	PlaybackPositionTicks int64  `json:"PlaybackPositionTicks"` // Progress in 100-nanosecond units
 	PlayCount             int    `json:"PlayCount"`
 	IsFavorite            bool   `json:"IsFavorite"`
@@ -83,8 +83,8 @@ type UserData struct {
 	UnplayedItemCount     int    `json:"UnplayedItemCount,omitempty"` // For containers like shows/seasons
 }
 
-// MediaSource represents a media source (file) for an item
-type MediaSource struct {
+// mediaSource represents a media source (file) for an item
+type mediaSource struct {
 	ID                   string        `json:"Id"`
 	Path                 string        `json:"Path"`
 	Protocol             string        `json:"Protocol"` // "File" or "Http"
@@ -96,12 +96,12 @@ type MediaSource struct {
 	SupportsDirectPlay   bool          `json:"SupportsDirectPlay"`
 	SupportsDirectStream bool          `json:"SupportsDirectStream"`
 	SupportsTranscoding  bool          `json:"SupportsTranscoding"`
-	MediaStreams         []MediaStream `json:"MediaStreams,omitempty"`
+	MediaStreams         []mediaStream `json:"MediaStreams,omitempty"`
 	DirectStreamURL      string        `json:"DirectStreamUrl,omitempty"`
 }
 
-// MediaStream represents a video, audio, or subtitle stream
-type MediaStream struct {
+// mediaStream represents a video, audio, or subtitle stream
+type mediaStream struct {
 	Codec        string `json:"Codec"`
 	Language     string `json:"Language,omitempty"`
 	DisplayTitle string `json:"DisplayTitle,omitempty"`
@@ -116,8 +116,8 @@ type MediaStream struct {
 	AspectRatio  string `json:"AspectRatio,omitempty"`
 }
 
-// PlaybackInfoResponse contains playback information for an item
-type PlaybackInfoResponse struct {
-	MediaSources  []MediaSource `json:"MediaSources"`
+// playbackInfoResponse contains playback information for an item
+type playbackInfoResponse struct {
+	MediaSources  []mediaSource `json:"MediaSources"`
 	PlaySessionID string        `json:"PlaySessionId"`
 }

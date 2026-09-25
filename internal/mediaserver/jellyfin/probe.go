@@ -17,7 +17,7 @@ func Probe(ctx context.Context, hc *http.Client, serverURL string) error {
 	if err != nil {
 		return err
 	}
-	var info SystemInfo
+	var info systemInfo
 	if err := json.Unmarshal(body, &info); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}

@@ -140,8 +140,8 @@ func (c *Client) send(ctx context.Context, method, path string, query url.Values
 }
 
 // parseResponse parses a JSON response into APIResponse
-func (c *Client) parseResponse(body []byte) (*MediaContainer, error) {
-	var resp APIResponse
+func (c *Client) parseResponse(body []byte) (*mediaContainer, error) {
+	var resp apiResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		c.logger.Error("JSON parse error", "error", err, "bodyLen", len(body))
 		return nil, fmt.Errorf("failed to parse response: %w", err)
@@ -161,7 +161,7 @@ func (c *Client) GetLibraries(ctx context.Context) ([]domain.Library, error) {
 		return nil, err
 	}
 
-	return MapLibraries(container.Directory), nil
+	return mapLibraries(container.Directory), nil
 }
 
 // GetMovies returns movies from a movie library with pagination support
@@ -192,7 +192,7 @@ func (c *Client) GetMovies(ctx context.Context, libID string, offset, limit int)
 		totalSize = container.Size // Fallback if TotalSize not provided
 	}
 
-	return MapMovies(container.Metadata, c.baseURL), totalSize, nil
+	return mapMovies(container.Metadata, c.baseURL), totalSize, nil
 }
 
 // GetShows returns TV shows from a show library with pagination support
@@ -223,7 +223,7 @@ func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) 
 		totalSize = container.Size // Fallback if TotalSize not provided
 	}
 
-	return MapShows(container.Metadata, c.baseURL), totalSize, nil
+	return mapShows(container.Metadata, c.baseURL), totalSize, nil
 }
 
 // GetLibraryItemCount returns the total item count for a library section
@@ -275,7 +275,7 @@ func (c *Client) GetMixedContent(ctx context.Context, libID string, offset, limi
 		totalSize = container.Size
 	}
 
-	return MapLibraryContent(container.Metadata, c.baseURL), totalSize, nil
+	return mapLibraryContent(container.Metadata, c.baseURL), totalSize, nil
 }
 
 // GetSeasons returns all seasons for a TV show
@@ -291,7 +291,7 @@ func (c *Client) GetSeasons(ctx context.Context, showID string) ([]*domain.Seaso
 		return nil, err
 	}
 
-	return MapSeasons(container.Metadata, c.baseURL), nil
+	return mapSeasons(container.Metadata, c.baseURL), nil
 }
 
 // GetEpisodes returns all episodes for a season
@@ -307,7 +307,7 @@ func (c *Client) GetEpisodes(ctx context.Context, seasonID string) ([]*domain.Me
 		return nil, err
 	}
 
-	return MapEpisodes(container.Metadata, c.baseURL), nil
+	return mapEpisodes(container.Metadata, c.baseURL), nil
 }
 
 // ResolvePlayableURL returns a direct playback URL for an item
@@ -374,7 +374,7 @@ func (c *Client) GetPlaylists(ctx context.Context) ([]*domain.Playlist, error) {
 		return nil, err
 	}
 
-	return MapPlaylists(container.Metadata, c.baseURL), nil
+	return mapPlaylists(container.Metadata, c.baseURL), nil
 }
 
 // GetPlaylistItems returns all items in a playlist
@@ -390,7 +390,7 @@ func (c *Client) GetPlaylistItems(ctx context.Context, playlistID string) ([]*do
 		return nil, err
 	}
 
-	return MapVideoItems(container.Metadata, c.baseURL), nil
+	return mapVideoItems(container.Metadata, c.baseURL), nil
 }
 
 // CreatePlaylist creates a new playlist with the given title and initial items.
@@ -430,7 +430,7 @@ func (c *Client) CreatePlaylist(ctx context.Context, title string, itemIDs []str
 		return nil, fmt.Errorf("no playlist returned from server")
 	}
 
-	playlists := MapPlaylists(container.Metadata, c.baseURL)
+	playlists := mapPlaylists(container.Metadata, c.baseURL)
 	if len(playlists) == 0 {
 		return nil, fmt.Errorf("failed to parse created playlist")
 	}

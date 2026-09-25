@@ -88,7 +88,7 @@ func (a *AuthClient) GetPIN(ctx context.Context) (pin string, id int, err error)
 		return "", 0, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	var pinResp PINResponse
+	var pinResp pinResponse
 	if err := json.Unmarshal(body, &pinResp); err != nil {
 		return "", 0, fmt.Errorf("failed to parse PIN response: %w", err)
 	}
@@ -133,7 +133,7 @@ func (a *AuthClient) CheckPIN(ctx context.Context, pinID int) (token string, cla
 		return "", false, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	var pinResp PINCheckResponse
+	var pinResp pinCheckResponse
 	if err := json.Unmarshal(body, &pinResp); err != nil {
 		return "", false, fmt.Errorf("failed to parse PIN response: %w", err)
 	}

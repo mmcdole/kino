@@ -1,35 +1,35 @@
 package plex
 
-// MediaContainer is the root container for Plex API responses
-type MediaContainer struct {
-	Size                int         `json:"size"`
-	TotalSize           int         `json:"totalSize,omitempty"`
-	Offset              int         `json:"offset,omitempty"`
-	AllowSync           bool        `json:"allowSync,omitempty"`
-	Identifier          string      `json:"identifier,omitempty"`
-	LibrarySectionID    int         `json:"librarySectionID,omitempty"`
-	LibrarySectionTitle string      `json:"librarySectionTitle,omitempty"`
-	LibrarySectionUUID  string      `json:"librarySectionUUID,omitempty"`
-	MediaTagPrefix      string      `json:"mediaTagPrefix,omitempty"`
-	MediaTagVersion     int         `json:"mediaTagVersion,omitempty"`
-	Directory           []Directory `json:"Directory,omitempty"`
-	Metadata            []Metadata  `json:"Metadata,omitempty"`
+// mediaContainer is the root container for Plex API responses
+type mediaContainer struct {
+	Size                int            `json:"size"`
+	TotalSize           int            `json:"totalSize,omitempty"`
+	Offset              int            `json:"offset,omitempty"`
+	AllowSync           bool           `json:"allowSync,omitempty"`
+	Identifier          string         `json:"identifier,omitempty"`
+	LibrarySectionID    int            `json:"librarySectionID,omitempty"`
+	LibrarySectionTitle string         `json:"librarySectionTitle,omitempty"`
+	LibrarySectionUUID  string         `json:"librarySectionUUID,omitempty"`
+	MediaTagPrefix      string         `json:"mediaTagPrefix,omitempty"`
+	MediaTagVersion     int            `json:"mediaTagVersion,omitempty"`
+	Directory           []directory    `json:"Directory,omitempty"`
+	Metadata            []metadataItem `json:"Metadata,omitempty"`
 }
 
-// Guid represents an external identifier (IMDB, TMDB, TVDB, etc.)
-type Guid struct {
+// guid represents an external identifier (IMDB, TMDB, TVDB, etc.)
+type guid struct {
 	ID string `json:"id"` // e.g. "imdb://tt1234567", "tmdb://12345", "tvdb://12345"
 }
 
-// Rating represents a rating from an external source
-type Rating struct {
+// rating represents a rating from an external source
+type rating struct {
 	Image string  `json:"image,omitempty"` // e.g. "imdb://image.rating"
 	Type  string  `json:"type,omitempty"`
 	Value float64 `json:"value,omitempty"`
 }
 
-// Directory represents a library section
-type Directory struct {
+// directory represents a library section
+type directory struct {
 	Art              string `json:"art,omitempty"`
 	Composite        string `json:"composite,omitempty"`
 	Thumb            string `json:"thumb,omitempty"`
@@ -41,14 +41,14 @@ type Directory struct {
 	ContentChangedAt int64  `json:"contentChangedAt,omitempty"`
 }
 
-// Metadata represents a media item (movie, show, season, or episode)
-type Metadata struct {
+// metadataItem is Plex's Metadata object: a media item (movie, show, season, or episode)
+type metadataItem struct {
 	RatingKey             string   `json:"ratingKey"`
 	Key                   string   `json:"key"`
 	ParentRatingKey       string   `json:"parentRatingKey,omitempty"`
 	GrandparentRatingKey  string   `json:"grandparentRatingKey,omitempty"`
 	GUID                  string   `json:"guid,omitempty"` // Plex internal GUID
-	Guids                 []Guid   `json:"Guid,omitempty"` // External IDs (IMDB, TMDB, TVDB)
+	Guids                 []guid   `json:"Guid,omitempty"` // External IDs (IMDB, TMDB, TVDB)
 	Studio                string   `json:"studio,omitempty"`
 	Type                  string   `json:"type"`
 	Title                 string   `json:"title"`
@@ -61,7 +61,7 @@ type Metadata struct {
 	Index                 int      `json:"index,omitempty"`
 	ParentIndex           int      `json:"parentIndex,omitempty"`
 	Rating                float64  `json:"rating,omitempty"`         // Critic rating
-	Ratings               []Rating `json:"Rating,omitempty"`         // External ratings
+	Ratings               []rating `json:"Rating,omitempty"`         // External ratings
 	AudienceRating        float64  `json:"audienceRating,omitempty"` // Audience rating
 	ViewOffset            int      `json:"viewOffset,omitempty"`
 	LastViewedAt          int64    `json:"lastViewedAt,omitempty"`
@@ -85,11 +85,11 @@ type Metadata struct {
 	LibrarySectionKey     string   `json:"librarySectionKey,omitempty"`
 	LibrarySectionTitle   string   `json:"librarySectionTitle,omitempty"`
 	PlaylistItemID        int      `json:"playlistItemID,omitempty"`
-	Media                 []Media  `json:"Media,omitempty"`
+	Media                 []media  `json:"Media,omitempty"`
 }
 
-// Media represents media information (video streams, codecs, etc.)
-type Media struct {
+// media represents media information (video streams, codecs, etc.)
+type media struct {
 	ID              int    `json:"id"`
 	Duration        int    `json:"duration,omitempty"`
 	Bitrate         int    `json:"bitrate,omitempty"`
@@ -101,11 +101,11 @@ type Media struct {
 	VideoResolution string `json:"videoResolution,omitempty"`
 	Container       string `json:"container,omitempty"`
 	VideoFrameRate  string `json:"videoFrameRate,omitempty"`
-	Part            []Part `json:"Part,omitempty"`
+	Part            []part `json:"Part,omitempty"`
 }
 
-// Part represents a media file part
-type Part struct {
+// part represents a media file part
+type part struct {
 	ID        int    `json:"id"`
 	Key       string `json:"key"`
 	Duration  int    `json:"duration,omitempty"`
@@ -115,13 +115,13 @@ type Part struct {
 	Stream    []any  `json:"Stream,omitempty"`
 }
 
-// APIResponse wraps the MediaContainer for JSON unmarshaling
-type APIResponse struct {
-	MediaContainer MediaContainer `json:"MediaContainer"`
+// apiResponse wraps the MediaContainer for JSON unmarshaling
+type apiResponse struct {
+	MediaContainer mediaContainer `json:"MediaContainer"`
 }
 
-// PINResponse represents the response from PIN generation
-type PINResponse struct {
+// pinResponse represents the response from PIN generation
+type pinResponse struct {
 	ID        int    `json:"id"`
 	Code      string `json:"code"`
 	Product   string `json:"product"`
@@ -131,20 +131,20 @@ type PINResponse struct {
 	ExpiresAt string `json:"expiresAt"`
 }
 
-// PINCheckResponse represents the response from PIN check
-type PINCheckResponse struct {
+// pinCheckResponse represents the response from PIN check
+type pinCheckResponse struct {
 	ID        int    `json:"id"`
 	Code      string `json:"code"`
 	AuthToken string `json:"authToken"`
 	ExpiresAt string `json:"expiresAt"`
 }
 
-// PlaylistMetadata represents a Plex playlist
-type PlaylistMetadata struct {
+// playlistMetadata represents a Plex playlist
+type playlistMetadata struct {
 	RatingKey    string `json:"ratingKey"`
 	Key          string `json:"key"`
 	GUID         string `json:"guid,omitempty"` // Plex internal GUID
-	Guids        []Guid `json:"Guid,omitempty"` // External IDs
+	Guids        []guid `json:"Guid,omitempty"` // External IDs
 	Type         string `json:"type"`
 	Title        string `json:"title"`
 	Summary      string `json:"summary,omitempty"`

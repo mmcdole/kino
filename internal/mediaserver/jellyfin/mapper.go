@@ -14,8 +14,8 @@ const (
 	ticksPerSecond      = 10000000
 )
 
-// MapLibraries converts Jellyfin virtual folders to domain libraries
-func MapLibraries(items []Item) []domain.Library {
+// mapLibraries converts Jellyfin virtual folders to domain libraries
+func mapLibraries(items []baseItem) []domain.Library {
 	libraries := make([]domain.Library, 0, len(items))
 	for _, item := range items {
 		lib := mapLibrary(item)
@@ -27,7 +27,7 @@ func MapLibraries(items []Item) []domain.Library {
 }
 
 // mapLibrary converts a single Jellyfin item to a domain library
-func mapLibrary(item Item) *domain.Library {
+func mapLibrary(item baseItem) *domain.Library {
 	// Map Jellyfin CollectionType to our library type
 	var libType string
 	switch item.CollectionType {
@@ -59,8 +59,8 @@ func mapLibrary(item Item) *domain.Library {
 	}
 }
 
-// MapMovies converts Jellyfin items to domain media items (movies)
-func MapMovies(items []Item, serverURL string) []*domain.MediaItem {
+// mapMovies converts Jellyfin items to domain media items (movies)
+func mapMovies(items []baseItem, serverURL string) []*domain.MediaItem {
 	movies := make([]*domain.MediaItem, 0, len(items))
 	for _, item := range items {
 		if item.Type != "Movie" {
@@ -73,7 +73,7 @@ func MapMovies(items []Item, serverURL string) []*domain.MediaItem {
 }
 
 // mapMovie converts a single Jellyfin movie item to a domain media item
-func mapMovie(item Item, serverURL string) domain.MediaItem {
+func mapMovie(item baseItem, serverURL string) domain.MediaItem {
 	mi := domain.MediaItem{
 		ID:        item.ID,
 		Title:     item.Name,
@@ -124,8 +124,8 @@ func mapMovie(item Item, serverURL string) domain.MediaItem {
 	return mi
 }
 
-// MapShows converts Jellyfin items to domain shows
-func MapShows(items []Item, serverURL string) []*domain.Show {
+// mapShows converts Jellyfin items to domain shows
+func mapShows(items []baseItem, serverURL string) []*domain.Show {
 	shows := make([]*domain.Show, 0, len(items))
 	for _, item := range items {
 		if item.Type != "Series" {
@@ -138,7 +138,7 @@ func MapShows(items []Item, serverURL string) []*domain.Show {
 }
 
 // mapShow converts a single Jellyfin series item to a domain show
-func mapShow(item Item, serverURL string) domain.Show {
+func mapShow(item baseItem, serverURL string) domain.Show {
 	show := domain.Show{
 		ID:           item.ID,
 		Title:        item.Name,
@@ -188,8 +188,8 @@ func mapShow(item Item, serverURL string) domain.Show {
 	return show
 }
 
-// MapSeasons converts Jellyfin items to domain seasons
-func MapSeasons(items []Item, serverURL string) []*domain.Season {
+// mapSeasons converts Jellyfin items to domain seasons
+func mapSeasons(items []baseItem, serverURL string) []*domain.Season {
 	seasons := make([]*domain.Season, 0, len(items))
 	for _, item := range items {
 		if item.Type != "Season" {
@@ -202,7 +202,7 @@ func MapSeasons(items []Item, serverURL string) []*domain.Season {
 }
 
 // mapSeason converts a single Jellyfin season item to a domain season
-func mapSeason(item Item, serverURL string) domain.Season {
+func mapSeason(item baseItem, serverURL string) domain.Season {
 	season := domain.Season{
 		ID:           item.ID,
 		ShowID:       item.SeriesID,
@@ -225,8 +225,8 @@ func mapSeason(item Item, serverURL string) domain.Season {
 	return season
 }
 
-// MapEpisodes converts Jellyfin items to domain media items (episodes)
-func MapEpisodes(items []Item, serverURL string) []*domain.MediaItem {
+// mapEpisodes converts Jellyfin items to domain media items (episodes)
+func mapEpisodes(items []baseItem, serverURL string) []*domain.MediaItem {
 	episodes := make([]*domain.MediaItem, 0, len(items))
 	for _, item := range items {
 		if item.Type != "Episode" {
@@ -239,7 +239,7 @@ func MapEpisodes(items []Item, serverURL string) []*domain.MediaItem {
 }
 
 // mapEpisode converts a single Jellyfin episode item to a domain media item
-func mapEpisode(item Item, serverURL string) domain.MediaItem {
+func mapEpisode(item baseItem, serverURL string) domain.MediaItem {
 	mi := domain.MediaItem{
 		ID:         item.ID,
 		Title:      item.Name,
@@ -300,7 +300,7 @@ func ticksToDuration(ticks int64) time.Duration {
 }
 
 // extractVideoCodec extracts the video codec from item media streams
-func extractVideoCodec(item Item) string {
+func extractVideoCodec(item baseItem) string {
 	// Try MediaSources first
 	for _, source := range item.MediaSources {
 		for _, stream := range source.MediaStreams {
@@ -321,7 +321,7 @@ func extractVideoCodec(item Item) string {
 }
 
 // extractAudioInfo extracts the audio codec and channel count from item media streams
-func extractAudioInfo(item Item) (string, int) {
+func extractAudioInfo(item baseItem) (string, int) {
 	for _, source := range item.MediaSources {
 		for _, stream := range source.MediaStreams {
 			if stream.Type == "Audio" {
@@ -338,7 +338,7 @@ func extractAudioInfo(item Item) (string, int) {
 }
 
 // extractBitrate extracts the video bitrate from item media streams
-func extractBitrate(item Item) int {
+func extractBitrate(item baseItem) int {
 	for _, source := range item.MediaSources {
 		for _, stream := range source.MediaStreams {
 			if stream.Type == "Video" && stream.BitRate > 0 {
@@ -355,7 +355,7 @@ func extractBitrate(item Item) int {
 }
 
 // extractResolution extracts the video width and height from item media streams
-func extractResolution(item Item) (int, int) {
+func extractResolution(item baseItem) (int, int) {
 	for _, source := range item.MediaSources {
 		for _, stream := range source.MediaStreams {
 			if stream.Type == "Video" && stream.Width > 0 {
@@ -371,8 +371,8 @@ func extractResolution(item Item) (int, int) {
 	return 0, 0
 }
 
-// MapPlaylists converts Jellyfin items to domain playlists
-func MapPlaylists(items []Item, serverURL string) []*domain.Playlist {
+// mapPlaylists converts Jellyfin items to domain playlists
+func mapPlaylists(items []baseItem, serverURL string) []*domain.Playlist {
 	playlists := make([]*domain.Playlist, 0, len(items))
 	for _, item := range items {
 		if item.Type != "Playlist" {
@@ -385,7 +385,7 @@ func MapPlaylists(items []Item, serverURL string) []*domain.Playlist {
 }
 
 // mapPlaylist converts a single Jellyfin playlist item to a domain playlist
-func mapPlaylist(item Item, serverURL string) domain.Playlist {
+func mapPlaylist(item baseItem, serverURL string) domain.Playlist {
 	p := domain.Playlist{
 		ID:           item.ID,
 		Title:        item.Name,
@@ -405,10 +405,10 @@ func mapPlaylist(item Item, serverURL string) domain.Playlist {
 	return p
 }
 
-// MapLibraryContent converts Jellyfin items to domain.ListItem for mixed libraries.
+// mapLibraryContent converts Jellyfin items to domain.ListItem for mixed libraries.
 // This handles both Movies and Series in a single response, returning them as
 // a polymorphic slice that the UI can display uniformly.
-func MapLibraryContent(items []Item, serverURL string) []domain.ListItem {
+func mapLibraryContent(items []baseItem, serverURL string) []domain.ListItem {
 	result := make([]domain.ListItem, 0, len(items))
 	for _, item := range items {
 		switch item.Type {

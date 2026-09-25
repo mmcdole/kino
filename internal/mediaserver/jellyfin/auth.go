@@ -130,7 +130,7 @@ func (f *AuthFlow) authenticate(ctx context.Context, serverURL, username, passwo
 		return nil, fmt.Errorf("authentication failed with status %d", resp.StatusCode)
 	}
 
-	var authResp AuthResponse
+	var authResp authResponse
 	if err := json.Unmarshal(respBody, &authResp); err != nil {
 		return nil, fmt.Errorf("failed to parse auth response: %w", err)
 	}

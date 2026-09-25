@@ -83,12 +83,12 @@ func (c *Client) GetLibraries(ctx context.Context) ([]domain.Library, error) {
 		return nil, err
 	}
 
-	var resp ItemsResponse
+	var resp itemsResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return MapLibraries(resp.Items), nil
+	return mapLibraries(resp.Items), nil
 }
 
 // GetMovies returns paginated movies from a movie library
@@ -111,12 +111,12 @@ func (c *Client) GetMovies(ctx context.Context, libID string, offset, limit int)
 		return nil, 0, err
 	}
 
-	var resp ItemsResponse
+	var resp itemsResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, 0, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	movies := MapMovies(resp.Items, c.baseURL)
+	movies := mapMovies(resp.Items, c.baseURL)
 	// Set library ID for all movies
 	for _, m := range movies {
 		m.LibraryID = libID
@@ -145,12 +145,12 @@ func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) 
 		return nil, 0, err
 	}
 
-	var resp ItemsResponse
+	var resp itemsResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, 0, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	shows := MapShows(resp.Items, c.baseURL)
+	shows := mapShows(resp.Items, c.baseURL)
 	// Set library ID for all shows
 	for _, s := range shows {
 		s.LibraryID = libID
@@ -180,12 +180,12 @@ func (c *Client) GetMixedContent(ctx context.Context, libID string, offset, limi
 		return nil, 0, err
 	}
 
-	var resp ItemsResponse
+	var resp itemsResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, 0, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	items := MapLibraryContent(resp.Items, c.baseURL)
+	items := mapLibraryContent(resp.Items, c.baseURL)
 	// Set library ID for all items
 	for _, item := range items {
 		switch v := item.(type) {
@@ -223,7 +223,7 @@ func (c *Client) GetLibraryItemCount(ctx context.Context, libID, libType string)
 		return 0, err
 	}
 
-	var resp ItemsResponse
+	var resp itemsResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return 0, fmt.Errorf("failed to parse response: %w", err)
 	}
@@ -242,12 +242,12 @@ func (c *Client) GetSeasons(ctx context.Context, showID string) ([]*domain.Seaso
 		return nil, err
 	}
 
-	var resp ItemsResponse
+	var resp itemsResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return MapSeasons(resp.Items, c.baseURL), nil
+	return mapSeasons(resp.Items, c.baseURL), nil
 }
 
 // GetEpisodes returns all episodes for a season.
@@ -266,12 +266,12 @@ func (c *Client) GetEpisodes(ctx context.Context, seasonID string) ([]*domain.Me
 		return nil, err
 	}
 
-	var resp ItemsResponse
+	var resp itemsResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return MapEpisodes(resp.Items, c.baseURL), nil
+	return mapEpisodes(resp.Items, c.baseURL), nil
 }
 
 // ResolvePlayableURL returns a direct playback URL for an item
@@ -287,7 +287,7 @@ func (c *Client) ResolvePlayableURL(ctx context.Context, itemID string) (string,
 		return "", err
 	}
 
-	var resp PlaybackInfoResponse
+	var resp playbackInfoResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return "", fmt.Errorf("failed to parse response: %w", err)
 	}
@@ -337,12 +337,12 @@ func (c *Client) GetPlaylists(ctx context.Context) ([]*domain.Playlist, error) {
 		return nil, err
 	}
 
-	var resp ItemsResponse
+	var resp itemsResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return MapPlaylists(resp.Items, c.baseURL), nil
+	return mapPlaylists(resp.Items, c.baseURL), nil
 }
 
 // GetPlaylistItems returns all items in a playlist
@@ -357,7 +357,7 @@ func (c *Client) GetPlaylistItems(ctx context.Context, playlistID string) ([]*do
 		return nil, err
 	}
 
-	var resp ItemsResponse
+	var resp itemsResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
@@ -459,7 +459,7 @@ func (c *Client) resolvePlaylistEntryID(ctx context.Context, playlistID, itemID 
 		return "", err
 	}
 
-	var resp ItemsResponse
+	var resp itemsResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return "", fmt.Errorf("failed to parse response: %w", err)
 	}
