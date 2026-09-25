@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mmcdole/kino/internal/tui/components"
+	"github.com/mmcdole/kino/internal/catalog"
 	"github.com/mmcdole/kino/internal/tui/styles"
 )
 
@@ -126,11 +126,11 @@ func (m *Model) renderFooter() string {
 
 	// Center section: context-specific hints based on column type
 	var center string
-	if top := m.ColumnStack.Top(); top != nil {
-		switch top.ColumnType() {
-		case components.ColumnTypePlaylists:
+	if r, ok := m.topResource(); ok {
+		switch r.Kind {
+		case catalog.Playlists:
 			center = styles.AccentStyle.Render("x") + styles.DimStyle.Render(" Delete")
-		case components.ColumnTypePlaylistItems:
+		case catalog.PlaylistItems:
 			center = styles.AccentStyle.Render("x") + styles.DimStyle.Render(" Remove")
 		}
 	}

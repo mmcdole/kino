@@ -18,29 +18,26 @@ type NavPlan struct {
 
 func (m *Model) clearNavPlan() { m.navPlan = nil }
 
-func columnType(kind catalog.Kind) components.ColumnType {
+// columnOptions describes what a column of each collection kind offers.
+func columnOptions(kind catalog.Kind) components.ColumnOptions {
 	switch kind {
-	case catalog.Libraries:
-		return components.ColumnTypeLibraries
 	case catalog.Movies:
-		return components.ColumnTypeMovies
+		return components.ColumnOptions{SortFields: components.MovieSortOptions(), DefaultSort: components.SortTitle}
 	case catalog.Shows:
-		return components.ColumnTypeShows
+		return components.ColumnOptions{SortFields: components.ShowSortOptions(), DefaultSort: components.SortTitle}
 	case catalog.Mixed:
-		return components.ColumnTypeMixed
-	case catalog.Seasons:
-		return components.ColumnTypeSeasons
+		return components.ColumnOptions{SortFields: components.MixedSortOptions(), DefaultSort: components.SortTitle}
 	case catalog.Episodes:
-		return components.ColumnTypeEpisodes
-	case catalog.Playlists:
-		return components.ColumnTypePlaylists
+		return components.ColumnOptions{SortFields: components.EpisodeSortOptions(), DefaultSort: components.SortEpisodeNum}
+	case catalog.PlaylistItems:
+		return components.ColumnOptions{ShowParent: true}
 	default:
-		return components.ColumnTypePlaylistItems
+		return components.ColumnOptions{}
 	}
 }
 
 func (m *Model) pushColumn(r catalog.Resource, title string) tea.Cmd {
-	col := components.NewListColumn(columnType(r.Kind), title)
+	col := components.NewListColumn(title, columnOptions(r.Kind))
 	col.SetContentID(r.Key())
 	col.SetShowWatchStatus(m.UIConfig.ShowWatchStatus)
 	m.ColumnStack.Push(col)

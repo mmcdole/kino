@@ -105,7 +105,7 @@ func NewModel(ctx context.Context, svc Catalog, playback Playback, index *search
 		indicators:    make(map[string]uint64),
 	}
 	root := catalog.Resource{Kind: catalog.Libraries}
-	col := components.NewListColumn(components.ColumnTypeLibraries, "Libraries")
+	col := components.NewListColumn("Libraries", components.ColumnOptions{})
 	col.SetContentID(root.Key())
 	col.SetFeedback(components.CollectionFeedback{Pending: true})
 	col.SetShowWatchStatus(ui.ShowWatchStatus)

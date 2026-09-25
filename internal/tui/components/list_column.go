@@ -2,17 +2,13 @@ package components
 
 import (
 	"fmt"
-	"sort"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mmcdole/kino/internal/domain"
 	"github.com/mmcdole/kino/internal/tui/styles"
-	"github.com/sahilm/fuzzy"
 )
 
 // Layout constants for list columns
@@ -25,56 +21,40 @@ const (
 	ScrollIndicatorLines = 2
 )
 
-// ListColumn is a scrollable list column that can display various content types.
-// It implements the Column interface.
+// ColumnOptions describe what a column offers. The zero value is a list in
+// the server's natural order.
+type ColumnOptions struct {
+	SortFields  []SortField // sorts the user can choose; none means natural order only
+	DefaultSort SortField
+	ShowParent  bool // name each episode's show, for lists that mix shows
+}
+
+// ListColumn is a scrollable, filterable list of collection items.
 type ListColumn struct {
+	view       listView
+	opts       ColumnOptions
 	hasContent bool
-	// Content - unified storage using domain.ListItem interface
-	items []domain.ListItem
 
-	columnType ColumnType
+	width, height int
+	focused       bool
+	title         string
 
-	// Selection
-	cursor     int
-	offset     int
-	maxVisible int
+	feedback      CollectionFeedback
+	spinnerFrame  int
+	libraryStates map[string]CollectionFeedback // library rows only
 
-	// Dimensions
-	width   int
-	height  int
-	focused bool
-
-	// Column title (shown in header)
-	title string
-
-	// Loading state
-	feedback     CollectionFeedback
-	spinnerFrame int
-
-	// Library summaries and activity (for library column)
-	libraryStates map[string]CollectionFeedback
-
-	// Sort state
-	sortField SortField
-	sortDir   SortDirection
-	sortedIdx []int // sorted position → raw index (nil = default order)
-
-	// Filter state
 	filterActive bool
 	filterInput  textinput.Model
-	filterQuery  string
-	filteredIdx  []int // indices into sorted slice (or raw if no sort)
 
-	// Display settings
-	showWatchStatus   bool // Whether to show watch status indicators
-	showLibraryCounts bool // Whether to keep library item counts visible after sync
+	showWatchStatus   bool
+	showLibraryCounts bool
 
-	// Content identity for race condition prevention
+	// contentID names the collection this column shows
 	contentID string
 }
 
-// NewListColumn creates a new list column with the given type and title
-func NewListColumn(colType ColumnType, title string) *ListColumn {
+// NewListColumn creates an empty column
+func NewListColumn(title string, opts ColumnOptions) *ListColumn {
 	ti := textinput.New()
 	ti.Placeholder = "type to filter..."
 	ti.Prompt = "/ "
@@ -82,27 +62,22 @@ func NewListColumn(colType ColumnType, title string) *ListColumn {
 	ti.TextStyle = styles.FilterStyle
 
 	return &ListColumn{
-		columnType:    colType,
+		view:          listView{sortField: opts.DefaultSort},
+		opts:          opts,
 		title:         title,
-		sortField:     SortTitle,
-		sortDir:       SortAsc,
 		filterInput:   ti,
 		libraryStates: make(map[string]CollectionFeedback),
 	}
 }
 
 func (c *ListColumn) Update(msg tea.Msg) (*ListColumn, tea.Cmd) {
-	if !c.focused {
-		return c, nil
-	}
-
 	keyMsg, ok := msg.(tea.KeyMsg)
-	if !ok {
+	if !c.focused || !ok {
 		return c, nil
 	}
 
-	// Handle filter input when active AND focused (typing mode)
-	if c.filterActive && c.filterInput.Focused() {
+	// Typing into the filter
+	if c.IsFilterTyping() {
 		switch {
 		case key.Matches(keyMsg, ListColumnKeys.Escape):
 			c.clearFilter()
@@ -111,87 +86,47 @@ func (c *ListColumn) Update(msg tea.Msg) (*ListColumn, tea.Cmd) {
 			// Accept filter, blur input to allow navigation
 			c.filterInput.Blur()
 			return c, nil
-		case keyMsg.String() == "backspace":
-			if c.filterInput.Value() == "" {
-				c.clearFilter()
-				return c, nil
-			}
+		case keyMsg.String() == "backspace" && c.filterInput.Value() == "":
+			c.clearFilter()
+			return c, nil
 		}
-
-		// Route to textinput
 		var cmd tea.Cmd
 		c.filterInput, cmd = c.filterInput.Update(msg)
-		c.applyFilter()
+		c.view.filter(c.filterInput.Value())
 		return c, cmd
 	}
 
-	// Handle keys when filter is active but blurred (navigation mode with filter results)
+	// Navigating filtered results
 	if c.filterActive {
 		switch {
 		case key.Matches(keyMsg, ListColumnKeys.Escape):
-			// Clear filter and show all items
 			c.clearFilter()
 			return c, nil
 		case key.Matches(keyMsg, ListColumnKeys.Filter):
-			// Re-activate filter input
 			c.filterInput.Focus()
 			return c, nil
 		}
-		// Fall through to normal navigation handling
 	}
 
-	count := c.ItemCount()
-	if count == 0 {
-		return c, nil
-	}
-
+	page := c.view.rows
 	switch {
 	case key.Matches(keyMsg, ListColumnKeys.Down):
-		if c.cursor < count-1 {
-			c.cursor++
-			c.ensureVisible()
-		}
+		c.view.move(1)
 	case key.Matches(keyMsg, ListColumnKeys.Up):
-		if c.cursor > 0 {
-			c.cursor--
-			c.ensureVisible()
-		}
+		c.view.move(-1)
 	case key.Matches(keyMsg, ListColumnKeys.Home):
-		c.cursor = 0
-		c.offset = 0
+		c.view.moveTo(0)
 	case key.Matches(keyMsg, ListColumnKeys.End):
-		c.cursor = count - 1
-		c.ensureVisible()
+		c.view.moveTo(c.view.len() - 1)
 	case key.Matches(keyMsg, ListColumnKeys.HalfDown):
-		// Half page down
-		c.cursor += c.maxVisible / 2
-		if c.cursor >= count {
-			c.cursor = count - 1
-		}
-		c.ensureVisible()
+		c.view.move(page / 2)
 	case key.Matches(keyMsg, ListColumnKeys.HalfUp):
-		// Half page up
-		c.cursor -= c.maxVisible / 2
-		if c.cursor < 0 {
-			c.cursor = 0
-		}
-		c.ensureVisible()
+		c.view.move(-page / 2)
 	case key.Matches(keyMsg, ListColumnKeys.PageDown):
-		// Full page down
-		c.cursor += c.maxVisible
-		if c.cursor >= count {
-			c.cursor = count - 1
-		}
-		c.ensureVisible()
+		c.view.move(page)
 	case key.Matches(keyMsg, ListColumnKeys.PageUp):
-		// Full page up
-		c.cursor -= c.maxVisible
-		if c.cursor < 0 {
-			c.cursor = 0
-		}
-		c.ensureVisible()
+		c.view.move(-page)
 	}
-
 	return c, nil
 }
 
@@ -200,81 +135,32 @@ func (c *ListColumn) View() string {
 	if c.focused {
 		style = styles.ActiveBorder
 	}
-
-	content := c.renderContent()
-
 	// Subtract frame (border) size so total rendered size equals c.width x c.height
 	frameW, frameH := style.GetFrameSize()
-
 	return style.
 		Width(c.width - frameW).
 		Height(c.height - frameH).
-		Render(content)
+		Render(c.renderContent())
 }
 
 func (c *ListColumn) SetSize(width, height int) {
 	c.width = width
 	c.height = height
-	c.recalcMaxVisible()
-	c.ensureVisible() // Scroll to show selected item now that we know the size
+	c.resizeRows()
 }
 
-func (c *ListColumn) SetFocused(focused bool) {
-	c.focused = focused
-}
+func (c *ListColumn) SetFocused(focused bool) { c.focused = focused }
+func (c *ListColumn) Title() string           { return c.title }
 
-func (c *ListColumn) Title() string {
-	return c.title
-}
-
-func (c *ListColumn) SelectedItem() domain.ListItem {
-	count := c.ItemCount()
-	if count == 0 || c.cursor >= count {
-		return nil
-	}
-
-	idx := c.mapIndex(c.cursor)
-	if idx >= len(c.items) {
-		return nil
-	}
-	return c.items[idx]
-}
-
-func (c *ListColumn) SelectedIndex() int {
-	return c.cursor
-}
-
-func (c *ListColumn) SetSelectedIndex(idx int) {
-	max := c.ItemCount() - 1
-	if max < 0 {
-		c.cursor = 0
-		return
-	}
-	if idx < 0 {
-		idx = 0
-	}
-	if idx > max {
-		idx = max
-	}
-	c.cursor = idx
-	c.ensureVisible()
-}
-
-func (c *ListColumn) ItemCount() int {
-	return c.filteredCount()
-}
+// SelectedItem returns the item under the cursor, or nil.
+func (c *ListColumn) SelectedItem() domain.ListItem { return c.view.selected() }
+func (c *ListColumn) SelectedIndex() int            { return c.view.cursor }
+func (c *ListColumn) SetSelectedIndex(pos int)      { c.view.moveTo(pos) }
+func (c *ListColumn) ItemCount() int                { return c.view.len() }
 
 func (c *ListColumn) CanDrillInto() bool {
-	count := c.ItemCount()
-	if count == 0 || c.cursor >= count {
-		return false
-	}
-
-	idx := c.mapIndex(c.cursor)
-	if idx >= len(c.items) {
-		return false
-	}
-	return present(c.items[idx]).DrillDown
+	item := c.SelectedItem()
+	return item != nil && present(item).DrillDown
 }
 
 // SetFeedback receives the same presentation value used by library rows and the inspector.
@@ -282,328 +168,115 @@ func (c *ListColumn) SetFeedback(feedback CollectionFeedback) { c.feedback = fee
 func (c *ListColumn) IsLoading() bool                         { return c.feedback.Pending && !c.hasContent }
 func (c *ListColumn) IsRefreshing() bool                      { return c.feedback.Pending && c.hasContent }
 func (c *ListColumn) HasLoadFailed() bool                     { return !c.feedback.Pending && c.feedback.Error != nil }
+func (c *ListColumn) HasContent() bool                        { return c.hasContent }
 
-func (c *ListColumn) HasContent() bool { return c.hasContent }
-
+// SetItems shows items as a fresh list: default sort, no filter, cursor at the top.
 func (c *ListColumn) SetItems(items []domain.ListItem) {
 	c.hasContent = true
-	c.cursor = 0
-	c.offset = 0
 	c.clearFilter()
-	c.sortedIdx = nil
-
-	c.items = append([]domain.ListItem(nil), items...)
-
-	// Apply default sort for sortable column types
-	if c.columnSortable() {
-		if c.columnType == ColumnTypeEpisodes {
-			c.sortField = SortEpisodeNum
-			c.sortDir = SortAsc
-		} else {
-			c.sortField = SortTitle
-			c.sortDir = SortAsc
-		}
-		c.buildSortedIdx()
-	} else {
-		c.sortField = SortDefault
-		c.sortDir = SortAsc
-		c.sortedIdx = nil
-	}
+	c.view = listView{rows: c.view.rows, sortField: c.opts.DefaultSort}
+	c.view.setItems(items)
 }
 
 // ReplaceItems swaps the column's content while preserving the user's view
-// state: cursor (matched by item ID), sort, and filter all survive the swap.
-// Background refreshes use this so the list doesn't jump; on a column with no
-// prior content it behaves exactly like SetItems.
+// state: the selected item, sort, and filter all survive. On a column with no
+// prior content it behaves like SetItems.
 func (c *ListColumn) ReplaceItems(items []domain.ListItem) {
 	if !c.hasContent {
 		c.SetItems(items)
 		return
 	}
-
-	// Capture view state
-	var selectedID string
-	if idx := c.mapIndex(c.cursor); c.cursor < c.ItemCount() && idx < len(c.items) {
-		selectedID = c.items[idx].GetID()
-	}
-	prevCursor := c.cursor
-	sortField, sortDir := c.sortField, c.sortDir
-	filterActive := c.filterActive
-	filterQuery := c.filterInput.Value()
-	filterTyping := c.filterInput.Focused()
-
-	c.SetItems(items)
-
-	// Restore sort
-	if c.columnSortable() && sortField != SortDefault {
-		c.sortField = sortField
-		c.sortDir = sortDir
-		c.buildSortedIdx()
-	}
-
-	// Restore filter
-	if filterActive {
-		c.filterActive = true
-		c.filterInput.SetValue(filterQuery)
-		if filterTyping {
-			c.filterInput.Focus()
-		}
-		c.recalcMaxVisible()
-		c.applyFilter()
-	}
-
-	// Restore cursor: by ID first, clamped index as fallback
-	if selectedID == "" || !c.SetSelectedByID(selectedID) {
-		c.SetSelectedIndex(prevCursor)
-	}
+	c.view.setItems(items)
 }
 
-func (c *ListColumn) ColumnType() ColumnType {
-	return c.columnType
-}
+// SortFields returns the sorts this column offers; nil means none.
+func (c *ListColumn) SortFields() []SortField { return c.opts.SortFields }
 
-// SetLibraryStates updates the library summaries and activity (for library column)
+// ApplySort orders the column. An active filter survives the re-sort.
+func (c *ListColumn) ApplySort(field SortField, dir SortDirection) { c.view.sortBy(field, dir) }
+
+// SortState returns the current sort field and direction
+func (c *ListColumn) SortState() (SortField, SortDirection) { return c.view.sortField, c.view.sortDir }
+
+// SetLibraryStates updates the library summaries and activity (for library rows)
 func (c *ListColumn) SetLibraryStates(states map[string]CollectionFeedback) {
 	c.libraryStates = states
 }
 
-// SetSpinnerFrame updates the spinner animation frame
-func (c *ListColumn) SetSpinnerFrame(frame int) {
-	c.spinnerFrame = frame
-}
-
-// SetShowWatchStatus sets whether to display watch status indicators
-func (c *ListColumn) SetShowWatchStatus(show bool) {
-	c.showWatchStatus = show
-}
+func (c *ListColumn) SetSpinnerFrame(frame int)    { c.spinnerFrame = frame }
+func (c *ListColumn) SetShowWatchStatus(show bool) { c.showWatchStatus = show }
 
 // SetShowLibraryCounts sets whether to keep library item counts visible after sync
-func (c *ListColumn) SetShowLibraryCounts(show bool) {
-	c.showLibraryCounts = show
-}
+func (c *ListColumn) SetShowLibraryCounts(show bool) { c.showLibraryCounts = show }
 
-// SetContentID sets the content identity for race condition prevention
-func (c *ListColumn) SetContentID(id string) {
-	c.contentID = id
-}
+func (c *ListColumn) SetContentID(id string) { c.contentID = id }
+func (c *ListColumn) ContentID() string      { return c.contentID }
 
-// ContentID returns the content identity for this column
-func (c *ListColumn) ContentID() string {
-	return c.contentID
-}
-
-// SelectedLibrary returns the selected library (if in library column)
+// SelectedLibrary returns the selected library, if a library is selected.
 func (c *ListColumn) SelectedLibrary() *domain.Library {
-	if c.columnType != ColumnTypeLibraries {
-		return nil
-	}
-	item := c.SelectedItem()
-	if item == nil {
-		return nil
-	}
-	lib, _ := item.(*domain.Library)
+	lib, _ := c.SelectedItem().(*domain.Library)
 	return lib
 }
 
-// SelectedMediaItem returns the selected media item (if in movies/episodes/playlist items/mixed column)
+// SelectedMediaItem returns the selected movie or episode, if one is selected.
 func (c *ListColumn) SelectedMediaItem() *domain.MediaItem {
-	switch c.columnType {
-	case ColumnTypeMovies, ColumnTypeEpisodes, ColumnTypePlaylistItems:
-		item := c.SelectedItem()
-		if item == nil {
-			return nil
-		}
-		return item.(*domain.MediaItem)
-	case ColumnTypeMixed:
-		// Mixed content can be either MediaItem (movie) or Show
-		item := c.SelectedItem()
-		if item == nil {
-			return nil
-		}
-		// Type assert to *domain.MediaItem - returns nil if it's a Show
-		if mediaItem, ok := item.(*domain.MediaItem); ok {
-			return mediaItem
-		}
-		return nil
-	default:
-		return nil
-	}
+	item, _ := c.SelectedItem().(*domain.MediaItem)
+	return item
 }
 
-// SelectedPlaylist returns the selected playlist (if in playlists column)
+// SelectedPlaylist returns the selected playlist, if one is selected.
 func (c *ListColumn) SelectedPlaylist() *domain.Playlist {
-	if c.columnType != ColumnTypePlaylists {
-		return nil
-	}
-	item := c.SelectedItem()
-	if item == nil {
-		return nil
-	}
-	return item.(*domain.Playlist)
+	playlist, _ := c.SelectedItem().(*domain.Playlist)
+	return playlist
 }
 
-// SetSelectedByID finds an item by ID and selects it. Returns true on success.
+// SetSelectedByID selects the item with id. An empty id always succeeds.
 func (c *ListColumn) SetSelectedByID(id string) bool {
-	if id == "" {
-		return true
-	}
-	count := c.filteredCount()
-	for i := 0; i < count; i++ {
-		rawIdx := c.mapIndex(i)
-		if rawIdx < len(c.items) && c.items[rawIdx].GetID() == id {
-			c.SetSelectedIndex(i)
-			return true
-		}
-	}
-	return false
+	return id == "" || c.view.selectID(id)
 }
 
 // ToggleFilter activates the filter input
 func (c *ListColumn) ToggleFilter() {
 	c.filterActive = true
 	c.filterInput.Focus()
-	c.recalcMaxVisible()
+	c.resizeRows()
 }
 
-// IsFiltering returns true if filter mode is active
-func (c *ListColumn) IsFiltering() bool {
-	return c.filterActive
-}
-
-// IsFilterTyping returns true if filter is active AND input is focused
-func (c *ListColumn) IsFilterTyping() bool {
-	return c.filterActive && c.filterInput.Focused()
-}
+func (c *ListColumn) IsFiltering() bool    { return c.filterActive }
+func (c *ListColumn) IsFilterTyping() bool { return c.filterActive && c.filterInput.Focused() }
 
 // ClearFilter deactivates the filter and shows all items
-func (c *ListColumn) ClearFilter() {
-	c.clearFilter()
-}
-
-// Internal methods
-
-func (c *ListColumn) recalcMaxVisible() {
-	// Interior height = total - border (top+bottom)
-	// Reserve space for: title line + scroll indicators (header + footer)
-	interiorHeight := c.height - BorderHeight
-	c.maxVisible = interiorHeight - ScrollIndicatorLines - 1 // -1 for title
-	// Reserve space for filter bar when active
-	if c.filterActive {
-		c.maxVisible--
-	}
-	if c.maxVisible < 1 {
-		c.maxVisible = 1
-	}
-}
-
-func (c *ListColumn) ensureVisible() {
-	// Don't adjust offset if size hasn't been set yet
-	if c.maxVisible <= 0 {
-		return
-	}
-	if c.cursor < c.offset {
-		c.offset = c.cursor
-	}
-	if c.cursor >= c.offset+c.maxVisible {
-		c.offset = c.cursor - c.maxVisible + 1
-	}
-}
+func (c *ListColumn) ClearFilter() { c.clearFilter() }
 
 func (c *ListColumn) clearFilter() {
 	c.filterActive = false
-	c.filterQuery = ""
-	c.filteredIdx = nil
 	c.filterInput.SetValue("")
 	c.filterInput.Blur()
-	c.recalcMaxVisible()
+	c.view.filter("")
+	c.resizeRows()
 }
 
-func (c *ListColumn) applyFilter() {
-	query := c.filterInput.Value()
-	c.filterQuery = query
-
-	if query == "" {
-		c.filteredIdx = nil
-		return
+// resizeRows fits the list between the title, scroll indicators and filter bar.
+func (c *ListColumn) resizeRows() {
+	rows := c.height - BorderHeight - ScrollIndicatorLines - 1 // -1 for title
+	if c.filterActive {
+		rows--
 	}
-
-	// Get filter values from items
-	titles := c.getFilterValues()
-	lowerTitles := make([]string, len(titles))
-	for i, t := range titles {
-		lowerTitles[i] = strings.ToLower(t)
-	}
-
-	matches := fuzzy.Find(strings.ToLower(query), lowerTitles)
-
-	c.filteredIdx = make([]int, len(matches))
-	for i, match := range matches {
-		c.filteredIdx[i] = match.Index
-	}
-
-	// Reset cursor to first match
-	c.cursor = 0
-	c.offset = 0
+	c.view.setRows(rows)
 }
-
-func (c *ListColumn) getFilterValues() []string {
-	count := c.sortedCount()
-	titles := make([]string, count)
-	for i := 0; i < count; i++ {
-		rawIdx := i
-		if c.sortedIdx != nil && i < len(c.sortedIdx) {
-			rawIdx = c.sortedIdx[i]
-		}
-		if rawIdx < len(c.items) {
-			titles[i] = present(c.items[rawIdx]).Title
-		}
-	}
-	return titles
-}
-
-func (c *ListColumn) sortedCount() int {
-	if c.sortedIdx != nil {
-		return len(c.sortedIdx)
-	}
-	return len(c.items)
-}
-
-func (c *ListColumn) filteredCount() int {
-	if c.filteredIdx != nil {
-		return len(c.filteredIdx)
-	}
-	return c.sortedCount()
-}
-
-func (c *ListColumn) mapIndex(i int) int {
-	idx := i
-	if c.filteredIdx != nil && idx < len(c.filteredIdx) {
-		idx = c.filteredIdx[idx]
-	}
-	if c.sortedIdx != nil && idx < len(c.sortedIdx) {
-		return c.sortedIdx[idx]
-	}
-	return idx
-}
-
-// Rendering
 
 func (c *ListColumn) renderContent() string {
 	// Content width = column width - border (2 chars for left+right border)
-	itemWidth := c.width - BorderWidth
-	if itemWidth < 10 {
-		itemWidth = 10
-	}
+	itemWidth := max(c.width-BorderWidth, 10)
 
-	// Title line (styled, truncated to fit column width); background
-	// refreshes show a spinner next to the title while items stay visible
+	// Title line; background refreshes show a spinner next to the title
+	// while items stay visible
 	title := "  " + c.title
 	if c.IsRefreshing() && c.feedback.Activity.Visible {
 		title = styles.SpinnerFrames[c.spinnerFrame%len(styles.SpinnerFrames)] + " " + c.title
 	}
 	titleLine := styles.AccentStyle.Render(styles.Truncate(title, itemWidth))
 
-	// Loading state
 	if c.IsLoading() {
 		spinner := styles.SpinnerFrames[c.spinnerFrame%len(styles.SpinnerFrames)]
 		loadingLine := " "
@@ -620,10 +293,10 @@ func (c *ListColumn) renderContent() string {
 		return titleLine + "\n" + " " + "\n" + failedLine + "\n" + retryLine
 	}
 
-	count := c.ItemCount()
+	count := c.view.len()
 	if count == 0 {
 		emptyMsg := styles.DimStyle.Render("No items")
-		if c.filterActive && c.filterQuery != "" {
+		if c.filterActive && c.view.query != "" {
 			emptyMsg = styles.DimStyle.Render("No matches")
 		}
 		header, footer := " ", " "
@@ -632,593 +305,42 @@ func (c *ListColumn) renderContent() string {
 			footer = styles.DimStyle.Render("press r to retry")
 		}
 		content := titleLine + "\n" + header + "\n" + emptyMsg + "\n" + footer
-		// Add filter bar if active so user can see what they're typing
+		// Show the filter bar so the user can see what they're typing
 		if c.filterActive {
-			content += "\n" + c.renderFilterBar(itemWidth)
+			content += "\n" + c.renderFilterBar()
 		}
 		return content
 	}
 
-	var lines []string
-
-	end := c.offset + c.maxVisible
-	if end > count {
-		end = count
+	end := min(c.view.offset+c.view.rows, count)
+	lines := make([]string, 0, end-c.view.offset)
+	for pos := c.view.offset; pos < end; pos++ {
+		lines = append(lines, c.renderRow(c.view.at(pos), pos == c.view.cursor, itemWidth))
 	}
 
-	for i := c.offset; i < end; i++ {
-		selected := i == c.cursor
-		idx := c.mapIndex(i)
-		line := c.renderItem(idx, selected, itemWidth)
-		lines = append(lines, line)
-	}
-
-	// ALWAYS reserve space for header (even if empty) to prevent layout shifts
+	// Header and footer lines are always reserved to prevent layout shifts
 	header := " "
 	if c.HasLoadFailed() {
 		header = styles.ErrorStyle.Render(styles.Truncate("Refresh failed · r to retry", itemWidth))
-	} else if c.offset > 0 {
+	} else if c.view.offset > 0 {
 		header = styles.DimStyle.Render("↑ more")
 	}
-
-	// ALWAYS reserve space for footer (even if empty)
 	footer := " "
 	if end < count {
 		footer = styles.DimStyle.Render("↓ more")
 	}
 
-	content := strings.Join(lines, "\n")
-	content = titleLine + "\n" + header + "\n" + content + "\n" + footer
-
-	// Add filter bar at bottom if active
+	content := titleLine + "\n" + header + "\n" + strings.Join(lines, "\n") + "\n" + footer
 	if c.filterActive {
-		content += "\n" + c.renderFilterBar(itemWidth)
+		content += "\n" + c.renderFilterBar()
 	}
-
 	return content
 }
 
-// renderItem renders a single item based on column type
-func (c *ListColumn) renderItem(idx int, selected bool, width int) string {
-	if idx >= len(c.items) {
-		return ""
-	}
-
-	item := c.items[idx]
-
-	// Dispatch to type-specific renderer based on column type
-	// This preserves the existing visual styling for each content type
-	switch c.columnType {
-	case ColumnTypeLibraries:
-		return c.renderLibraryItem(*item.(*domain.Library), selected, width)
-	case ColumnTypeMovies:
-		return c.renderMovieItem(*item.(*domain.MediaItem), selected, width)
-	case ColumnTypeShows:
-		return c.renderShowItem(*item.(*domain.Show), selected, width)
-	case ColumnTypeSeasons:
-		return c.renderSeasonItem(*item.(*domain.Season), selected, width)
-	case ColumnTypeEpisodes:
-		return c.renderEpisodeItem(*item.(*domain.MediaItem), selected, width)
-	case ColumnTypePlaylists:
-		return c.renderPlaylistItem(*item.(*domain.Playlist), selected, width)
-	case ColumnTypePlaylistItems:
-		return c.renderPlaylistMediaItem(*item.(*domain.MediaItem), selected, width)
-	case ColumnTypeMixed:
-		return c.renderMixedItem(item, selected, width)
-	default:
-		return ""
-	}
-}
-
-func (c *ListColumn) renderLibraryItem(lib domain.Library, selected bool, width int) string {
-	// Get the summary and activity for this library (works for playlists too via playlistsLibraryID)
-	state := c.libraryStates[lib.ID]
-
-	var prefix string
-	var prefixFg lipgloss.Color
-
-	switch {
-	case state.Activity.Visible:
-		prefix = styles.SpinnerFrames[c.spinnerFrame%len(styles.SpinnerFrames)] + " "
-		prefixFg = styles.PlexOrange
-	case state.Error != nil:
-		prefix = "✗ "
-		prefixFg = styles.Red
-	default:
-		prefix = "  "
-		prefixFg = styles.DimGray
-	}
-
-	title := lib.Name
-	if c.showLibraryCounts && state.Summary.Known {
-		title = fmt.Sprintf("%s (%d)", lib.Name, state.Summary.Count)
-	}
-	title = styles.Truncate(title, width-4)
-
-	parts := []styles.RowPart{
-		{Text: prefix, Foreground: &prefixFg},
-		{Text: title, Foreground: nil},
-	}
-
-	return styles.RenderListRow(parts, selected, width)
-}
-
-func (c *ListColumn) renderMovieItem(item domain.MediaItem, selected bool, width int) string {
-	var indicatorChar string
-	var indicatorFg lipgloss.Color
-	if c.showWatchStatus {
-		indicatorChar, indicatorFg = mediaItemWatchIndicator(item)
-	} else {
-		indicatorChar = " "
-	}
-
-	title := item.Title
-	if item.Year > 0 {
-		title = fmt.Sprintf("%s (%d)", item.Title, item.Year)
-	}
-
-	// Available space: width - indicator(1) - space(1) - margins(2)
-	availableForTitle := width - 4
-	tag := c.sortTag(&item)
-	if tag != "" {
-		availableForTitle -= len(tag) + 1
-	}
-	if availableForTitle < 5 {
-		availableForTitle = 5
-	}
-	title = styles.Truncate(title, availableForTitle)
-
-	parts := appendSortTag([]styles.RowPart{
-		{Text: indicatorChar, Foreground: &indicatorFg},
-		{Text: " " + title, Foreground: nil},
-	}, tag, width)
-
-	return styles.RenderListRow(parts, selected, width)
-}
-
-func (c *ListColumn) renderShowItem(show domain.Show, selected bool, width int) string {
-	var indicatorChar string
-	var indicatorFg lipgloss.Color
-	if c.showWatchStatus {
-		indicatorChar, indicatorFg = watchIndicator(show.WatchStatus())
-	} else {
-		indicatorChar = " "
-	}
-
-	title := show.Title
-	if show.Year > 0 {
-		title = fmt.Sprintf("%s (%d)", show.Title, show.Year)
-	}
-
-	// Available space: width - indicator(1) - space(1) - margins(2)
-	availableForTitle := width - 4
-	tag := c.sortTag(&show)
-	if tag != "" {
-		availableForTitle -= len(tag) + 1
-	}
-	if availableForTitle < 5 {
-		availableForTitle = 5
-	}
-	title = styles.Truncate(title, availableForTitle)
-
-	parts := appendSortTag([]styles.RowPart{
-		{Text: indicatorChar, Foreground: &indicatorFg},
-		{Text: " " + title, Foreground: nil},
-	}, tag, width)
-
-	return styles.RenderListRow(parts, selected, width)
-}
-
-func (c *ListColumn) renderSeasonItem(season domain.Season, selected bool, width int) string {
-	var indicatorChar string
-	var indicatorFg lipgloss.Color
-	if c.showWatchStatus {
-		indicatorChar, indicatorFg = watchIndicator(season.WatchStatus())
-	} else {
-		indicatorChar = " "
-	}
-
-	title := seasonTitle(season)
-
-	// Available space: width - indicator(1) - space(1) - margins(2)
-	availableForTitle := width - 4
-	if availableForTitle < 5 {
-		availableForTitle = 5
-	}
-	title = styles.Truncate(title, availableForTitle)
-
-	parts := []styles.RowPart{
-		{Text: indicatorChar, Foreground: &indicatorFg},
-		{Text: " " + title, Foreground: nil},
-	}
-
-	return styles.RenderListRow(parts, selected, width)
-}
-
-func (c *ListColumn) renderEpisodeItem(item domain.MediaItem, selected bool, width int) string {
-	var indicatorChar string
-	var indicatorFg lipgloss.Color
-	if c.showWatchStatus {
-		indicatorChar, indicatorFg = mediaItemWatchIndicator(item)
-	} else {
-		indicatorChar = " "
-	}
-
-	code := episodeCode(item)
-	plexOrange := styles.PlexOrange
-
-	// Available space: width - indicator(1) - space(1) - code - space(1) - margins(2)
-	availableForTitle := width - 4 - len(code) - 1
-	tag := c.sortTag(&item)
-	if tag != "" {
-		availableForTitle -= len(tag) + 1
-	}
-	if availableForTitle < 5 {
-		availableForTitle = 5
-	}
-	title := styles.Truncate(item.Title, availableForTitle)
-
-	parts := appendSortTag([]styles.RowPart{
-		{Text: indicatorChar, Foreground: &indicatorFg},
-		{Text: " " + code, Foreground: &plexOrange},
-		{Text: " " + title, Foreground: nil},
-	}, tag, width)
-
-	return styles.RenderListRow(parts, selected, width)
-}
-
-func (c *ListColumn) renderFilterBar(_ int) string {
+func (c *ListColumn) renderFilterBar() string {
 	input := c.filterInput.View()
-	count := c.ItemCount()
-	total := len(c.items)
-
-	// Show match count
-	countStr := ""
-	if c.filterQuery != "" {
-		countStr = styles.DimStyle.Render(fmt.Sprintf(" [%d/%d]", count, total))
+	if c.view.query == "" {
+		return input
 	}
-
-	return input + countStr
-}
-
-// watchIndicator returns the character and color for a watch status
-func watchIndicator(status domain.WatchStatus) (string, lipgloss.Color) {
-	switch status {
-	case domain.WatchStatusWatched:
-		return styles.PlayedChar, styles.Green
-	case domain.WatchStatusInProgress:
-		return styles.InProgressChar, styles.PlexOrange
-	default:
-		return styles.UnplayedChar, styles.PlexOrange
-	}
-}
-
-// mediaItemWatchIndicator returns the character and color for a media item's watch status
-func mediaItemWatchIndicator(item domain.MediaItem) (string, lipgloss.Color) {
-	if item.IsPlayed {
-		return styles.PlayedChar, styles.Green
-	}
-	if item.ViewOffset.Milliseconds() > 0 {
-		return styles.InProgressChar, styles.PlexOrange
-	}
-	return styles.UnplayedChar, styles.PlexOrange
-}
-
-func (c *ListColumn) renderPlaylistItem(playlist domain.Playlist, selected bool, width int) string {
-	// Playlist icon and count
-	prefix := "▶ "
-	prefixFg := styles.PlexOrange
-
-	title := playlist.Title
-	countStr := fmt.Sprintf(" (%d)", playlist.ItemCount)
-
-	// Available space: width - prefix(2) - count - margins(2)
-	availableForTitle := width - 4 - len(countStr)
-	if availableForTitle < 5 {
-		availableForTitle = 5
-	}
-	title = styles.Truncate(title, availableForTitle)
-
-	dimGray := styles.DimGray
-	parts := []styles.RowPart{
-		{Text: prefix, Foreground: &prefixFg},
-		{Text: title, Foreground: nil},
-		{Text: countStr, Foreground: &dimGray},
-	}
-
-	return styles.RenderListRow(parts, selected, width)
-}
-
-func (c *ListColumn) renderPlaylistMediaItem(item domain.MediaItem, selected bool, width int) string {
-	var indicatorChar string
-	var indicatorFg lipgloss.Color
-	if c.showWatchStatus {
-		indicatorChar, indicatorFg = mediaItemWatchIndicator(item)
-	} else {
-		indicatorChar = " "
-	}
-
-	title := item.Title
-	if item.Type == domain.MediaTypeEpisode && item.ShowTitle != "" {
-		// Show episode with show context: "Show - S01E05 Title"
-		title = fmt.Sprintf("%s - %s %s", item.ShowTitle, episodeCode(item), item.Title)
-	} else if item.Year > 0 {
-		title = fmt.Sprintf("%s (%d)", item.Title, item.Year)
-	}
-
-	// Available space: width - indicator(1) - space(1) - margins(2)
-	availableForTitle := width - 4
-	if availableForTitle < 5 {
-		availableForTitle = 5
-	}
-	title = styles.Truncate(title, availableForTitle)
-
-	parts := []styles.RowPart{
-		{Text: indicatorChar, Foreground: &indicatorFg},
-		{Text: " " + title, Foreground: nil},
-	}
-
-	return styles.RenderListRow(parts, selected, width)
-}
-
-func (c *ListColumn) renderMixedItem(item domain.ListItem, selected bool, width int) string {
-	var indicatorChar string
-	var indicatorFg lipgloss.Color
-	if c.showWatchStatus {
-		indicatorChar, indicatorFg = watchIndicator(present(item).WatchStatus)
-	} else {
-		indicatorChar = " "
-	}
-
-	// Build title with year
-	title := present(item).Title
-	if year := present(item).Year; year > 0 {
-		title = fmt.Sprintf("%s (%d)", title, year)
-	}
-
-	// Available space: width - indicator(1) - space(1) - margins(2)
-	availableForTitle := width - 4
-	tag := c.sortTag(item)
-	if tag != "" {
-		availableForTitle -= len(tag) + 1
-	}
-	if availableForTitle < 5 {
-		availableForTitle = 5
-	}
-	title = styles.Truncate(title, availableForTitle)
-
-	parts := appendSortTag([]styles.RowPart{
-		{Text: indicatorChar, Foreground: &indicatorFg},
-		{Text: " " + title, Foreground: nil},
-	}, tag, width)
-
-	return styles.RenderListRow(parts, selected, width)
-}
-
-// sortTag returns a right-aligned tag string for the current sort field, or "" if
-// sorting by the default field or the value is zero/empty.
-func (c *ListColumn) sortTag(item domain.ListItem) string {
-	if c.sortField == SortTitle || c.sortField == SortEpisodeNum {
-		return ""
-	}
-
-	switch c.sortField {
-	case SortDuration:
-		d := present(item).Duration
-		if d <= 0 {
-			return ""
-		}
-		h := int(d.Hours())
-		m := int(d.Minutes()) % 60
-		if h > 0 {
-			return fmt.Sprintf("%dh %dm", h, m)
-		}
-		return fmt.Sprintf("%dm", m)
-	case SortRating:
-		r := present(item).Rating
-		if r == 0 {
-			return ""
-		}
-		return fmt.Sprintf("%.1f", r)
-	case SortDateAdded, SortLastUpdated:
-		var ts int64
-		if c.sortField == SortDateAdded {
-			ts = present(item).AddedAt
-		} else {
-			ts = present(item).UpdatedAt
-		}
-		if ts == 0 {
-			return ""
-		}
-		return formatMonthYear(ts)
-	case SortReleased:
-		// Skip for movies/shows since year is already in the title
-		switch c.columnType {
-		case ColumnTypeMovies, ColumnTypeShows, ColumnTypeMixed:
-			return ""
-		}
-		y := present(item).Year
-		if y == 0 {
-			return ""
-		}
-		return fmt.Sprintf("%d", y)
-	}
-	return ""
-}
-
-// appendSortTag appends a right-aligned dim gray tag to the row parts.
-// It calculates the gap needed to push the tag to the right edge within the given width.
-func appendSortTag(parts []styles.RowPart, tag string, width int) []styles.RowPart {
-	if tag == "" {
-		return parts
-	}
-	used := 2 // left + right margin
-	for _, p := range parts {
-		used += lipgloss.Width(p.Text)
-	}
-	gap := width - used - len(tag)
-	if gap < 1 {
-		gap = 1
-	}
-	dimGray := styles.DimGray
-	return append(parts, styles.RowPart{Text: strings.Repeat(" ", gap) + tag, Foreground: &dimGray})
-}
-
-// formatMonthYear formats a unix timestamp as "Jan 2006"
-func formatMonthYear(ts int64) string {
-	return time.Unix(ts, 0).Format("Jan 2006")
-}
-
-// columnSortable returns true if this column type supports user-facing sorting.
-// Seasons, libraries, playlists, and playlist items keep their natural order.
-func (c *ListColumn) columnSortable() bool {
-	switch c.columnType {
-	case ColumnTypeMovies, ColumnTypeShows, ColumnTypeMixed, ColumnTypeEpisodes:
-		return true
-	default:
-		return false
-	}
-}
-
-// Sort methods
-
-// ApplySort sets the sort field and direction and rebuilds sortedIdx.
-// An active filter survives the re-sort: sorting a filtered list must not
-// silently expand it back to everything.
-func (c *ListColumn) ApplySort(field SortField, dir SortDirection) {
-	c.sortField = field
-	c.sortDir = dir
-	c.cursor = 0
-	c.offset = 0
-
-	c.buildSortedIdx()
-
-	if c.filterActive && c.filterQuery != "" {
-		c.applyFilter()
-	} else {
-		c.filteredIdx = nil
-	}
-}
-
-// SortState returns the current sort field and direction
-func (c *ListColumn) SortState() (SortField, SortDirection) {
-	return c.sortField, c.sortDir
-}
-
-// buildSortedIdx builds the sortedIdx mapping based on current sortField/sortDir
-func (c *ListColumn) buildSortedIdx() {
-	n := len(c.items)
-	if n == 0 {
-		c.sortedIdx = nil
-		return
-	}
-
-	c.sortedIdx = make([]int, n)
-	for i := range c.sortedIdx {
-		c.sortedIdx[i] = i
-	}
-
-	sort.SliceStable(c.sortedIdx, func(a, b int) bool {
-		ia, ib := c.sortedIdx[a], c.sortedIdx[b]
-		cmp := c.compareBySortField(ia, ib)
-		if c.sortDir == SortDesc {
-			return cmp > 0
-		}
-		return cmp < 0
-	})
-}
-
-// compareBySortField compares two items by the current sort field.
-// Returns negative if i < j, 0 if equal, positive if i > j.
-func (c *ListColumn) compareBySortField(i, j int) int {
-	if i >= len(c.items) || j >= len(c.items) {
-		return 0
-	}
-
-	itemI := c.items[i]
-	itemJ := c.items[j]
-
-	switch c.sortField {
-	case SortTitle:
-		ti := strings.ToLower(present(itemI).SortTitle)
-		tj := strings.ToLower(present(itemJ).SortTitle)
-		if ti < tj {
-			return -1
-		}
-		if ti > tj {
-			return 1
-		}
-		return 0
-	case SortDateAdded:
-		ai := present(itemI).AddedAt
-		aj := present(itemJ).AddedAt
-		if ai < aj {
-			return -1
-		}
-		if ai > aj {
-			return 1
-		}
-		return 0
-	case SortLastUpdated:
-		ai := present(itemI).UpdatedAt
-		aj := present(itemJ).UpdatedAt
-		if ai < aj {
-			return -1
-		}
-		if ai > aj {
-			return 1
-		}
-		return 0
-	case SortReleased:
-		yi := present(itemI).Year
-		yj := present(itemJ).Year
-		if yi < yj {
-			return -1
-		}
-		if yi > yj {
-			return 1
-		}
-		return 0
-	case SortDuration:
-		di := present(itemI).Duration
-		dj := present(itemJ).Duration
-		if di < dj {
-			return -1
-		}
-		if di > dj {
-			return 1
-		}
-		return 0
-	case SortRating:
-		ri := present(itemI).Rating
-		rj := present(itemJ).Rating
-		if ri < rj {
-			return -1
-		}
-		if ri > rj {
-			return 1
-		}
-		return 0
-	case SortEpisodeNum:
-		// Compare by season number first, then episode number
-		miI, okI := itemI.(*domain.MediaItem)
-		miJ, okJ := itemJ.(*domain.MediaItem)
-		if okI && okJ {
-			if miI.SeasonNum != miJ.SeasonNum {
-				if miI.SeasonNum < miJ.SeasonNum {
-					return -1
-				}
-				return 1
-			}
-			if miI.EpisodeNum < miJ.EpisodeNum {
-				return -1
-			}
-			if miI.EpisodeNum > miJ.EpisodeNum {
-				return 1
-			}
-		}
-		return 0
-	default:
-		return 0
-	}
+	return input + styles.DimStyle.Render(fmt.Sprintf(" [%d/%d]", c.view.len(), len(c.view.items)))
 }

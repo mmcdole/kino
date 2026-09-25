@@ -198,17 +198,7 @@ func (m *Model) handleSort() tea.Cmd {
 	if top == nil {
 		return nil
 	}
-	var opts []components.SortField
-	switch top.ColumnType() {
-	case components.ColumnTypeMovies:
-		opts = components.MovieSortOptions()
-	case components.ColumnTypeShows:
-		opts = components.ShowSortOptions()
-	case components.ColumnTypeEpisodes:
-		opts = components.EpisodeSortOptions()
-	case components.ColumnTypeMixed:
-		opts = components.MixedSortOptions()
-	}
+	opts := top.SortFields()
 	if opts == nil {
 		return m.notAvailableHere("Sort (s)")
 	}
@@ -337,16 +327,16 @@ func (m *Model) handlePlaylistModal() tea.Cmd {
 // handleDelete handles deletion of playlists or playlist items
 func (m *Model) handleDelete() tea.Cmd {
 	top := m.ColumnStack.Top()
-	if top == nil {
+	r, ok := m.topResource()
+	if top == nil || !ok {
 		return nil
 	}
-	switch top.ColumnType() {
-	case components.ColumnTypePlaylistItems:
-		item := top.SelectedMediaItem()
-		if r, ok := m.topResource(); item != nil && ok {
+	switch r.Kind {
+	case catalog.PlaylistItems:
+		if item := top.SelectedMediaItem(); item != nil {
 			return m.beginMutation(catalog.Mutation{Kind: catalog.RemoveFromPlaylist, PlaylistID: r.ID, ItemID: item.ID})
 		}
-	case components.ColumnTypePlaylists:
+	case catalog.Playlists:
 		// Deleting a playlist is irreversible and server-side: confirm first
 		if playlist := top.SelectedPlaylist(); playlist != nil {
 			m.overlay, m.confirmDelete = overlayConfirmDelete, playlist
@@ -360,8 +350,7 @@ func (m *Model) handleDelete() tea.Cmd {
 
 // handleNewPlaylist opens the new-playlist name input (playlists column only)
 func (m *Model) handleNewPlaylist() tea.Cmd {
-	top := m.ColumnStack.Top()
-	if top == nil || top.ColumnType() != components.ColumnTypePlaylists {
+	if r, ok := m.topResource(); !ok || r.Kind != catalog.Playlists {
 		return nil
 	}
 	m.InputModal.Show("New Playlist")
