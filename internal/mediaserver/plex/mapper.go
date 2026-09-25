@@ -2,10 +2,10 @@ package plex
 
 import (
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/mediaserver/normalize"
 )
 
 // MapLibraries converts Plex directories to domain libraries
@@ -73,16 +73,16 @@ func mapMovie(m Metadata, serverURL string) domain.MediaItem {
 		item.ArtURL = serverURL + m.Art
 	}
 
-	item.ContentRating = normalizeContentRating(m.ContentRating)
+	item.ContentRating = normalize.ContentRating(m.ContentRating)
 	if len(m.Media) > 0 {
 		media := m.Media[0]
 		item.Bitrate = media.Bitrate
 		item.Width = media.Width
 		item.Height = media.Height
-		item.VideoCodec = normalizeCodec(media.VideoCodec)
-		item.AudioCodec = normalizeAudioCodec(media.AudioCodec)
+		item.VideoCodec = normalize.VideoCodec(media.VideoCodec)
+		item.AudioCodec = normalize.AudioCodec(media.AudioCodec)
 		item.AudioChannels = media.AudioChannels
-		item.Container = normalizeContainer(media.Container)
+		item.Container = normalize.Container(media.Container)
 		if len(media.Part) > 0 {
 			item.FileSize = media.Part[0].Size
 		}
@@ -137,7 +137,7 @@ func mapShow(m Metadata, serverURL string) domain.Show {
 		show.ArtURL = serverURL + m.Art
 	}
 
-	show.ContentRating = normalizeContentRating(m.ContentRating)
+	show.ContentRating = normalize.ContentRating(m.ContentRating)
 
 	return show
 }
@@ -226,16 +226,16 @@ func mapEpisode(m Metadata, serverURL string) domain.MediaItem {
 		item.ArtURL = serverURL + m.Art
 	}
 
-	item.ContentRating = normalizeContentRating(m.ContentRating)
+	item.ContentRating = normalize.ContentRating(m.ContentRating)
 	if len(m.Media) > 0 {
 		media := m.Media[0]
 		item.Bitrate = media.Bitrate
 		item.Width = media.Width
 		item.Height = media.Height
-		item.VideoCodec = normalizeCodec(media.VideoCodec)
-		item.AudioCodec = normalizeAudioCodec(media.AudioCodec)
+		item.VideoCodec = normalize.VideoCodec(media.VideoCodec)
+		item.AudioCodec = normalize.AudioCodec(media.AudioCodec)
 		item.AudioChannels = media.AudioChannels
-		item.Container = normalizeContainer(media.Container)
+		item.Container = normalize.Container(media.Container)
 		if len(media.Part) > 0 {
 			item.FileSize = media.Part[0].Size
 		}
@@ -259,74 +259,6 @@ func MapVideoItems(metadata []Metadata, serverURL string) []*domain.MediaItem {
 		}
 	}
 	return items
-}
-
-// normalizeContentRating shortens verbose content rating strings
-func normalizeContentRating(rating string) string {
-	switch strings.ToLower(rating) {
-	case "not rated", "unrated":
-		return "NR"
-	default:
-		return rating
-	}
-}
-
-// normalizeContainer cleans up the container format string
-func normalizeContainer(container string) string {
-	if container == "" {
-		return ""
-	}
-	// Plex may return comma-separated list (e.g. "mov,mp4,m4a,3gp,3g2,mj2"); take first
-	if i := strings.Index(container, ","); i >= 0 {
-		container = container[:i]
-	}
-	return strings.ToLower(container)
-}
-
-// normalizeCodec converts video codec names to display format
-func normalizeCodec(codec string) string {
-	switch strings.ToLower(codec) {
-	case "hevc", "h265":
-		return "HEVC"
-	case "h264", "avc":
-		return "H.264"
-	case "mpeg4":
-		return "MPEG4"
-	case "vc1":
-		return "VC-1"
-	case "vp9":
-		return "VP9"
-	case "av1":
-		return "AV1"
-	default:
-		return strings.ToUpper(codec)
-	}
-}
-
-// normalizeAudioCodec converts audio codec names to display format
-func normalizeAudioCodec(codec string) string {
-	switch strings.ToLower(codec) {
-	case "aac":
-		return "AAC"
-	case "ac3":
-		return "AC3"
-	case "eac3":
-		return "EAC3"
-	case "dca", "dts":
-		return "DTS"
-	case "truehd":
-		return "TrueHD"
-	case "flac":
-		return "FLAC"
-	case "mp3":
-		return "MP3"
-	case "opus":
-		return "Opus"
-	case "vorbis":
-		return "Vorbis"
-	default:
-		return strings.ToUpper(codec)
-	}
 }
 
 // MapPlaylists converts Plex metadata to domain playlists
