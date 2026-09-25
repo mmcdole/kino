@@ -9,13 +9,26 @@ import (
 	"github.com/mmcdole/kino/internal/domain"
 )
 
-func seedStore(t *testing.T, dir string) *Store {
+// snapshotStore is what the catalog needs from both cache implementations.
+type snapshotStore interface {
+	Load(string) (domain.CachedList, bool)
+	Save(string, domain.CachedList) error
+	Update([]string, func(map[string]domain.CachedList) map[string]domain.CachedList) ([]string, error)
+	Close() error
+}
+
+func openStore(t *testing.T) *Store {
 	t.Helper()
-	s, err := Open(dir, "http://test", "user1")
+	s, err := Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
+	return s
+}
+
+func seedStore[S snapshotStore](t *testing.T, s S) S {
+	t.Helper()
 	entries := map[string][]domain.ListItem{
 		"movies":   {&domain.MediaItem{ID: "movie", Title: "Movie"}},
 		"episodes": {&domain.MediaItem{ID: "episode", Type: domain.MediaTypeEpisode, ShowID: "show", ParentID: "season", ViewOffset: time.Minute}},
@@ -32,7 +45,7 @@ func seedStore(t *testing.T, dir string) *Store {
 }
 
 // watch applies a watch change the way the catalog does.
-func watch(s *Store, played bool) ([]string, error) {
+func watch(s snapshotStore, played bool) ([]string, error) {
 	change := domain.WatchChange{ItemID: "episode", ShowID: "show", SeasonID: "season", Played: played}
 	return s.Update(change.IDs(), func(lists map[string]domain.CachedList) map[string]domain.CachedList {
 		items := make(map[string][]domain.ListItem)
@@ -52,11 +65,11 @@ func watch(s *Store, played bool) ([]string, error) {
 func TestWatchStateSnapshotsAreAtomicAndIdempotent(t *testing.T) {
 	for _, persistent := range []bool{false, true} {
 		t.Run(fmt.Sprint(persistent), func(t *testing.T) {
-			dir := ""
+			var s snapshotStore = NewMemory()
 			if persistent {
-				dir = t.TempDir()
+				s = openStore(t)
 			}
-			s := seedStore(t, dir)
+			seedStore(t, s)
 			original, _ := s.Load("episodes")
 			var wg sync.WaitGroup
 			for range 32 {
@@ -103,7 +116,7 @@ func TestWatchStateSnapshotsAreAtomicAndIdempotent(t *testing.T) {
 }
 
 func TestSnapshotRoundTripPreservesExpiryAndDetachedEntities(t *testing.T) {
-	s := seedStore(t, t.TempDir())
+	s := seedStore(t, openStore(t))
 	stale := domain.CachedList{Items: []domain.ListItem{&domain.Playlist{ID: "p"}}, FetchedAt: time.Now().Add(-24 * time.Hour), Version: 12}
 	if err := s.Save("stale", stale); err != nil {
 		t.Fatal(err)

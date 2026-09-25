@@ -7,7 +7,7 @@ import (
 )
 
 func TestFailedWritesDoNotLeaveReadableMemoryCopy(t *testing.T) {
-	s := seedStore(t, t.TempDir())
+	s := seedStore(t, openStore(t))
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}

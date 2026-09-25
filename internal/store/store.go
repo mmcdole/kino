@@ -1,14 +1,9 @@
 package store
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/mmcdole/kino/internal/domain"
@@ -25,29 +20,14 @@ type listItemWrapper struct {
 	Playlist *domain.Playlist  `json:"playlist,omitempty"`
 }
 
-// Store uses BoltDB as the authoritative cache. Memory-only mode is
-// used when persistence is unavailable. mu serializes complete mutations,
-// including watch-state changes spanning several buckets.
+// Store is the persistent snapshot cache, backed by BoltDB. Bolt serializes
+// writers and gives readers consistent views, so Store needs no locking.
 type Store struct {
-	db    *bolt.DB
-	mu    sync.RWMutex
-	cache map[string][]byte // used only in memory-only mode
+	db *bolt.DB
 }
 
-// Open opens (or creates) the cache for one server+user pair.
-// The user ID is part of the cache key: watch status, view offsets, and
-// playlists are per-user, so two accounts on the same server must not share
-// a cache. (Plex configs have no user ID; those stay keyed by URL alone.)
-func Open(baseCacheDir, serverURL, userID string) (*Store, error) {
-	if baseCacheDir == "" {
-		// Memory-only mode (no persistence)
-		return &Store{cache: make(map[string][]byte)}, nil
-	}
-
-	dir := baseCacheDir
-	if serverURL != "" {
-		dir = filepath.Join(baseCacheDir, hashServerURL(serverURL+"|"+userID))
-	}
+// Open opens (or creates) the cache database in dir.
+func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
 	}
@@ -81,13 +61,7 @@ func Open(baseCacheDir, serverURL, userID string) (*Store, error) {
 	// JSON cache files are not read by this store.
 	cleanupLegacyJSONCache(dir)
 
-	return &Store{db: db, cache: make(map[string][]byte)}, nil
-}
-
-func hashServerURL(serverURL string) string {
-	normalized := strings.TrimRight(strings.ToLower(serverURL), "/")
-	hash := sha256.Sum256([]byte(normalized))
-	return hex.EncodeToString(hash[:6])
+	return &Store{db: db}, nil
 }
 
 // cleanupLegacyJSONCache removes JSON files that are not used by snapshot storage.
@@ -101,43 +75,9 @@ func cleanupLegacyJSONCache(cacheDir string) {
 	}
 }
 
+// Close waits for open transactions and closes the database.
 func (s *Store) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.db != nil {
-		return s.db.Close()
-	}
-	return nil
-}
-
-func (s *Store) get(bucket []byte, key string, dest any) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.db == nil {
-		return json.Unmarshal(s.cache[string(bucket)+":"+key], dest) == nil
-	}
-	// Decode inside the read transaction; no promoted copy can outlive deletion.
-	return s.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket(bucket)
-		if b == nil {
-			return fmt.Errorf("cache bucket missing")
-		}
-		return json.Unmarshal(b.Get([]byte(key)), dest)
-	}) == nil
-}
-
-func (s *Store) set(bucket []byte, key string, value any) error {
-	data, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.db != nil {
-		return s.db.Update(func(tx *bolt.Tx) error { return tx.Bucket(bucket).Put([]byte(key), data) })
-	}
-	s.cache[string(bucket)+":"+key] = data
-	return nil
+	return s.db.Close()
 }
 
 // wrapListItems converts domain.ListItem slice to serializable wrappers

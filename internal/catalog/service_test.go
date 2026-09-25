@@ -28,12 +28,9 @@ func (f fakeBackend) GetLibraryItemCount(ctx context.Context, _, _ string) (int,
 	return f.count(ctx)
 }
 
-func testService(t *testing.T, backend Backend) (*Service, *store.Store) {
+func testService(t *testing.T, backend Backend) (*Service, *store.Memory) {
 	t.Helper()
-	cache, err := store.Open("", "", "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	cache := store.NewMemory()
 	service := NewService(context.Background(), backend, cache)
 	t.Cleanup(service.Close)
 	return service, cache

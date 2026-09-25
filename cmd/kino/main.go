@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -25,6 +26,12 @@ import (
 
 // Version is set at build time via -ldflags
 var Version = "dev"
+
+// snapshotCache is the catalog's cache plus the shutdown hook main needs.
+type snapshotCache interface {
+	catalog.Cache
+	io.Closer
+}
 
 // clearSpinnerLine clears the spinner line from the terminal
 const clearSpinnerLine = "\r                                    \r"
@@ -79,20 +86,22 @@ func run() error {
 		return fmt.Errorf("failed to create media client: %w", err)
 	}
 
-	// Create store (persistence layer)
-	libraryStore, err := store.Open(config.DefaultCachePath(), cfg.Server.URL, cfg.Server.UserID)
-	if err != nil {
+	// The disk cache enables offline browsing; without it, cache in memory.
+	var cache snapshotCache
+	if disk, err := store.Open(config.CacheDir(cfg.Server.URL, cfg.Server.UserID)); err == nil {
+		cache = disk
+	} else {
 		logger.Warn("store unavailable, continuing memory-only", "error", err)
-		libraryStore, _ = store.Open("", "", "") // Memory-only fallback
+		cache = store.NewMemory()
 	}
-	defer libraryStore.Close() // Clean shutdown
+	defer cache.Close()
 
 	// Create launcher (uses configured player or auto-detects)
 	launcher := player.NewLauncher(cfg.Player.Command, cfg.Player.Args, cfg.Player.StartFlag, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	catalogSvc := catalog.NewService(ctx, client, libraryStore)
+	catalogSvc := catalog.NewService(ctx, client, cache)
 	defer catalogSvc.Close()
 	playbackSvc := player.NewService(launcher, client, logger)
 	model := tui.NewModel(ctx, catalogSvc, playbackSvc, search.NewIndex(), cfg.UI)
@@ -115,7 +124,7 @@ func run() error {
 	cancel()
 	catalogSvc.Close()
 	if final, ok := result.(tui.Model); ok && final.LoggedOut {
-		if err := libraryStore.Close(); err != nil {
+		if err := cache.Close(); err != nil {
 			return err
 		}
 		if err := config.ClearCache(); err != nil {
