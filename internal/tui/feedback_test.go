@@ -123,3 +123,20 @@ func TestNetworkIndicatorTracksAllSubscribersAndNavigation(t *testing.T) {
 		t.Fatal("abandoned view left library spinning")
 	}
 }
+
+func TestSpinnerTicksOnlyWhileSomethingAnimates(t *testing.T) {
+	m := testModel(t)
+	if _, cmd := m.Update(TickMsg{}); cmd != nil || m.ticking {
+		t.Fatal("idle model scheduled another tick")
+	}
+	r := catalog.Resource{Kind: catalog.Seasons, ID: "show", ShowID: "show", LibraryID: "a"}
+	m.pushColumn(r, "Show")
+	m = showSpinner(m, fetching(catalog.State{Resource: r}, 1))
+	if !m.ticking {
+		t.Fatal("a visible spinner did not start ticking")
+	}
+	m = publish(m, state(r, 1, "s1"))
+	if _, cmd := m.Update(TickMsg{}); cmd != nil || m.ticking {
+		t.Fatal("tick continued after the spinner stopped")
+	}
+}

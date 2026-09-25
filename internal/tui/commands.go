@@ -53,8 +53,9 @@ func LoadPlaylistModalDataCmd(svc Catalog, req request, item domain.MediaItem) t
 		return PlaylistModalDataMsg{Request: req, Membership: membership, Item: item, Err: err}
 	}
 }
-func TickCmd(delay time.Duration) tea.Cmd {
-	return tea.Tick(delay, func(time.Time) tea.Msg { return TickMsg{} })
+// tick advances spinner animation by one frame.
+func tick() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return TickMsg{} })
 }
 func LogoutCmd(session Session) tea.Cmd {
 	return func() tea.Msg { return LogoutCompleteMsg{Error: session.Logout()} }

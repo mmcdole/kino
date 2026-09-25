@@ -141,13 +141,7 @@ func (m *Model) renderFooter() string {
 		right = RenderSpinner(m.SpinnerFrame) + styles.DimStyle.Render(fmt.Sprintf(" %d syncing", n)) + "   " + right
 	}
 
-	pending := 0
-	for owner := range m.requests.active {
-		if strings.HasPrefix(owner, "mutation:") || strings.HasPrefix(owner, "playback:") {
-			pending++
-		}
-	}
-	if pending > 0 {
+	if pending := m.pendingActions(); pending > 0 {
 		right = RenderSpinner(m.SpinnerFrame) + styles.DimStyle.Render(fmt.Sprintf(" %d pending", pending)) + "   " + right
 	}
 

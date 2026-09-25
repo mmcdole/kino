@@ -22,12 +22,10 @@ func showLoadingCmd(key string, attempt uint64) tea.Cmd {
 func (m *Model) updateResourceFeedback(r catalog.Resource) {
 	key := r.Key()
 	st := m.collections[key]
-	_, view := m.requests.active[viewOwner(r)]
-	_, sync := m.requests.active[syncOwner(r)]
-	pending := view || sync
+	pending := m.pending(r)
 
 	var activity components.LoadActivity
-	if pending && st.Fetching && st.Attempt != 0 && m.indicators[key] == st.Attempt {
+	if m.showsActivity(st) {
 		activity = components.LoadActivity{Visible: true, Loaded: st.Progress.Loaded, Total: st.Progress.Total}
 	}
 	feedback := components.CollectionFeedback{
@@ -43,4 +41,17 @@ func (m *Model) updateResourceFeedback(r catalog.Resource) {
 		m.LibraryStates[id] = feedback
 		m.updateLibraryStates()
 	}
+}
+
+// pending reports whether this model is waiting on a load of r.
+func (m *Model) pending(r catalog.Resource) bool {
+	_, view := m.requests.active[viewOwner(r)]
+	_, sync := m.requests.active[syncOwner(r)]
+	return view || sync
+}
+
+// showsActivity reports whether a collection's spinner is on screen: this
+// model is waiting on it, and its server attempt has outlasted the delay.
+func (m *Model) showsActivity(st catalog.State) bool {
+	return st.Fetching && st.Attempt != 0 && m.indicators[st.Resource.Key()] == st.Attempt && m.pending(st.Resource)
 }
