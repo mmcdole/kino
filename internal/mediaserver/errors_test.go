@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/mediaserver"
 	"github.com/mmcdole/kino/internal/mediaserver/jellyfin"
 	"github.com/mmcdole/kino/internal/mediaserver/plex"
 )
@@ -27,7 +28,7 @@ func TestBackendCancellationAndNotFound(t *testing.T) {
 				<-r.Context().Done()
 			}))
 			defer server.Close()
-			var client domain.PlaybackClient
+			var client mediaserver.MediaSource
 			if backend == "plex" {
 				client = plex.NewClient(server.URL, "token", "device", nil)
 			} else {

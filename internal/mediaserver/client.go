@@ -4,18 +4,18 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/mmcdole/kino/internal/catalog"
 	"github.com/mmcdole/kino/internal/config"
-	"github.com/mmcdole/kino/internal/domain"
 	"github.com/mmcdole/kino/internal/mediaserver/jellyfin"
 	"github.com/mmcdole/kino/internal/mediaserver/plex"
+	"github.com/mmcdole/kino/internal/player"
 )
 
-// MediaSource combines all client interfaces that a media server backend must implement.
-// The application consumes browsing, playback, and playlist operations.
+// MediaSource is everything the application needs from a media server
+// backend: catalog browsing and mutations, and playable URL resolution.
 type MediaSource interface {
-	domain.LibraryClient  // Browsing: GetLibraries, GetMovies, GetShows, GetSeasons, GetEpisodes
-	domain.PlaybackClient // Playback: ResolvePlayableURL, MarkPlayed/Unplayed
-	domain.PlaylistClient // Playlists: GetPlaylists, CreatePlaylist, AddToPlaylist, etc.
+	catalog.Backend
+	player.URLResolver
 }
 
 // NewClient creates a new MediaSource based on the server type.

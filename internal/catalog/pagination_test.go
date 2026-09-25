@@ -3,8 +3,9 @@ package catalog
 import (
 	"context"
 	"errors"
-	"github.com/mmcdole/kino/internal/domain"
 	"testing"
+
+	"github.com/mmcdole/kino/internal/domain"
 )
 
 func TestPaginationDeduplicatesAndHandlesUnknownTotal(t *testing.T) {

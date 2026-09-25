@@ -7,7 +7,7 @@ import (
 	"github.com/mmcdole/kino/internal/domain"
 )
 
-func (s *Service) fetch(ctx context.Context, r Resource, progress domain.ProgressFunc) ([]domain.ListItem, error) {
+func (s *Service) fetch(ctx context.Context, r Resource, progress progressFunc) ([]domain.ListItem, error) {
 	switch r.Kind {
 	case Libraries:
 		libs, err := s.backend.GetLibraries(ctx)

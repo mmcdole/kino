@@ -2,8 +2,12 @@ package catalog
 
 import (
 	"context"
+
 	"github.com/mmcdole/kino/internal/domain"
 )
+
+// progressFunc reports pagination progress: (50, 500), (100, 500), ...
+type progressFunc func(loaded, total int)
 
 // fetchAll is a generic pagination helper. Items are deduplicated by ID:
 // offset pagination under concurrent server-side mutation can shift pages
@@ -14,7 +18,7 @@ func fetchAll[T domain.ListItem](
 	ctx context.Context,
 	fetch func(ctx context.Context, offset, limit int) ([]T, int, error),
 	chunkSize int,
-	onProgress domain.ProgressFunc,
+	onProgress progressFunc,
 ) ([]T, error) {
 	if chunkSize <= 0 {
 		chunkSize = 50
