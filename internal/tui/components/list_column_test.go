@@ -28,7 +28,7 @@ func selectedID(t *testing.T, c *ListColumn) string {
 // ReplaceItems must keep the cursor on the same item when content is swapped
 // (background refresh), even when new items shift its position.
 func TestReplaceItemsPreservesCursorByID(t *testing.T) {
-	c := NewListColumn(ColumnTypeMovies, "Movies")
+	c := NewListColumn("Movies", ColumnOptions{SortFields: MovieSortOptions(), DefaultSort: SortTitle})
 	c.SetSize(40, 20)
 	c.SetItems(testMovies("Alpha", "Bravo", "Charlie"))
 
@@ -51,7 +51,7 @@ func TestReplaceItemsPreservesCursorByID(t *testing.T) {
 // When the selected item disappears, the cursor falls back to a clamped index
 // rather than jumping to the top.
 func TestReplaceItemsFallbackClampedIndex(t *testing.T) {
-	c := NewListColumn(ColumnTypeMovies, "Movies")
+	c := NewListColumn("Movies", ColumnOptions{SortFields: MovieSortOptions(), DefaultSort: SortTitle})
 	c.SetSize(40, 20)
 	c.SetItems(testMovies("Alpha", "Bravo", "Charlie"))
 	c.SetSelectedIndex(2) // Charlie
@@ -65,7 +65,7 @@ func TestReplaceItemsFallbackClampedIndex(t *testing.T) {
 
 // Sort survives a refresh swap.
 func TestReplaceItemsPreservesSort(t *testing.T) {
-	c := NewListColumn(ColumnTypeMovies, "Movies")
+	c := NewListColumn("Movies", ColumnOptions{SortFields: MovieSortOptions(), DefaultSort: SortTitle})
 	c.SetSize(40, 20)
 	c.SetItems(testMovies("Alpha", "Bravo"))
 	c.ApplySort(SortTitle, SortDesc)
@@ -85,7 +85,7 @@ func TestReplaceItemsPreservesSort(t *testing.T) {
 
 // An empty column (fresh drill-in) behaves exactly like SetItems.
 func TestReplaceItemsOnEmptyColumn(t *testing.T) {
-	c := NewListColumn(ColumnTypeMovies, "Movies")
+	c := NewListColumn("Movies", ColumnOptions{SortFields: MovieSortOptions(), DefaultSort: SortTitle})
 	c.SetSize(40, 20)
 	c.SetFeedback(CollectionFeedback{Pending: true})
 
@@ -99,20 +99,28 @@ func TestReplaceItemsOnEmptyColumn(t *testing.T) {
 	}
 }
 
-func TestColumnIdentitySurvivesEmptyAndMixedPayloads(t *testing.T) {
-	for _, kind := range []ColumnType{ColumnTypeLibraries, ColumnTypeEpisodes, ColumnTypePlaylistItems, ColumnTypeMixed} {
-		c := NewListColumn(kind, "test")
+func TestRowsFollowItemTypeNotColumn(t *testing.T) {
+	episode := &domain.MediaItem{ID: "e", Title: "Pilot", Type: domain.MediaTypeEpisode, ShowTitle: "Show", SeasonNum: 1, EpisodeNum: 1}
+	for _, test := range []struct {
+		opts ColumnOptions
+		want string
+	}{
+		{ColumnOptions{}, "S01E01 Pilot"},
+		{ColumnOptions{ShowParent: true}, "Show - S01E01 Pilot"},
+	} {
+		c := NewListColumn("test", test.opts)
+		c.SetSize(60, 10)
 		c.SetItems(nil)
-		c.ReplaceItems([]domain.ListItem{&domain.MediaItem{ID: "episode", Type: domain.MediaTypeEpisode}})
-		c.ReplaceItems(nil)
-		if c.ColumnType() != kind {
-			t.Fatalf("column %v became %v", kind, c.ColumnType())
+		c.ReplaceItems([]domain.ListItem{episode, &domain.Show{ID: "s", Title: "Mixed Show", Year: 2020}})
+		view := c.View()
+		if !strings.Contains(view, test.want) || !strings.Contains(view, "Mixed Show (2020)") {
+			t.Fatalf("rows ignored item types: %s", view)
 		}
 	}
 }
 
 func TestLoadFailureAndRetryKeepCachedContentVisible(t *testing.T) {
-	c := NewListColumn(ColumnTypeMovies, "Movies")
+	c := NewListColumn("Movies", ColumnOptions{SortFields: MovieSortOptions(), DefaultSort: SortTitle})
 	c.SetSize(50, 20)
 	c.SetFeedback(CollectionFeedback{Pending: true})
 	c.SetFeedback(CollectionFeedback{Error: errors.New("offline")})

@@ -13,7 +13,7 @@ func TestLibraryCountVisibilityIsIndependentOfActivity(t *testing.T) {
 	for _, show := range []bool{false, true} {
 		for _, count := range []int{0, 12} {
 			for _, active := range []bool{false, true} {
-				c := NewListColumn(ColumnTypeLibraries, "Libraries")
+				c := NewListColumn("Libraries", ColumnOptions{})
 				c.SetShowLibraryCounts(show)
 				c.SetItems([]domain.ListItem{&domain.Library{ID: "lib", Name: "Movies"}})
 				c.SetSize(40, 20)
@@ -54,7 +54,7 @@ func TestInspectorDistinguishesUnknownZeroAndProgress(t *testing.T) {
 }
 
 func TestColumnIndicatorDoesNotMoveTitleOrHideContent(t *testing.T) {
-	c := NewListColumn(ColumnTypeMovies, "Movies")
+	c := NewListColumn("Movies", ColumnOptions{SortFields: MovieSortOptions(), DefaultSort: SortTitle})
 	c.SetSize(40, 20)
 	c.SetItems(testMovies("Alpha"))
 	c.SetFeedback(CollectionFeedback{Pending: true})
@@ -72,7 +72,7 @@ func TestColumnIndicatorDoesNotMoveTitleOrHideContent(t *testing.T) {
 }
 
 func TestFailedRefreshKeepsKnownEmptyCollectionAndRetry(t *testing.T) {
-	c := NewListColumn(ColumnTypeMovies, "Movies")
+	c := NewListColumn("Movies", ColumnOptions{SortFields: MovieSortOptions(), DefaultSort: SortTitle})
 	c.SetSize(40, 20)
 	c.SetItems(nil)
 	c.SetFeedback(CollectionFeedback{Error: errors.New("offline")})
