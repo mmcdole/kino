@@ -140,47 +140,6 @@ func (s *Store) set(bucket []byte, key string, value any) error {
 	return nil
 }
 
-type cacheDeletion struct {
-	bucket []byte
-	key    string
-	prefix bool
-}
-
-// deleteEntries commits a cascade as a single mutation in either storage mode.
-func (s *Store) deleteEntries(entries ...cacheDeletion) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.db == nil {
-		for _, entry := range entries {
-			prefix := string(entry.bucket) + ":" + entry.key
-			for key := range s.cache {
-				if key == prefix || (entry.prefix && strings.HasPrefix(key, prefix)) {
-					delete(s.cache, key)
-				}
-			}
-		}
-		return nil
-	}
-	return s.db.Update(func(tx *bolt.Tx) error {
-		for _, entry := range entries {
-			b := tx.Bucket(entry.bucket)
-			if !entry.prefix {
-				if err := b.Delete([]byte(entry.key)); err != nil {
-					return err
-				}
-				continue
-			}
-			cursor := b.Cursor()
-			for k, _ := cursor.Seek([]byte(entry.key)); k != nil && strings.HasPrefix(string(k), entry.key); k, _ = cursor.Next() {
-				if err := cursor.Delete(); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
-	})
-}
-
 func clampCount(n, max int) int {
 	if n < 0 {
 		return 0

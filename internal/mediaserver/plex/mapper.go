@@ -261,51 +261,6 @@ func MapVideoItems(metadata []Metadata, serverURL string) []*domain.MediaItem {
 	return items
 }
 
-// MapSearchResults converts Plex search metadata to domain media items.
-// Unlike MapVideoItems it includes TV shows, mirroring the Jellyfin backend
-// so global search finds shows on both.
-func MapSearchResults(metadata []Metadata, serverURL string) []*domain.MediaItem {
-	items := make([]*domain.MediaItem, 0, len(metadata))
-	for _, m := range metadata {
-		switch m.Type {
-		case "movie":
-			item := mapMovie(m, serverURL)
-			items = append(items, &item)
-		case "episode":
-			item := mapEpisode(m, serverURL)
-			items = append(items, &item)
-		case "show":
-			items = append(items, &domain.MediaItem{
-				ID:        m.RatingKey,
-				Title:     m.Title,
-				SortTitle: m.TitleSort,
-				Summary:   m.Summary,
-				Year:      m.Year,
-				AddedAt:   m.AddedAt,
-				UpdatedAt: m.UpdatedAt,
-				Rating:    m.AudienceRating,
-				Type:      domain.MediaTypeShow,
-			})
-		}
-	}
-	return items
-}
-
-// MapMediaItem converts a single Plex metadata to domain media item
-func MapMediaItem(m Metadata, serverURL string) domain.MediaItem {
-	switch m.Type {
-	case "movie":
-		return mapMovie(m, serverURL)
-	case "episode":
-		return mapEpisode(m, serverURL)
-	default:
-		return domain.MediaItem{
-			ID:    m.RatingKey,
-			Title: m.Title,
-		}
-	}
-}
-
 // normalizeContentRating shortens verbose content rating strings
 func normalizeContentRating(rating string) string {
 	switch strings.ToLower(rating) {

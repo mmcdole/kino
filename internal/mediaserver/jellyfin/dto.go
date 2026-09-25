@@ -121,24 +121,3 @@ type PlaybackInfoResponse struct {
 	MediaSources  []MediaSource `json:"MediaSources"`
 	PlaySessionID string        `json:"PlaySessionId"`
 }
-
-// SearchHint represents a search result from Jellyfin
-type SearchHint struct {
-	ID                string `json:"Id"`
-	Name              string `json:"Name"`
-	Type              string `json:"Type"`
-	RunTimeTicks      int64  `json:"RunTimeTicks,omitempty"`
-	ProductionYear    int    `json:"ProductionYear,omitempty"`
-	ParentIndexNumber int    `json:"ParentIndexNumber,omitempty"`
-	IndexNumber       int    `json:"IndexNumber,omitempty"`
-	SeriesName        string `json:"Series,omitempty"`
-	Album             string `json:"Album,omitempty"`
-	PrimaryImageTag   string `json:"PrimaryImageTag,omitempty"`
-	ThumbImageTag     string `json:"ThumbImageTag,omitempty"`
-}
-
-// SearchHintsResponse represents search results from Jellyfin
-type SearchHintsResponse struct {
-	SearchHints      []SearchHint `json:"SearchHints"`
-	TotalRecordCount int          `json:"TotalRecordCount"`
-}

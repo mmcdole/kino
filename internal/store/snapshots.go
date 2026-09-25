@@ -28,14 +28,6 @@ func (s *Store) Save(key string, data domain.CachedList) error {
 	return s.set(bucketSnapshots, key, storedSnapshot{Items: wrapListItems(data.Items), FetchedAt: data.FetchedAt, Version: data.Version})
 }
 
-func (s *Store) Remove(keys ...string) error {
-	entries := make([]cacheDeletion, 0, len(keys))
-	for _, key := range keys {
-		entries = append(entries, cacheDeletion{bucketSnapshots, key, false})
-	}
-	return s.deleteEntries(entries...)
-}
-
 // PatchWatchState updates every cached projection in one transaction. Parent
 // counters are adjusted once, even when an episode occurs in several lists.
 func (s *Store) PatchWatchState(itemID string, played bool) error {

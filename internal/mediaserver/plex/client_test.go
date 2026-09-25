@@ -107,33 +107,6 @@ func TestScrobbleIdentifierParam(t *testing.T) {
 	}
 }
 
-// Global search results include TV shows (parity with the Jellyfin backend).
-func TestSearchIncludesShows(t *testing.T) {
-	c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"MediaContainer":{"Metadata":[
-			{"ratingKey":"1","title":"A Movie","type":"movie"},
-			{"ratingKey":"2","title":"A Show","type":"show","year":2020}
-		]}}`))
-	}))
-
-	results, err := c.Search(context.Background(), "a")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(results) != 2 {
-		t.Fatalf("got %d results, want 2 (show dropped?)", len(results))
-	}
-	var foundShow bool
-	for _, r := range results {
-		if r.Type == domain.MediaTypeShow && r.Title == "A Show" {
-			foundShow = true
-		}
-	}
-	if !foundShow {
-		t.Fatal("show missing from search results")
-	}
-}
-
 func TestPlaylistIdentityIsLazySharedAndRetryable(t *testing.T) {
 	for _, payload := range []string{
 		`<MediaContainer machineIdentifier="server1"/>`,

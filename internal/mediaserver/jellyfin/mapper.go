@@ -294,46 +294,6 @@ func mapEpisode(item Item, serverURL string) domain.MediaItem {
 	return mi
 }
 
-// MapSearchResults converts Jellyfin search hints to domain media items
-func MapSearchResults(hints []SearchHint, serverURL string) []*domain.MediaItem {
-	items := make([]*domain.MediaItem, 0, len(hints))
-	for _, hint := range hints {
-		item := mapSearchHint(hint, serverURL)
-		if item != nil {
-			items = append(items, item)
-		}
-	}
-	return items
-}
-
-// mapSearchHint converts a Jellyfin search hint to a domain media item
-func mapSearchHint(hint SearchHint, serverURL string) *domain.MediaItem {
-	var mediaType domain.MediaType
-	switch hint.Type {
-	case "Movie":
-		mediaType = domain.MediaTypeMovie
-	case "Episode":
-		mediaType = domain.MediaTypeEpisode
-	case "Series":
-		mediaType = domain.MediaTypeShow
-	default:
-		return nil // Skip non-video types
-	}
-
-	item := &domain.MediaItem{
-		ID:         hint.ID,
-		Title:      hint.Name,
-		Year:       hint.ProductionYear,
-		Duration:   ticksToDuration(hint.RunTimeTicks),
-		Type:       mediaType,
-		ShowTitle:  hint.SeriesName,
-		SeasonNum:  hint.ParentIndexNumber,
-		EpisodeNum: hint.IndexNumber,
-	}
-
-	return item
-}
-
 // ticksToDuration converts Jellyfin 100-nanosecond ticks to time.Duration
 func ticksToDuration(ticks int64) time.Duration {
 	return time.Duration(ticks * 100) // 100ns per tick

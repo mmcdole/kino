@@ -104,9 +104,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Let the focused column handle remaining keys (j/k/g/G navigation)
 	if top := m.ColumnStack.Top(); top != nil {
-		newCol, cmd := top.Update(msg)
-		m.ColumnStack.UpdateTop(newCol)
-		if cmd != nil {
+		if _, cmd := top.Update(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	}
@@ -347,7 +345,7 @@ func (m Model) handlePlaylistModal() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	item := top.SelectedMediaItem()
-	if item == nil || m.Catalog == nil {
+	if item == nil {
 		return m.notAvailableHere("Playlists (space)")
 	}
 	m.PlaylistModal.BeginLoading(item)
@@ -536,7 +534,6 @@ func (m Model) handleFilterTypingInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 	if top == nil {
 		return false, m, nil
 	}
-	newCol, _ := top.Update(msg)
-	m.ColumnStack.UpdateTop(newCol)
+	top.Update(msg)
 	return true, m, nil
 }

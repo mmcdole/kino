@@ -213,8 +213,8 @@ func TestFormatSeekArgs(t *testing.T) {
 
 func TestLookupSeekFlagForAbsoluteWindowsPath(t *testing.T) {
 	l := NewLauncher("", nil, "", nil)
-	got := l.lookupSeekFlag(`/mnt/c/Program Files/VideoLAN/VLC/vlc.exe`)
-	if got != "--start-time=%d" {
+	player, _ := l.lookupPlayerDef(`/mnt/c/Program Files/VideoLAN/VLC/vlc.exe`)
+	if got := player.SeekFlag; got != "--start-time=%d" {
 		t.Fatalf("seek flag = %q, want --start-time=%%d", got)
 	}
 }

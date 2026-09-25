@@ -383,25 +383,6 @@ func (c *Client) GetEpisodes(ctx context.Context, seasonID string) ([]*domain.Me
 	return MapEpisodes(container.Metadata, c.baseURL), nil
 }
 
-// Search performs a search across all libraries
-func (c *Client) Search(ctx context.Context, query string) ([]*domain.MediaItem, error) {
-	params := url.Values{}
-	params.Set("query", query)
-	params.Set("limit", "50") // match the Jellyfin backend's result cap
-
-	body, err := c.doRequest(ctx, http.MethodGet, "/search", params)
-	if err != nil {
-		return nil, err
-	}
-
-	container, err := c.parseResponse(body)
-	if err != nil {
-		return nil, err
-	}
-
-	return MapSearchResults(container.Metadata, c.baseURL), nil
-}
-
 // ResolvePlayableURL returns a direct playback URL for an item
 func (c *Client) ResolvePlayableURL(ctx context.Context, itemID string) (string, error) {
 	path := fmt.Sprintf("/library/metadata/%s", itemID)
