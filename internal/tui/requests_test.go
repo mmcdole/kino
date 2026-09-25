@@ -29,7 +29,15 @@ func snapshot(r catalog.Resource, revision uint64, ids ...string) catalog.Snapsh
 	}
 	return result
 }
+
+// state is a published collection state holding a validated snapshot.
+func state(r catalog.Resource, revision uint64, ids ...string) catalog.State {
+	return catalog.State{Resource: r, Known: true, Snapshot: snapshot(r, revision, ids...)}
+}
 func updateModel(m Model, msg tea.Msg) Model { next, _ := m.Update(msg); return next.(Model) }
+func publish(m Model, states ...catalog.State) Model {
+	return updateModel(m, StatesMsg(states))
+}
 
 func TestFailureFromAbandonedViewCannotFailCurrentLoad(t *testing.T) {
 	m := testModel(t)
@@ -39,7 +47,7 @@ func TestFailureFromAbandonedViewCannotFailCurrentLoad(t *testing.T) {
 	next, _ := m.handleBack()
 	m = next.(Model)
 	m.pushColumn(b, "B")
-	m = updateModel(m, ResourceMsg{Request: old, Stage: loadFinished, Err: errors.New("A failed")})
+	m = updateModel(m, LoadDoneMsg{Request: old, Err: errors.New("A failed")})
 	if !m.ColumnStack.Top().IsLoading() {
 		t.Fatal("abandoned request failed the current view")
 	}
@@ -48,42 +56,29 @@ func TestFailureFromAbandonedViewCannotFailCurrentLoad(t *testing.T) {
 	}
 }
 
-func TestLateSameResourceResponseCannotReplaceNewRefresh(t *testing.T) {
-	m := testModel(t)
-	r := catalog.LibraryResource(m.Libraries[0])
-	m.pushColumn(r, "A")
-	old := m.requests.active[viewOwner(r)]
-	m.loadResource(r, catalog.Refresh, false)
-	fresh := m.requests.active[viewOwner(r)]
-	m = updateModel(m, ResourceMsg{Request: fresh, Stage: loadFinished, Snapshot: snapshot(r, 2, "new")})
-	m = updateModel(m, ResourceMsg{Request: old, Stage: loadFinished, Snapshot: snapshot(r, 1, "old")})
-	if got := m.ColumnStack.Top().SelectedMediaItem(); got == nil || got.ID != "new" {
-		t.Fatal("late response replaced new data")
-	}
-}
-
 func TestBackgroundCompletionUpdatesOpenCachedView(t *testing.T) {
 	m := testModel(t)
 	r := catalog.LibraryResource(m.Libraries[0])
 	m.pushColumn(r, "A")
 	view := m.requests.active[viewOwner(r)]
-	cached := snapshot(r, 0, "old")
-	cached.FromCache = true
-	m = updateModel(m, ResourceMsg{Request: view, Stage: loadCached, Snapshot: cached})
+	cached := state(r, 0, "old")
+	cached.Snapshot.FromCache, cached.Snapshot.Validated, cached.Fetching, cached.Attempt = true, false, true, 1
+	m = publish(m, cached)
 	col := m.ColumnStack.Top()
 	if col.IsLoading() || !col.IsRefreshing() || col.ItemCount() != 1 {
 		t.Fatal("cached refresh hid content or lost its indicator")
 	}
 	m.loadResource(r, catalog.Revalidate, true)
 	background := m.requests.active[syncOwner(r)]
-	m = updateModel(m, ResourceMsg{Request: background, Stage: loadFinished, Snapshot: snapshot(r, 1, "new", "old")})
+	m = publish(m, state(r, 1, "new", "old"))
+	m = updateModel(m, LoadDoneMsg{Request: background})
 	if col.ItemCount() != 2 || col.SelectedMediaItem().ID != "old" {
 		t.Fatal("sync did not update and preserve selection")
 	}
 	if !col.IsRefreshing() {
 		t.Fatal("one completion cleared another pending request")
 	}
-	m = updateModel(m, ResourceMsg{Request: view, Stage: loadFinished, Snapshot: snapshot(r, 1, "new", "old")})
+	m = updateModel(m, LoadDoneMsg{Request: view})
 	if col.IsRefreshing() {
 		t.Fatal("completed refresh left spinner running")
 	}
@@ -94,13 +89,13 @@ func TestRefreshFailureRetainsContentAndStopsSpinner(t *testing.T) {
 	r := catalog.LibraryResource(m.Libraries[0])
 	m.pushColumn(r, "A")
 	req := m.requests.active[viewOwner(r)]
-	cached := snapshot(r, 1, "old")
-	cached.FromCache = true
-	m = updateModel(m, ResourceMsg{Request: req, Stage: loadCached, Snapshot: cached})
-	m = updateModel(m, ResourceMsg{Request: req, Stage: loadFinished, Snapshot: cached, Err: domain.ErrServerOffline})
+	failed := state(r, 1, "old")
+	failed.Err = domain.ErrServerOffline
+	m = publish(m, failed)
+	m = updateModel(m, LoadDoneMsg{Request: req, Err: domain.ErrServerOffline})
 	col := m.ColumnStack.Top()
-	if col.IsLoading() || col.IsRefreshing() || col.ItemCount() != 1 {
-		t.Fatal("failed refresh discarded usable view or left spinner")
+	if col.IsLoading() || col.IsRefreshing() || col.ItemCount() != 1 || !col.HasLoadFailed() {
+		t.Fatal("failed refresh discarded usable view, left spinner, or hid retry")
 	}
 	if m.notice.Kind != NoticeError {
 		t.Fatal("failed refresh was silent")
@@ -115,7 +110,7 @@ func TestAllOperationErrorsUseAuthenticationAlert(t *testing.T) {
 			var msg tea.Msg
 			switch kind {
 			case "browse":
-				msg = ResourceMsg{Request: req, Stage: loadFinished, Err: domain.ErrAuthFailed}
+				msg = LoadDoneMsg{Request: req, Err: domain.ErrAuthFailed}
 			case "modal":
 				msg = PlaylistModalDataMsg{Request: req, Err: domain.ErrAuthFailed}
 			default:
@@ -157,56 +152,19 @@ func TestUnrelatedActionErrorLeavesColumnLoading(t *testing.T) {
 	}
 }
 
-func TestWatchChangeRejectsAlreadyQueuedPreMutationSnapshot(t *testing.T) {
-	m := testModel(t)
-	r := catalog.LibraryResource(m.Libraries[0])
-	m.pushColumn(r, "A")
-	read := m.requests.active[viewOwner(r)]
-	m = updateModel(m, ResourceMsg{Request: read, Stage: loadCached, Snapshot: snapshot(r, 1, "movie")})
-	write := m.requests.begin("mutation:watch:movie", catalog.Resource{}, catalog.Browse)
-	change := catalog.Change{Applied: true, Mutation: catalog.Mutation{Kind: catalog.Watch, ItemID: "movie", Played: true}, Revisions: map[string]uint64{r.Key(): 2}}
-	patched := snapshot(r, 2, "movie")
-	patched.Items[0].(*domain.MediaItem).IsPlayed = true
-	patched.FromCache, patched.Validated = true, false
-	change.Snapshots = []catalog.Snapshot{patched}
-	m = updateModel(m, ActionMsg{Request: write, Change: change})
-	m = updateModel(m, ResourceMsg{Request: read, Stage: loadFinished, Snapshot: snapshot(r, 1, "movie")})
-	if !m.ColumnStack.Top().SelectedMediaItem().IsPlayed {
-		t.Fatal("queued snapshot undid watch mutation")
-	}
-}
-
 func TestColdStartupFailureKeepsRetryableRoot(t *testing.T) {
 	m := NewModel(context.Background(), nil, nil, search.NewIndex(), config.UIConfig{})
 	t.Cleanup(m.requests.cancel)
-	m.Init()
+	m.loadResource(catalog.Resource{Kind: catalog.Libraries}, catalog.Revalidate, false)
 	r := catalog.Resource{Kind: catalog.Libraries}
 	req := m.requests.active[viewOwner(r)]
-	m = updateModel(m, ResourceMsg{Request: req, Stage: loadFinished, Err: domain.ErrServerOffline})
+	m = updateModel(m, LoadDoneMsg{Request: req, Err: domain.ErrServerOffline})
 	if m.ColumnStack.Top() == nil || m.ColumnStack.Top().IsLoading() {
 		t.Fatal("failed startup has no retryable root")
 	}
 	_, cmd := m.handleRefresh()
 	if cmd == nil {
 		t.Fatal("r cannot retry cold startup")
-	}
-}
-
-func TestRejectedSnapshotCannotOverwriteCurrentLibraryCount(t *testing.T) {
-	m := testModel(t)
-	r := catalog.LibraryResource(m.Libraries[0])
-	m.pushColumn(r, "A")
-	old := m.requests.active[viewOwner(r)]
-	m.loadResource(r, catalog.Revalidate, true)
-	newer := m.requests.active[syncOwner(r)]
-	m = updateModel(m, ResourceMsg{Request: newer, Stage: loadFinished, Snapshot: snapshot(r, 2, "one", "two")})
-	m = updateModel(m, ResourceMsg{Request: old, Stage: loadFinished, Snapshot: snapshot(r, 1, "old"), Err: domain.ErrServerOffline})
-	state := m.LibraryStates[r.LibraryID]
-	if state.Summary.Count != 2 || state.Error != nil || state.Activity.Visible {
-		t.Fatalf("stale response corrupted status: %+v", state)
-	}
-	if m.notice.Text != "" || m.ColumnStack.Top().HasLoadFailed() {
-		t.Fatal("obsolete error displayed")
 	}
 }
 
@@ -217,9 +175,7 @@ func TestRemovedLibraryDetachesRequestsAndNavigation(t *testing.T) {
 	m.loadResource(r, catalog.Revalidate, true)
 	late := m.requests.active[syncOwner(r)]
 	root := catalog.Resource{Kind: catalog.Libraries}
-	m.loadResource(root, catalog.Refresh, false)
-	req := m.requests.active[viewOwner(root)]
-	m = updateModel(m, ResourceMsg{Request: req, Stage: loadFinished, Snapshot: snapshot(root, 1)})
+	m = publish(m, catalog.State{Resource: root, Known: true, Snapshot: snapshot(root, 1)})
 	if m.ColumnStack.Len() != 1 {
 		t.Fatal("removed library remains open")
 	}
@@ -229,9 +185,13 @@ func TestRemovedLibraryDetachesRequestsAndNavigation(t *testing.T) {
 	if m.requests.owns(late) || late.ctx.Err() == nil {
 		t.Fatal("removed subscription remains active")
 	}
-	m = updateModel(m, ResourceMsg{Request: late, Stage: loadFinished, Snapshot: snapshot(r, 2, "late")})
+	m = publish(m, state(r, 2, "late"))
+	m = updateModel(m, LoadDoneMsg{Request: late})
 	if _, ok := m.LibraryStates[r.LibraryID]; ok {
-		t.Fatal("late response recreated removed library")
+		t.Fatal("late state recreated removed library")
+	}
+	if _, ok := m.collections[r.Key()]; ok {
+		t.Fatal("late state recreated removed collection")
 	}
 }
 

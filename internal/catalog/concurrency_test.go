@@ -40,10 +40,10 @@ func TestCacheDecodeDoesNotBlockUnrelatedLoads(t *testing.T) {
 	svc := NewService(context.Background(), fakeBackend{}, gate)
 	defer svc.Close()
 	defer close(gate.release)
-	go func() { _, _ = svc.Load(context.Background(), a, Browse, Observer{}) }()
+	go func() { _, _ = svc.Load(context.Background(), a, Browse) }()
 	<-gate.started
 	done := make(chan error, 1)
-	go func() { _, err := svc.Load(context.Background(), b, Browse, Observer{}); done <- err }()
+	go func() { _, err := svc.Load(context.Background(), b, Browse); done <- err }()
 	select {
 	case err := <-done:
 		if err != nil {
@@ -65,7 +65,7 @@ func TestMutationDuringCacheDecodeRejectsOldPayload(t *testing.T) {
 	svc := NewService(context.Background(), watchBackend{watch: func(context.Context) error { return nil }}, gate)
 	defer svc.Close()
 	done := make(chan Snapshot, 1)
-	go func() { snapshot, _ := svc.Load(context.Background(), r, Browse, Observer{}); done <- snapshot }()
+	go func() { snapshot, _ := svc.Load(context.Background(), r, Browse); done <- snapshot }()
 	<-gate.started
 	change, err := svc.Mutate(context.Background(), Mutation{Kind: Watch, ItemID: "movie", LibraryID: "a", Played: true})
 	close(gate.release)
@@ -73,27 +73,8 @@ func TestMutationDuringCacheDecodeRejectsOldPayload(t *testing.T) {
 		t.Fatal(err)
 	}
 	snapshot := <-done
-	if len(change.Snapshots) != 1 || !snapshot.Items[0].(*domain.MediaItem).IsPlayed || snapshot.Revision != change.Revisions[r.Key()] {
+	if !change.Applied || !snapshot.Items[0].(*domain.MediaItem).IsPlayed || snapshot.Revision != svc.state(r).Snapshot.Revision {
 		t.Fatal("cache payload decoded before the mutation escaped its revision fence")
-	}
-}
-
-func TestCachedObserverCannotMutateValidatedPayload(t *testing.T) {
-	release := make(chan struct{})
-	svc, cache := testService(t, fakeBackend{count: func(context.Context) (int, error) {
-		<-release
-		return 1, nil
-	}})
-	r := Resource{Kind: Movies, ID: "a", LibraryID: "a"}
-	if err := cache.Save(r.Key(), domain.CachedList{FetchedAt: time.Now(), Items: []domain.ListItem{&domain.MediaItem{ID: "movie", Title: "Original"}}}); err != nil {
-		t.Fatal(err)
-	}
-	snapshot, err := svc.Load(context.Background(), r, Revalidate, Observer{Cached: func(snapshot Snapshot) {
-		snapshot.Items[0].(*domain.MediaItem).Title = "Observer edit"
-		close(release)
-	}})
-	if err != nil || snapshot.Items[0].GetTitle() != "Original" {
-		t.Fatal("cached observation shared mutable entities with the validated result")
 	}
 }
 
@@ -122,11 +103,11 @@ func TestSlowCacheWriteDoesNotBlockCacheHits(t *testing.T) {
 	svc := NewService(context.Background(), backend, slow)
 	defer svc.Close()
 	defer close(slow.release)
-	go func() { _, _ = svc.Load(context.Background(), a, Refresh, Observer{}) }()
+	go func() { _, _ = svc.Load(context.Background(), a, Refresh) }()
 	<-slow.started
 
 	done := make(chan error, 1)
-	go func() { _, err := svc.Load(context.Background(), b, Browse, Observer{}); done <- err }()
+	go func() { _, err := svc.Load(context.Background(), b, Browse); done <- err }()
 	select {
 	case err := <-done:
 		if err != nil {

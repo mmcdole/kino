@@ -11,7 +11,8 @@ import (
 // These are the application operations the TUI consumes. There is no cache or
 // backend access here: all data reaches the model through a scoped result.
 type Catalog interface {
-	Load(context.Context, catalog.Resource, catalog.Policy, catalog.Observer) (catalog.Snapshot, error)
+	Load(context.Context, catalog.Resource, catalog.Policy) (catalog.Snapshot, error)
+	Updates(context.Context) ([]catalog.State, error)
 	Mutate(context.Context, catalog.Mutation) (catalog.Change, error)
 	PlaylistMembership(context.Context, string) (catalog.Membership, error)
 }
@@ -21,20 +22,16 @@ type Playback interface {
 }
 
 type request struct {
-	ID               uint64
-	Owner            string
-	Resource         catalog.Resource
-	Policy           catalog.Policy
-	Revision         uint64
-	Network          bool
-	IndicatorVisible bool
-	Progress         catalog.Progress
-	ctx              context.Context
-	cancel           context.CancelFunc
+	ID       uint64
+	Owner    string
+	Resource catalog.Resource
+	Policy   catalog.Policy
+	ctx      context.Context
+	cancel   context.CancelFunc
 }
 
-// requests is owned by the event loop. IDs apply to errors, progress, and
-// successes alike. Canceling a view detaches it from shared service work.
+// requests is owned by the event loop. A request's context is its
+// subscription: canceling a view detaches it from shared catalog work.
 type requests struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -82,9 +79,7 @@ func (m *Model) loadResource(r catalog.Resource, policy catalog.Policy, backgrou
 		return nil
 	}
 	req := m.requests.begin(owner, r, policy)
-	req.Revision = m.collection(r).RequiredRevision
-	m.requests.active[owner] = req
-	m.collection(r).Resource = r
+	m.track(r)
 	m.updateResourceFeedback(r)
 	return LoadResourceCmd(m.Catalog, req)
 }

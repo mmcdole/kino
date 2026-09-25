@@ -90,7 +90,8 @@ type Model struct {
 
 	Libraries     []domain.Library
 	LibraryStates map[string]components.CollectionFeedback
-	collections   map[string]*collectionState
+	collections   map[string]catalog.State
+	indicators    map[string]uint64 // key → server attempt whose spinner is due
 	requests      *requests
 
 	notice                    Notice
@@ -111,7 +112,8 @@ func NewModel(ctx context.Context, svc Catalog, playback Playback, index *search
 		InputModal:    components.NewInputModal(),
 		LibraryStates: make(map[string]components.CollectionFeedback),
 		requests:      newRequests(ctx),
-		collections:   make(map[string]*collectionState),
+		collections:   make(map[string]catalog.State),
+		indicators:    make(map[string]uint64),
 	}
 	root := catalog.Resource{Kind: catalog.Libraries}
 	col := components.NewListColumn(components.ColumnTypeLibraries, "Libraries")
@@ -120,11 +122,15 @@ func NewModel(ctx context.Context, svc Catalog, playback Playback, index *search
 	col.SetShowWatchStatus(ui.ShowWatchStatus)
 	col.SetShowLibraryCounts(ui.ShowLibraryCounts)
 	m.ColumnStack.Reset(col)
-	m.collection(root)
+	m.track(root)
 	return m
 }
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.loadResource(catalog.Resource{Kind: catalog.Libraries}, catalog.Revalidate, false), TickCmd(100*time.Millisecond))
+	return tea.Batch(
+		listen(m.Catalog, m.requests.ctx),
+		m.loadResource(catalog.Resource{Kind: catalog.Libraries}, catalog.Revalidate, false),
+		TickCmd(100*time.Millisecond),
+	)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -159,8 +165,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.SpinnerFrame++
 		m.ColumnStack.UpdateSpinnerFrame(m.SpinnerFrame)
 		return m, TickCmd(100 * time.Millisecond)
-	case ResourceMsg:
-		return m.handleResource(msg)
+	case StatesMsg:
+		var cmds []tea.Cmd
+		for _, st := range msg {
+			cmds = append(cmds, m.applyState(st))
+		}
+		return m, tea.Batch(append(cmds, listen(m.Catalog, m.requests.ctx))...)
+	case LoadDoneMsg:
+		return m, m.handleLoadDone(msg)
 	case ActionMsg:
 		return m.handleAction(msg)
 	case PlaylistModalDataMsg:
@@ -179,13 +191,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.expireNotice(msg.Seq)
 		return m, nil
 	case ShowLoadingMsg:
-		if m.requests.owns(msg.Request) {
-			req := m.requests.active[msg.Request.Owner]
-			if req.Network {
-				req.IndicatorVisible = true
-				m.requests.active[req.Owner] = req
-				m.updateResourceFeedback(req.Resource)
-			}
+		if st := m.collections[msg.Key]; st.Fetching && st.Attempt == msg.Attempt {
+			m.indicators[msg.Key] = msg.Attempt
+			m.updateResourceFeedback(st.Resource)
 		}
 		return m, nil
 	case SearchDebounceMsg:
@@ -229,102 +237,26 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleResource(msg ResourceMsg) (tea.Model, tea.Cmd) {
+// handleLoadDone reports the outcome of this model's own request. Content
+// and loading state come from the catalog's published state instead.
+func (m *Model) handleLoadDone(msg LoadDoneMsg) tea.Cmd {
 	if !m.requests.owns(msg.Request) {
-		return m, nil
+		return nil
 	}
+	m.requests.finish(msg.Request)
 	r := msg.Request.Resource
 	var cmds []tea.Cmd
-	if msg.Next != nil {
-		cmds = append(cmds, msg.Next)
+	if msg.Err != nil {
+		if m.navPlan != nil && m.navPlan.AwaitKey == r.Key() {
+			m.clearNavPlan()
+		}
+		cmds = append(cmds, m.notifyError("Loading "+m.resourceName(r), msg.Err))
 	}
-	if msg.Stage == loadNetwork {
-		req := m.requests.active[msg.Request.Owner]
-		if !req.Network {
-			req.Network = true
-			m.requests.active[req.Owner] = req
-			cmds = append(cmds, showLoadingCmd(req))
-		}
-		return m, tea.Batch(cmds...)
-	}
-	if msg.Stage == loadProgress {
-		// Activity belongs to the live subscription. A cached observation may
-		// advance the snapshot revision while this same request keeps fetching.
-		req := m.requests.active[msg.Request.Owner]
-		req.Progress = msg.Progress
-		m.requests.active[req.Owner] = req
-		m.updateResourceFeedback(r)
-		return m, tea.Batch(cmds...)
-	}
-	state := m.collection(r)
-	hasSnapshot := msg.Snapshot.FromCache || msg.Err == nil
-	accepted := hasSnapshot && state.accepts(msg.Snapshot)
-	// A failed attempt has its own ordering, independent of the fallback payload.
-	obsolete := !accepted && m.requests.active[msg.Request.Owner].Revision < state.RequiredRevision
-	if accepted {
-		if msg.Stage == loadCached {
-			req := m.requests.active[msg.Request.Owner]
-			req.Revision = msg.Snapshot.Revision
-			m.requests.active[req.Owner] = req
-		}
-		cmds = append(cmds, m.applySnapshot(msg.Snapshot))
-		if r.Kind == catalog.Libraries {
-			if msg.Stage == loadFinished && msg.Err == nil && msg.Snapshot.Validated {
-				m.pruneLibraryRequests()
-			}
-			policy := catalog.Revalidate
-			if msg.Request.Policy == catalog.Refresh {
-				policy = catalog.Refresh
-			}
-			for _, lib := range m.Libraries {
-				resource := catalog.LibraryResource(lib)
-				child := m.collection(resource)
-				if child.BackgroundRequest != msg.Request.ID || child.Resource.Version != resource.Version {
-					child.BackgroundRequest = msg.Request.ID
-					cmds = append(cmds, m.loadResource(resource, policy, true))
-				}
-			}
-			playlists := catalog.Resource{Kind: catalog.Playlists}
-			child := m.collection(playlists)
-			if child.BackgroundRequest != msg.Request.ID {
-				child.BackgroundRequest = msg.Request.ID
-				cmds = append(cmds, m.loadResource(playlists, policy, true))
-			}
-		}
-		if msg.Stage == loadFinished && msg.Err == nil && msg.Snapshot.Validated {
-			m.pruneNavigation()
-		}
-	}
-
-	if msg.Stage == loadFinished {
-		m.requests.finish(msg.Request)
-		// A queued pre-mutation completion may be the last subscriber. Recover
-		// once at the new revision; a current failed attempt remains retryable.
-		if obsolete && (!state.Known || state.Snapshot.Revision < state.RequiredRevision) {
-			cmds = append(cmds, m.loadResource(r, catalog.Browse, libraryStateID(r) != ""))
-		}
-		if !obsolete {
-			if msg.Err != nil && !errors.Is(msg.Err, context.Canceled) {
-				state.Error = msg.Err
-			} else if msg.Err == nil && msg.Snapshot.Validated {
-				state.Error = nil
-			}
-		}
-		if !obsolete && msg.Err != nil {
-			if m.navPlan != nil && m.navPlan.AwaitKey == r.Key() {
-				m.clearNavPlan()
-			}
-			cmds = append(cmds, m.notifyError("Loading "+m.resourceName(r), msg.Err))
-		}
-		if !obsolete && msg.Snapshot.Warning != nil {
-			cmds = append(cmds, m.notifyError("Loaded "+m.resourceName(r), msg.Snapshot.Warning))
-		}
+	if msg.Warning != nil {
+		cmds = append(cmds, m.notifyError("Loaded "+m.resourceName(r), msg.Warning))
 	}
 	m.updateResourceFeedback(r)
-	if accepted && msg.Err == nil {
-		cmds = append(cmds, m.advanceNavPlanAfterLoad(r.Key(), msg.Stage == loadFinished))
-	}
-	return m, tea.Batch(cmds...)
+	return tea.Batch(cmds...)
 }
 
 func (m Model) handleAction(msg ActionMsg) (tea.Model, tea.Cmd) {
@@ -339,28 +271,16 @@ func (m Model) handleAction(msg ActionMsg) (tea.Model, tea.Cmd) {
 		return m, m.notify(NoticeSuccess, "Launched: "+msg.Item.Title)
 	}
 	change := msg.Change
-	for key, revision := range change.Revisions {
-		if state := m.collections[key]; state != nil {
-			state.RequiredRevision = max(state.RequiredRevision, revision)
-		}
-	}
 	var cmds []tea.Cmd
-	for _, snapshot := range change.Snapshots {
-		// Closed collections can still feed search and later navigation.
-		if state := m.collections[snapshot.Resource.Key()]; state != nil && state.accepts(snapshot) {
-			cmds = append(cmds, m.applySnapshot(snapshot))
-			cmds = append(cmds, m.advanceNavPlanAfterLoad(snapshot.Resource.Key(), false))
-			m.updateResourceFeedback(snapshot.Resource)
-		}
-	}
 	for _, r := range change.Resources {
-		if m.collections[r.Key()] == nil && r.Kind != catalog.Playlists {
+		if _, tracked := m.collections[r.Key()]; !tracked && r.Kind != catalog.Playlists {
 			continue
 		}
-		// Restart subscriptions whose result may already be queued. New callers
-		// still join shared catalog work; a stale UI request cannot swallow recovery.
-		m.requests.stop(viewOwner(r))
-		m.requests.stop(syncOwner(r))
+		if r.LibraryID != "" && m.findLibrary(r.LibraryID) == nil {
+			continue
+		}
+		// Reconciled snapshots arrive as published state. Collections the write
+		// may have changed on the server revalidate if anything shows them.
 		background := libraryStateID(r) != ""
 		visible := false
 		for i := 0; i < m.ColumnStack.Len(); i++ {
@@ -467,14 +387,15 @@ func (m *Model) pruneLibraryRequests() {
 	for _, lib := range m.Libraries {
 		allowed[lib.ID] = true
 	}
-	for key, state := range m.collections {
-		r := state.Resource
+	for key, st := range m.collections {
+		r := st.Resource
 		if r.LibraryID == "" || allowed[r.LibraryID] {
 			continue
 		}
 		m.requests.stop(viewOwner(r))
 		m.requests.stop(syncOwner(r))
 		delete(m.collections, key)
+		delete(m.indicators, key)
 		delete(m.LibraryStates, r.LibraryID)
 	}
 	m.updateLibraryStates()

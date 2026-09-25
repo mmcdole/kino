@@ -39,7 +39,7 @@ func TestSlowConsumerStillSeesFinalState(t *testing.T) {
 	}
 	svc, _ := testService(t, backend)
 	for range 50 {
-		if _, err := svc.Load(context.Background(), r, Refresh, Observer{}); err != nil {
+		if _, err := svc.Load(context.Background(), r, Refresh); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -62,7 +62,7 @@ func TestCacheHitDoesNotClearErrorButValidatedResultDoes(t *testing.T) {
 	if err := cache.Save(r.Key(), domain.CachedList{Items: []domain.ListItem{&domain.MediaItem{ID: "old"}}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.Load(context.Background(), r, Refresh, Observer{}); !errors.Is(err, domain.ErrServerOffline) {
+	if _, err := svc.Load(context.Background(), r, Refresh); !errors.Is(err, domain.ErrServerOffline) {
 		t.Fatalf("expected offline error, got %v", err)
 	}
 	st := latest(t, svc, r, func(st State) bool { return !st.Fetching })
@@ -71,7 +71,7 @@ func TestCacheHitDoesNotClearErrorButValidatedResultDoes(t *testing.T) {
 	}
 
 	fail = false
-	if _, err := svc.Load(context.Background(), r, Refresh, Observer{}); err != nil {
+	if _, err := svc.Load(context.Background(), r, Refresh); err != nil {
 		t.Fatal(err)
 	}
 	st = latest(t, svc, r, func(st State) bool { return !st.Fetching && st.Snapshot.Validated })
@@ -86,7 +86,7 @@ func TestWatchPublishesPatchedSnapshot(t *testing.T) {
 	if err := cache.Save(r.Key(), domain.CachedList{FetchedAt: time.Now(), Items: []domain.ListItem{&domain.MediaItem{ID: "movie"}}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.Load(context.Background(), r, Browse, Observer{}); err != nil {
+	if _, err := svc.Load(context.Background(), r, Browse); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.Mutate(context.Background(), Mutation{Kind: Watch, ItemID: "movie", LibraryID: "a", Played: true}); err != nil {

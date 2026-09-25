@@ -32,10 +32,9 @@ type Mutation struct {
 	Played     bool
 }
 
+// Change reports a write. Reconciled snapshots are published through Updates;
+// Resources lists collections that must be revalidated against the server.
 type Change struct {
-	// Snapshots contain reconciled cache data; Resources require server revalidation.
-	Snapshots []Snapshot
-	Revisions map[string]uint64
 	Mutation  Mutation
 	Applied   bool
 	Playlist  *domain.Playlist
@@ -61,7 +60,7 @@ func (s *Service) Mutate(ctx context.Context, m Mutation) (Change, error) {
 	if err := ctx.Err(); err != nil {
 		return Change{}, err
 	}
-	change := Change{Mutation: m, Revisions: make(map[string]uint64)}
+	change := Change{Mutation: m}
 	var err error
 	switch m.Kind {
 	case Watch:
@@ -91,14 +90,15 @@ func (s *Service) Mutate(ctx context.Context, m Mutation) (Change, error) {
 }
 
 // fence cancels in-flight fetches for key and advances its revision, so a
-// response fetched before a write cannot undo it. Callers hold s.mu.
-func (s *Service) fence(key string, change *Change) {
+// response fetched before a write cannot undo it. It records the new revision
+// in revised. Callers hold s.mu.
+func (s *Service) fence(key string, revised map[string]uint64) {
 	if f := s.active[key]; f != nil {
 		f.cancel()
 		delete(s.active, key)
 	}
 	s.revisions[key]++
-	change.Revisions[key] = s.revisions[key]
+	revised[key] = s.revisions[key]
 }
 
 // expire republishes key as needing revalidation. Callers hold s.mu.
@@ -128,6 +128,7 @@ func (s *Service) watchScope(m Mutation) []string {
 // patched, everything in scope revalidates. Callers hold s.commit; s.mu is
 // only taken for bookkeeping around the cache I/O.
 func (s *Service) reconcileWatch(m Mutation, change Change, err error) (Change, error) {
+	revised := make(map[string]uint64)
 	s.mu.Lock()
 	scope := s.watchScope(m)
 	var interrupted []string
@@ -151,7 +152,7 @@ func (s *Service) reconcileWatch(m Mutation, change Change, err error) (Change, 
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		for _, key := range scope {
-			s.fence(key, &change)
+			s.fence(key, revised)
 			s.invalid[key] = true
 			s.expire(key)
 			change.Resources = append(change.Resources, s.known[key])
@@ -173,21 +174,19 @@ func (s *Service) reconcileWatch(m Mutation, change Change, err error) (Change, 
 		if !known {
 			continue // patched on disk; nothing in this session shows it
 		}
-		s.fence(key, &change)
+		s.fence(key, revised)
 		entry, ok := entries[key]
 		if s.invalid[key] || !ok {
 			s.expire(key)
 			change.Resources = append(change.Resources, r)
 			continue
 		}
-		s.cacheRevisions[key] = change.Revisions[key]
-		snapshot := Snapshot{Resource: r, CachedList: entry, Revision: change.Revisions[key], FromCache: true, Stale: !s.fresh(r, entry)}
-		s.accept(snapshot)
-		change.Snapshots = append(change.Snapshots, snapshot)
+		s.cacheRevisions[key] = revised[key]
+		s.accept(Snapshot{Resource: r, CachedList: entry, Revision: revised[key], FromCache: true, Stale: !s.fresh(r, entry)})
 	}
 	for _, key := range interrupted {
-		if _, done := change.Revisions[key]; !done {
-			s.fence(key, &change)
+		if _, done := revised[key]; !done {
+			s.fence(key, revised)
 			s.expire(key)
 			change.Resources = append(change.Resources, s.known[key])
 		}
@@ -199,13 +198,14 @@ func (s *Service) reconcileWatch(m Mutation, change Change, err error) (Change, 
 // kept for offline browsing, but a known or uncertain remote change forces
 // revalidation. A local change never renews a snapshot's age.
 func (s *Service) reconcilePlaylists(m Mutation, change Change, err error) (Change, error) {
+	revised := make(map[string]uint64)
 	change.Resources = []Resource{{Kind: Playlists}}
 	if m.PlaylistID != "" {
 		change.Resources = append(change.Resources, Resource{Kind: PlaylistItems, ID: m.PlaylistID})
 	}
 	s.mu.Lock()
 	for _, r := range change.Resources {
-		s.fence(r.Key(), &change)
+		s.fence(r.Key(), revised)
 	}
 	s.mu.Unlock()
 
@@ -227,8 +227,8 @@ func (s *Service) reconcilePlaylists(m Mutation, change Change, err error) (Chan
 		saveErr, ok := saved[key]
 		switch {
 		case ok && saveErr == nil:
-			s.cacheRevisions[key] = change.Revisions[key]
-			s.accept(Snapshot{Resource: r, CachedList: entries[key], Revision: change.Revisions[key], FromCache: true, Stale: true})
+			s.cacheRevisions[key] = revised[key]
+			s.accept(Snapshot{Resource: r, CachedList: entries[key], Revision: revised[key], FromCache: true, Stale: true})
 		case ok:
 			s.invalid[key] = true
 			s.expire(key)
@@ -253,7 +253,7 @@ func (s *Service) PlaylistMembership(ctx context.Context, itemID string) (Member
 	}
 	defer finish()
 
-	snapshot, err := s.Load(ctx, Resource{Kind: Playlists}, Revalidate, Observer{})
+	snapshot, err := s.Load(ctx, Resource{Kind: Playlists}, Revalidate)
 	if err != nil {
 		return Membership{}, err
 	}
@@ -273,7 +273,7 @@ func (s *Service) PlaylistMembership(ctx context.Context, itemID string) (Member
 				if ctx.Err() != nil {
 					continue
 				}
-				items, err := s.Load(ctx, Resource{Kind: PlaylistItems, ID: playlist.ID}, Revalidate, Observer{})
+				items, err := s.Load(ctx, Resource{Kind: PlaylistItems, ID: playlist.ID}, Revalidate)
 				mu.Lock()
 				if err != nil {
 					failures = append(failures, fmt.Errorf("playlist %q: %w", playlist.Title, err))

@@ -1,28 +1,19 @@
 package tui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
 	"github.com/mmcdole/kino/internal/domain"
 	"github.com/mmcdole/kino/internal/search"
 )
 
-type loadStage uint8
+// StatesMsg carries collection states published by the catalog.
+type StatesMsg []catalog.State
 
-const (
-	loadCached loadStage = iota
-	loadProgress
-	loadNetwork
-	loadFinished
-)
-
-type ResourceMsg struct {
-	Request  request
-	Stage    loadStage
-	Snapshot catalog.Snapshot
-	Progress catalog.Progress
-	Err      error
-	Next     tea.Cmd
+// LoadDoneMsg reports that a load request settled.
+type LoadDoneMsg struct {
+	Request request
+	Warning error // usable data could not be persisted
+	Err     error
 }
 
 type ActionMsg struct {
@@ -41,7 +32,10 @@ type PlaylistModalDataMsg struct {
 }
 
 type TickMsg struct{}
-type ShowLoadingMsg struct{ Request request }
+type ShowLoadingMsg struct {
+	Key     string
+	Attempt uint64
+}
 type LogoutCompleteMsg struct{ Error error }
 type SearchDebounceMsg struct {
 	Seq   uint64

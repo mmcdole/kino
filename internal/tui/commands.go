@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -9,59 +10,25 @@ import (
 	"github.com/mmcdole/kino/internal/domain"
 )
 
-// LoadResourceCmd adapts the application's result stream to Bubble Tea. Cached
-// data and progress can coalesce; the terminal result has its own buffered slot
-// and cannot be dropped or strand a producer after navigation cancels a request.
+// LoadResourceCmd asks the catalog to load a collection. Its content and
+// progress arrive through the catalog's published state; the result message
+// carries only what the request itself needs to report.
 func LoadResourceCmd(svc Catalog, req request) tea.Cmd {
 	return func() tea.Msg {
-		cached := make(chan ResourceMsg, 1)
-		progress := make(chan ResourceMsg, 1)
-		network := make(chan ResourceMsg, 1)
-		done := make(chan ResourceMsg, 1)
-		go func() {
-			snapshot, err := svc.Load(req.ctx, req.Resource, req.Policy, catalog.Observer{
-				Network: func() {
-					select {
-					case network <- ResourceMsg{Request: req, Stage: loadNetwork}:
-					default:
-					}
-				},
-				Cached: func(snapshot catalog.Snapshot) {
-					select {
-					case cached <- ResourceMsg{Request: req, Stage: loadCached, Snapshot: snapshot}:
-					default:
-					}
-				},
-				Progress: func(p catalog.Progress) {
-					select {
-					case progress <- ResourceMsg{Request: req, Stage: loadProgress, Progress: p}:
-					default:
-					}
-				},
-			})
-			done <- ResourceMsg{Request: req, Stage: loadFinished, Snapshot: snapshot, Err: err}
-		}()
-		return readResource(req, cached, progress, network, done)
+		snapshot, err := svc.Load(req.ctx, req.Resource, req.Policy)
+		return LoadDoneMsg{Request: req, Warning: snapshot.Warning, Err: err}
 	}
 }
-func readResource(req request, cached, progress, network, done <-chan ResourceMsg) tea.Msg {
-	var msg ResourceMsg
-	select {
-	case msg = <-done:
-		return msg
-	default:
+
+// listen waits for the catalog's next published states.
+func listen(svc Catalog, ctx context.Context) tea.Cmd {
+	return func() tea.Msg {
+		states, err := svc.Updates(ctx)
+		if err != nil {
+			return nil
+		}
+		return StatesMsg(states)
 	}
-	select {
-	case msg = <-cached:
-	case msg = <-progress:
-	case msg = <-network:
-	case msg = <-done:
-		return msg
-	case <-req.ctx.Done():
-		return ResourceMsg{Request: req, Stage: loadFinished, Err: req.ctx.Err()}
-	}
-	msg.Next = func() tea.Msg { return readResource(req, cached, progress, network, done) }
-	return msg
 }
 
 func MutationCmd(svc Catalog, req request, mutation catalog.Mutation) tea.Cmd {
