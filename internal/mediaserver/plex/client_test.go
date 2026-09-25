@@ -22,7 +22,7 @@ func testClient(t *testing.T, handler http.Handler) *Client {
 	t.Cleanup(srv.Close)
 	c := NewClient(srv.URL, "tok", "client1", nil)
 	c.machineIdentifier = "machine1"
-	c.retryDelay = 0
+	c.api.RetryDelay = 0
 	return c
 }
 

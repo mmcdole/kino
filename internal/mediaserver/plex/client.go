@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/mediaserver/httpx"
 )
 
 const (
@@ -43,8 +43,7 @@ type Client struct {
 	clientID          string // unique per-install X-Plex-Client-Identifier
 	identityMu        sync.Mutex
 	machineIdentifier string // resolved lazily by playlist writes
-	httpClient        *http.Client
-	retryDelay        time.Duration // first retry backoff; doubles per attempt
+	api               httpx.Client
 	logger            *slog.Logger
 }
 
@@ -53,16 +52,22 @@ func NewClient(baseURL, token, clientID string, logger *slog.Logger) *Client {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Client{
+	c := &Client{
 		baseURL:  strings.TrimRight(baseURL, "/"),
 		token:    token,
 		clientID: normalizeClientID(clientID),
-		httpClient: &http.Client{
-			Timeout: defaultTimeout,
-		},
-		retryDelay: baseRetryDelay,
-		logger:     logger,
+		logger:   logger,
 	}
+	c.api = httpx.Client{
+		Name:       "plex",
+		BaseURL:    c.baseURL,
+		HTTP:       &http.Client{Timeout: defaultTimeout},
+		Header:     c.setHeaders,
+		Retries:    maxRetries,
+		RetryDelay: baseRetryDelay,
+		Logger:     logger,
+	}
+	return c
 }
 
 // serverIdentity is lazy so startup and offline browsing never wait for it.
@@ -76,7 +81,7 @@ func (c *Client) serverIdentity(ctx context.Context) (string, error) {
 	if c.machineIdentifier != "" {
 		return c.machineIdentifier, nil
 	}
-	body, err := c.doRequest(ctx, http.MethodGet, "/identity", nil)
+	body, err := c.get(ctx, "/identity", nil)
 	if err != nil {
 		return "", fmt.Errorf("resolve Plex identity: %w", err)
 	}
@@ -105,113 +110,22 @@ func (c *Client) serverIdentity(ctx context.Context) (string, error) {
 }
 
 // setHeaders applies the standard Plex request headers
-func (c *Client) setHeaders(req *http.Request) {
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Plex-Token", c.token)
-	req.Header.Set("X-Plex-Client-Identifier", c.clientID)
-	req.Header.Set("X-Plex-Product", "Kino")
-	req.Header.Set("X-Plex-Version", "1.0")
-	req.Header.Set("User-Agent", userAgent)
+func (c *Client) setHeaders(h http.Header) {
+	h.Set("X-Plex-Token", c.token)
+	h.Set("X-Plex-Client-Identifier", c.clientID)
+	h.Set("X-Plex-Product", "Kino")
+	h.Set("X-Plex-Version", "1.0")
+	h.Set("User-Agent", userAgent)
 }
 
-// do performs an authenticated HTTP request to the Plex server. All error
-// mapping lives here: 401 → domain.ErrAuthFailed, transport failures →
-// domain.ErrServerOffline (wrapped with the cause), any 2xx → success.
-// Idempotent requests (retry=true) are retried on network errors and 5xx
-// responses with exponential backoff.
-func (c *Client) do(ctx context.Context, method, path string, query url.Values, retry bool) ([]byte, error) {
-	reqURL := fmt.Sprintf("%s%s", c.baseURL, path)
-	if query != nil {
-		reqURL = fmt.Sprintf("%s?%s", reqURL, query.Encode())
-	}
-
-	attempts := 1
-	if retry {
-		attempts = maxRetries + 1
-	}
-
-	var lastErr error
-	for attempt := 0; attempt < attempts; attempt++ {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-
-		if attempt > 0 {
-			delay := c.retryDelay * time.Duration(1<<(attempt-1)) // 500ms, 1s, 2s
-			c.logger.Debug("retrying request", "attempt", attempt, "delay", delay, "path", path)
-			select {
-			case <-time.After(delay):
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
-		}
-
-		req, err := http.NewRequestWithContext(ctx, method, reqURL, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create request: %w", err)
-		}
-		c.setHeaders(req)
-
-		c.logger.Debug("plex request", "method", method, "path", path, "attempt", attempt)
-
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			lastErr = fmt.Errorf("%w: %w", domain.ErrServerOffline, err)
-			c.logger.Warn("plex request failed", "error", err, "method", method, "path", path, "attempt", attempt)
-			continue
-		}
-
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			return nil, fmt.Errorf("failed to read response: %w", err)
-		}
-
-		switch {
-		case resp.StatusCode == http.StatusUnauthorized:
-			return nil, domain.ErrAuthFailed
-		case resp.StatusCode == http.StatusNotFound:
-			return nil, domain.ErrItemNotFound
-		case resp.StatusCode >= 500:
-			lastErr = fmt.Errorf("server error: %d - %s", resp.StatusCode, truncateForLog(body))
-			c.logger.Warn("plex server error",
-				"status", resp.StatusCode,
-				"attempt", attempt,
-				"method", method,
-				"path", path,
-			)
-			continue
-		case resp.StatusCode >= 200 && resp.StatusCode < 300:
-			return body, nil
-		default:
-			c.logger.Error("plex request error", "status", resp.StatusCode, "path", path, "body", truncateForLog(body))
-			return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-		}
-	}
-
-	c.logger.Error("plex request failed", "error", lastErr, "method", method, "path", path)
-	return nil, lastErr
+// get performs an idempotent request, retried on transient failures.
+func (c *Client) get(ctx context.Context, path string, query url.Values) ([]byte, error) {
+	return c.api.Do(ctx, httpx.Request{Method: http.MethodGet, Path: path, Query: query, Retry: true})
 }
 
-// doRequest performs an idempotent (retried) GET-style request
-func (c *Client) doRequest(ctx context.Context, method, path string, query url.Values) ([]byte, error) {
-	return c.do(ctx, method, path, query, true)
-}
-
-// truncateForLog bounds response bodies before they reach the log file
-// (a reverse proxy's 502 page can be arbitrarily large)
-func truncateForLog(body []byte) string {
-	const max = 512
-	if len(body) > max {
-		return string(body[:max]) + "...(truncated)"
-	}
-	return string(body)
+// send performs a mutation. It is never retried.
+func (c *Client) send(ctx context.Context, method, path string, query url.Values) ([]byte, error) {
+	return c.api.Do(ctx, httpx.Request{Method: method, Path: path, Query: query})
 }
 
 // parseResponse parses a JSON response into APIResponse
@@ -226,7 +140,7 @@ func (c *Client) parseResponse(body []byte) (*MediaContainer, error) {
 
 // GetLibraries returns all available libraries
 func (c *Client) GetLibraries(ctx context.Context) ([]domain.Library, error) {
-	body, err := c.doRequest(ctx, http.MethodGet, "/library/sections", nil)
+	body, err := c.get(ctx, "/library/sections", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +166,7 @@ func (c *Client) GetMovies(ctx context.Context, libID string, offset, limit int)
 	// NO hardcoded fallback - let Plex use its natural default if limit=0
 
 	path := fmt.Sprintf("/library/sections/%s/all", libID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, query)
+	body, err := c.get(ctx, path, query)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -283,7 +197,7 @@ func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) 
 	// NO hardcoded fallback - let Plex use its natural default if limit=0
 
 	path := fmt.Sprintf("/library/sections/%s/all", libID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, query)
+	body, err := c.get(ctx, path, query)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -310,7 +224,7 @@ func (c *Client) GetLibraryItemCount(ctx context.Context, libID, libType string)
 	query.Set("X-Plex-Container-Size", "0")
 
 	path := fmt.Sprintf("/library/sections/%s/all", libID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, query)
+	body, err := c.get(ctx, path, query)
 	if err != nil {
 		return 0, err
 	}
@@ -335,7 +249,7 @@ func (c *Client) GetMixedContent(ctx context.Context, libID string, offset, limi
 	}
 
 	path := fmt.Sprintf("/library/sections/%s/all", libID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, query)
+	body, err := c.get(ctx, path, query)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -356,7 +270,7 @@ func (c *Client) GetMixedContent(ctx context.Context, libID string, offset, limi
 // GetSeasons returns all seasons for a TV show
 func (c *Client) GetSeasons(ctx context.Context, showID string) ([]*domain.Season, error) {
 	path := fmt.Sprintf("/library/metadata/%s/children", showID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	body, err := c.get(ctx, path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +286,7 @@ func (c *Client) GetSeasons(ctx context.Context, showID string) ([]*domain.Seaso
 // GetEpisodes returns all episodes for a season
 func (c *Client) GetEpisodes(ctx context.Context, seasonID string) ([]*domain.MediaItem, error) {
 	path := fmt.Sprintf("/library/metadata/%s/children", seasonID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	body, err := c.get(ctx, path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -388,7 +302,7 @@ func (c *Client) GetEpisodes(ctx context.Context, seasonID string) ([]*domain.Me
 // ResolvePlayableURL returns a direct playback URL for an item
 func (c *Client) ResolvePlayableURL(ctx context.Context, itemID string) (string, error) {
 	path := fmt.Sprintf("/library/metadata/%s", itemID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	body, err := c.get(ctx, path, nil)
 	if err != nil {
 		return "", err
 	}
@@ -423,7 +337,7 @@ func (c *Client) MarkPlayed(ctx context.Context, itemID string) error {
 	query.Set("key", itemID)
 	query.Set("identifier", "com.plexapp.plugins.library") // required by some PMS versions
 
-	_, err := c.doRequest(ctx, http.MethodGet, "/:/scrobble", query)
+	_, err := c.get(ctx, "/:/scrobble", query)
 	return err
 }
 
@@ -433,13 +347,13 @@ func (c *Client) MarkUnplayed(ctx context.Context, itemID string) error {
 	query.Set("key", itemID)
 	query.Set("identifier", "com.plexapp.plugins.library") // required by some PMS versions
 
-	_, err := c.doRequest(ctx, http.MethodGet, "/:/unscrobble", query)
+	_, err := c.get(ctx, "/:/unscrobble", query)
 	return err
 }
 
 // GetPlaylists returns all user playlists
 func (c *Client) GetPlaylists(ctx context.Context) ([]*domain.Playlist, error) {
-	body, err := c.doRequest(ctx, http.MethodGet, "/playlists", nil)
+	body, err := c.get(ctx, "/playlists", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -455,7 +369,7 @@ func (c *Client) GetPlaylists(ctx context.Context) ([]*domain.Playlist, error) {
 // GetPlaylistItems returns all items in a playlist
 func (c *Client) GetPlaylistItems(ctx context.Context, playlistID string) ([]*domain.MediaItem, error) {
 	path := fmt.Sprintf("/playlists/%s/items", playlistID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	body, err := c.get(ctx, path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -491,7 +405,7 @@ func (c *Client) CreatePlaylist(ctx context.Context, title string, itemIDs []str
 	query.Set("smart", "0")
 	query.Set("uri", uri)
 
-	respBody, err := c.do(ctx, http.MethodPost, "/playlists", query, false)
+	respBody, err := c.send(ctx, http.MethodPost, "/playlists", query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create playlist: %w", err)
 	}
@@ -534,7 +448,7 @@ func (c *Client) AddToPlaylist(ctx context.Context, playlistID string, itemIDs [
 		query := url.Values{}
 		query.Set("uri", uri)
 
-		if _, err := c.do(ctx, http.MethodPut, path, query, false); err != nil {
+		if _, err := c.send(ctx, http.MethodPut, path, query); err != nil {
 			return fmt.Errorf("failed to add item to playlist: %w", err)
 		}
 	}
@@ -548,7 +462,7 @@ func (c *Client) AddToPlaylist(ctx context.Context, playlistID string, itemIDs [
 func (c *Client) RemoveFromPlaylist(ctx context.Context, playlistID string, itemID string) error {
 	// Fetch playlist items to find the playlistItemID for this ratingKey
 	path := fmt.Sprintf("/playlists/%s/items", playlistID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	body, err := c.get(ctx, path, nil)
 	if err != nil {
 		return err
 	}
@@ -572,7 +486,7 @@ func (c *Client) RemoveFromPlaylist(ctx context.Context, playlistID string, item
 	}
 
 	deletePath := fmt.Sprintf("/playlists/%s/items/%d", playlistID, entryID)
-	if _, err := c.do(ctx, http.MethodDelete, deletePath, nil, false); err != nil {
+	if _, err := c.send(ctx, http.MethodDelete, deletePath, nil); err != nil {
 		return fmt.Errorf("failed to remove item from playlist: %w", err)
 	}
 	return nil
@@ -581,7 +495,7 @@ func (c *Client) RemoveFromPlaylist(ctx context.Context, playlistID string, item
 // DeletePlaylist deletes a playlist
 func (c *Client) DeletePlaylist(ctx context.Context, playlistID string) error {
 	path := fmt.Sprintf("/playlists/%s", playlistID)
-	if _, err := c.do(ctx, http.MethodDelete, path, nil, false); err != nil {
+	if _, err := c.send(ctx, http.MethodDelete, path, nil); err != nil {
 		return fmt.Errorf("failed to delete playlist: %w", err)
 	}
 	return nil

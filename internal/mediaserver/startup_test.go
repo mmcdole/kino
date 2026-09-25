@@ -1,11 +1,12 @@
 package mediaserver
 
 import (
-	"github.com/mmcdole/kino/internal/config"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+
+	"github.com/mmcdole/kino/internal/config"
 )
 
 func TestClientConstructionDoesNotRequireNetwork(t *testing.T) {
