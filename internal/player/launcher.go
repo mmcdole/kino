@@ -488,12 +488,6 @@ func configuredPlayerArgs(configuredArgs []string, definition PlayerDef, knownPl
 	return append(args, url)
 }
 
-// lookupSeekFlag finds the seek flag for a known player binary
-func (l *Launcher) lookupSeekFlag(binary string) string {
-	player, _ := l.lookupPlayerDef(binary)
-	return player.SeekFlag
-}
-
 func (l *Launcher) lookupPlayerDef(binary string) (PlayerDef, bool) {
 	wanted := executableName(binary)
 	for _, table := range [][]PlayerDef{linuxPlayers, darwinPlayers, windowsPlayers} {

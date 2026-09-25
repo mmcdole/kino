@@ -223,10 +223,6 @@ func (c *ListColumn) SetFocused(focused bool) {
 	c.focused = focused
 }
 
-func (c *ListColumn) IsFocused() bool {
-	return c.focused
-}
-
 func (c *ListColumn) Title() string {
 	return c.title
 }
@@ -407,30 +403,6 @@ func (c *ListColumn) SelectedLibrary() *domain.Library {
 	}
 	lib, _ := item.(*domain.Library)
 	return lib
-}
-
-// SelectedShow returns the selected show (if in shows column)
-func (c *ListColumn) SelectedShow() *domain.Show {
-	if c.columnType != ColumnTypeShows {
-		return nil
-	}
-	item := c.SelectedItem()
-	if item == nil {
-		return nil
-	}
-	return item.(*domain.Show)
-}
-
-// SelectedSeason returns the selected season (if in seasons column)
-func (c *ListColumn) SelectedSeason() *domain.Season {
-	if c.columnType != ColumnTypeSeasons {
-		return nil
-	}
-	item := c.SelectedItem()
-	if item == nil {
-		return nil
-	}
-	return item.(*domain.Season)
 }
 
 // SelectedMediaItem returns the selected media item (if in movies/episodes/playlist items/mixed column)

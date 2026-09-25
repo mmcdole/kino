@@ -78,13 +78,6 @@ func (cs *ColumnStack) CanGoBack() bool {
 	return len(cs.columns) > 1
 }
 
-// UpdateTop replaces the top column with the given column.
-func (cs *ColumnStack) UpdateTop(col *components.ListColumn) {
-	if len(cs.columns) > 0 {
-		cs.columns[len(cs.columns)-1] = col
-	}
-}
-
 // UpdateSpinnerFrame updates the spinner frame for all columns
 func (cs *ColumnStack) UpdateSpinnerFrame(frame int) {
 	for _, col := range cs.columns {

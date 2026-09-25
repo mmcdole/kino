@@ -94,7 +94,7 @@ func TestWatchCompletionAfterBackUpdatesParent(t *testing.T) {
 	next, _ := m.handleBack()
 	m = next.(Model)
 	m = updateModel(m, cmd())
-	if m.ColumnStack.Top().SelectedSeason().UnwatchedCount != 0 || m.ColumnStack.Get(1).SelectedShow().UnwatchedCount != 0 {
+	if m.ColumnStack.Top().SelectedItem().(*domain.Season).UnwatchedCount != 0 || m.ColumnStack.Get(1).SelectedItem().(*domain.Show).UnwatchedCount != 0 {
 		t.Fatal("successful episode watch after Back leaves visible parent counts unchanged")
 	}
 }
