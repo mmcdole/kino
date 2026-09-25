@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
@@ -61,6 +61,7 @@ type Model struct {
 	Ready         bool
 	Width, Height int
 	SpinnerFrame  int
+	ticking       bool // a spinner tick is scheduled
 	ShowInspector bool
 	LoggedOut     bool
 	loggingOut    bool
@@ -118,14 +119,40 @@ func (m *Model) Init() tea.Cmd {
 	return tea.Batch(
 		listen(m.Catalog, m.requests.ctx),
 		m.loadResource(catalog.Resource{Kind: catalog.Libraries}, catalog.Revalidate, false),
-		TickCmd(100*time.Millisecond),
 	)
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmd := m.update(msg)
 	m.updateInspector()
+	// The spinner only ticks while something on screen animates, so an idle
+	// window does not redraw.
+	if !m.ticking && m.animating() {
+		m.ticking = true
+		cmd = tea.Batch(cmd, tick())
+	}
 	return m, cmd
+}
+
+// animating reports whether any spinner is on screen.
+func (m *Model) animating() bool {
+	for key := range m.indicators {
+		if m.showsActivity(m.collections[key]) {
+			return true
+		}
+	}
+	return m.pendingActions() > 0
+}
+
+// pendingActions counts writes and playback launches awaiting a result.
+func (m *Model) pendingActions() int {
+	n := 0
+	for owner := range m.requests.active {
+		if strings.HasPrefix(owner, "mutation:") || strings.HasPrefix(owner, "playback:") {
+			n++
+		}
+	}
+	return n
 }
 
 func (m *Model) update(msg tea.Msg) tea.Cmd {
@@ -152,7 +179,11 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case TickMsg:
 		m.SpinnerFrame++
 		m.ColumnStack.UpdateSpinnerFrame(m.SpinnerFrame)
-		return TickCmd(100 * time.Millisecond)
+		if !m.animating() {
+			m.ticking = false
+			return nil
+		}
+		return tick()
 	case StatesMsg:
 		var cmds []tea.Cmd
 		for _, st := range msg {
