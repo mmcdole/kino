@@ -2,6 +2,7 @@ package components
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/mmcdole/kino/internal/domain"
@@ -42,13 +43,28 @@ func present(item domain.ListItem) itemPresentation {
 	return p
 }
 
-func formattedDuration(m domain.MediaItem) string {
+// runtimeLabel formats an item's runtime as "1h 42m" or "48m".
+func runtimeLabel(m domain.MediaItem) string {
 	h := int(m.Duration.Hours())
 	mins := int(m.Duration.Minutes()) % 60
 	if h > 0 {
 		return fmt.Sprintf("%dh %dm", h, mins)
 	}
 	return fmt.Sprintf("%dm", mins)
+}
+
+// clockDuration formats a playback position as H:MM:SS or MM:SS.
+func clockDuration(d time.Duration) string {
+	totalSeconds := int64(d.Seconds())
+
+	hours := totalSeconds / 3600
+	minutes := (totalSeconds % 3600) / 60
+	seconds := totalSeconds % 60
+
+	if hours > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", hours, minutes, seconds)
+	}
+	return fmt.Sprintf("%02d:%02d", minutes, seconds)
 }
 
 func episodeCode(m domain.MediaItem) string {
@@ -114,4 +130,34 @@ func seasonTitle(s domain.Season) string {
 		return fmt.Sprintf("Season %d: %s", s.SeasonNum, s.Title)
 	}
 	return fmt.Sprintf("Season %d", s.SeasonNum)
+}
+
+// wordWrap wraps text to the specified width
+func wordWrap(text string, width int) string {
+	if width <= 0 {
+		return text
+	}
+
+	var result strings.Builder
+	words := strings.Fields(text)
+	lineLen := 0
+
+	for i, word := range words {
+		wordLen := len(word)
+
+		if lineLen+wordLen+1 > width && lineLen > 0 {
+			result.WriteString("\n")
+			lineLen = 0
+		}
+
+		if i > 0 && lineLen > 0 {
+			result.WriteString(" ")
+			lineLen++
+		}
+
+		result.WriteString(word)
+		lineLen += wordLen
+	}
+
+	return result.String()
 }

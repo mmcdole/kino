@@ -3,7 +3,6 @@ package components
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mmcdole/kino/internal/domain"
@@ -214,7 +213,7 @@ func renderMediaHeader(item domain.MediaItem, width int) string {
 	if item.Year > 0 {
 		metaParts = append(metaParts, fmt.Sprintf("%d", item.Year))
 	}
-	metaParts = append(metaParts, formattedDuration(item))
+	metaParts = append(metaParts, runtimeLabel(item))
 	if item.ContentRating != "" {
 		metaParts = append(metaParts, item.ContentRating)
 	}
@@ -241,7 +240,7 @@ func renderMediaHeader(item domain.MediaItem, width int) string {
 	case domain.WatchStatusWatched:
 		statusParts = append(statusParts, styles.PlayedStyle.Render("✓ Watched"))
 	case domain.WatchStatusInProgress:
-		statusParts = append(statusParts, styles.InProgressStyle.Render(fmt.Sprintf("◐ %s", formatDuration(item.ViewOffset))))
+		statusParts = append(statusParts, styles.InProgressStyle.Render(fmt.Sprintf("◐ %s", clockDuration(item.ViewOffset))))
 	case domain.WatchStatusUnwatched:
 		statusParts = append(statusParts, styles.DimStyle.Render("○ Unwatched"))
 	}
@@ -517,50 +516,6 @@ func splitLines(s string) []string {
 		return nil
 	}
 	return strings.Split(s, "\n")
-}
-
-// formatDuration formats a duration as HH:MM:SS or MM:SS
-func formatDuration(d time.Duration) string {
-	totalSeconds := int64(d.Seconds())
-
-	hours := totalSeconds / 3600
-	minutes := (totalSeconds % 3600) / 60
-	seconds := totalSeconds % 60
-
-	if hours > 0 {
-		return fmt.Sprintf("%d:%02d:%02d", hours, minutes, seconds)
-	}
-	return fmt.Sprintf("%02d:%02d", minutes, seconds)
-}
-
-// wordWrap wraps text to the specified width
-func wordWrap(text string, width int) string {
-	if width <= 0 {
-		return text
-	}
-
-	var result strings.Builder
-	words := strings.Fields(text)
-	lineLen := 0
-
-	for i, word := range words {
-		wordLen := len(word)
-
-		if lineLen+wordLen+1 > width && lineLen > 0 {
-			result.WriteString("\n")
-			lineLen = 0
-		}
-
-		if i > 0 && lineLen > 0 {
-			result.WriteString(" ")
-			lineLen++
-		}
-
-		result.WriteString(word)
-		lineLen += wordLen
-	}
-
-	return result.String()
 }
 
 // renderLibraryFeedback uses the same summary as the library row. Progress is
