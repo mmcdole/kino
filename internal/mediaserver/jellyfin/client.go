@@ -21,7 +21,7 @@ const (
 	baseRetryDelay = 500 * time.Millisecond
 )
 
-// Client implements the MediaSource interface for Jellyfin
+// Client talks to one Jellyfin server as one user.
 type Client struct {
 	baseURL  string
 	token    string

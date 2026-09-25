@@ -11,16 +11,14 @@ import (
 	"github.com/mmcdole/kino/internal/player"
 )
 
-// MediaSource is everything the application needs from a media server
-// backend: catalog browsing and mutations, and playable URL resolution.
-type MediaSource interface {
+// Server is everything the application needs from a media server: catalog browsing and mutations, and playable URL resolution.
+type Server interface {
 	catalog.Backend
 	player.URLResolver
 }
 
-// NewClient creates a new MediaSource based on the server type.
-// This factory function abstracts away the specific backend implementation.
-func NewClient(cfg *config.Config, logger *slog.Logger) (MediaSource, error) {
+// New returns the client for the configured server type.
+func New(cfg *config.Config, logger *slog.Logger) (Server, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
@@ -34,10 +32,10 @@ func NewClient(cfg *config.Config, logger *slog.Logger) (MediaSource, error) {
 	}
 
 	switch cfg.Server.Type {
-	case config.SourceTypePlex:
+	case config.Plex:
 		return plex.NewClient(cfg.Server.URL, cfg.Server.Token, cfg.Server.DeviceID, logger), nil
 
-	case config.SourceTypeJellyfin:
+	case config.Jellyfin:
 		if cfg.Server.UserID == "" {
 			return nil, fmt.Errorf("Jellyfin requires user ID")
 		}

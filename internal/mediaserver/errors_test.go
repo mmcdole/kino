@@ -28,7 +28,7 @@ func TestBackendCancellationAndNotFound(t *testing.T) {
 				<-r.Context().Done()
 			}))
 			defer server.Close()
-			var client mediaserver.MediaSource
+			var client mediaserver.Server
 			if backend == "plex" {
 				client = plex.NewClient(server.URL, "token", "device", nil)
 			} else {

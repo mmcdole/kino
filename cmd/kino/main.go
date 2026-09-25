@@ -77,7 +77,7 @@ func run() error {
 	}
 
 	// Create media source client
-	client, err := mediaserver.NewClient(cfg, logger)
+	client, err := mediaserver.New(cfg, logger)
 	if err != nil {
 		return fmt.Errorf("failed to create media client: %w", err)
 	}

@@ -32,7 +32,7 @@ func runSetupFlow(cfg *config.Config, logger *slog.Logger) error {
 
 	// Loop until we get a valid server URL
 	var serverURL string
-	var serverType config.SourceType
+	var serverType config.ServerType
 
 	for {
 		// Prompt for server URL
@@ -80,9 +80,9 @@ func runSetupFlow(cfg *config.Config, logger *slog.Logger) error {
 	var result *domain.Credentials
 	var err error
 	switch serverType {
-	case config.SourceTypePlex:
+	case config.Plex:
 		result, err = signInPlex(ctx, cfg.Server.DeviceID, logger)
-	case config.SourceTypeJellyfin:
+	case config.Jellyfin:
 		result, err = signInJellyfin(ctx, serverURL, cfg.Server.DeviceID, logger)
 	default:
 		err = fmt.Errorf("unknown server type: %s", serverType)
@@ -107,13 +107,13 @@ func runSetupFlow(cfg *config.Config, logger *slog.Logger) error {
 }
 
 // detectServerWithSpinner detects the server type with a visual spinner
-func detectServerWithSpinner(serverURL string) (config.SourceType, error) {
+func detectServerWithSpinner(serverURL string) (config.ServerType, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	// Channel to receive result
 	type result struct {
-		serverType config.SourceType
+		serverType config.ServerType
 		err        error
 	}
 	resultCh := make(chan result, 1)
@@ -146,9 +146,9 @@ func detectServerWithSpinner(serverURL string) (config.SourceType, error) {
 			// Show success with server type
 			serverName := "Unknown"
 			switch res.serverType {
-			case config.SourceTypePlex:
+			case config.Plex:
 				serverName = "Plex Media Server"
-			case config.SourceTypeJellyfin:
+			case config.Jellyfin:
 				serverName = "Jellyfin"
 			}
 			fmt.Printf("✓ Detected: %s\n", serverName)

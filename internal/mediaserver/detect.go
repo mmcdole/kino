@@ -14,19 +14,19 @@ import (
 const detectTimeout = 10 * time.Second
 
 // DetectServerType probes a server URL to determine if it's Plex or Jellyfin.
-// Returns the detected SourceType or an error if detection fails.
-func DetectServerType(ctx context.Context, serverURL string) (config.SourceType, error) {
+// Returns the detected ServerType or an error if detection fails.
+func DetectServerType(ctx context.Context, serverURL string) (config.ServerType, error) {
 	client := &http.Client{Timeout: detectTimeout}
 
 	// Both endpoints are unauthenticated. Jellyfin goes first because its
 	// check is the more specific one.
 	jellyfinErr := jellyfin.Probe(ctx, client, serverURL)
 	if jellyfinErr == nil {
-		return config.SourceTypeJellyfin, nil
+		return config.Jellyfin, nil
 	}
 	plexErr := plex.Probe(ctx, client, serverURL)
 	if plexErr == nil {
-		return config.SourceTypePlex, nil
+		return config.Plex, nil
 	}
 	return "", fmt.Errorf("could not detect server type: tried Jellyfin (%v), Plex (%v)", jellyfinErr, plexErr)
 }

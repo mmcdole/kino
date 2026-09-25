@@ -12,12 +12,12 @@ import (
 	"github.com/spf13/viper"
 )
 
-// SourceType identifies the media server backend
-type SourceType string
+// ServerType identifies which kind of media server is configured.
+type ServerType string
 
 const (
-	SourceTypePlex     SourceType = "plex"
-	SourceTypeJellyfin SourceType = "jellyfin"
+	Plex     ServerType = "plex"
+	Jellyfin ServerType = "jellyfin"
 )
 
 // Config holds all application configuration
@@ -32,7 +32,7 @@ type Config struct {
 
 // ServerConfig holds media server configuration
 type ServerConfig struct {
-	Type     SourceType `mapstructure:"type"`      // "plex" or "jellyfin"
+	Type     ServerType `mapstructure:"type"`      // "plex" or "jellyfin"
 	URL      string     `mapstructure:"url"`       // Server URL
 	Token    string     `mapstructure:"token"`     // Plex token OR Jellyfin API key
 	UserID   string     `mapstructure:"user_id"`   // Jellyfin only

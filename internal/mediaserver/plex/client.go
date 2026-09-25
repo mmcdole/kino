@@ -35,8 +35,7 @@ func normalizeClientID(clientID string) string {
 	return clientID
 }
 
-// Client implements domain.LibraryRepository, domain.SearchRepository,
-// domain.MetadataRepository, and domain.Scrobbler for Plex
+// Client talks to one Plex server.
 type Client struct {
 	baseURL           string
 	token             string

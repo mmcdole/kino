@@ -17,10 +17,10 @@ func TestClientConstructionDoesNotRequireNetwork(t *testing.T) {
 	}))
 	defer srv.Close()
 	cfg := &config.Config{}
-	cfg.Server.Type = config.SourceTypePlex
+	cfg.Server.Type = config.Plex
 	cfg.Server.URL = srv.URL
 	cfg.Server.Token = "token"
-	if _, err := NewClient(cfg, nil); err != nil {
+	if _, err := New(cfg, nil); err != nil {
 		t.Fatal(err)
 	}
 	if requests.Load() != 0 {
