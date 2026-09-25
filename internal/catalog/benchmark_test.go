@@ -14,7 +14,7 @@ import (
 func BenchmarkCachedLibraries(b *testing.B) {
 	for _, size := range []int{100, 10000} {
 		b.Run(fmt.Sprint(size), func(b *testing.B) {
-			cache, err := store.Open(b.TempDir(), "server", "user")
+			cache, err := store.Open(b.TempDir())
 			if err != nil {
 				b.Fatal(err)
 			}

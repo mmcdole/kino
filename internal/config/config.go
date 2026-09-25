@@ -2,6 +2,7 @@ package config
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -229,6 +230,16 @@ func DefaultCachePath() string {
 		home, _ := os.UserHomeDir()
 		return filepath.Join(home, ".local", "share", "kino", "cache")
 	}
+}
+
+// CacheDir returns the cache directory for one server and user. Watch state,
+// resume positions and playlists are per user, so two accounts on the same
+// server never share a cache. (Plex configs have no user ID; those stay keyed
+// by URL alone.)
+func CacheDir(serverURL, userID string) string {
+	normalized := strings.TrimRight(strings.ToLower(serverURL+"|"+userID), "/")
+	hash := sha256.Sum256([]byte(normalized))
+	return filepath.Join(DefaultCachePath(), hex.EncodeToString(hash[:6]))
 }
 
 // ClearServerConfig signs out by clearing the server and credentials in the

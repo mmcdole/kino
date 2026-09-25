@@ -56,7 +56,7 @@ func awaitResource(t *testing.T, cmd tea.Cmd) ResourceMsg {
 
 func TestCatalogDiskCacheAndTUIRequestLifecycle(t *testing.T) {
 	dir := t.TempDir()
-	cache, err := store.Open(dir, "server", "user")
+	cache, err := store.Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestCatalogDiskCacheAndTUIRequestLifecycle(t *testing.T) {
 	if err := cache.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := store.Open(dir, "server", "user")
+	reopened, err := store.Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

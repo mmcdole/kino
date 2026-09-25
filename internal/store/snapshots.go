@@ -3,9 +3,7 @@ package store
 import (
 	"bytes"
 	"encoding/json"
-	"maps"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/mmcdole/kino/internal/domain"
@@ -20,16 +18,26 @@ type storedSnapshot struct {
 	Version   int64             `json:"version"`
 }
 
+// Load returns a detached copy of the snapshot stored under key.
 func (s *Store) Load(key string) (domain.CachedList, bool) {
-	var data storedSnapshot
-	if !s.get(bucketSnapshots, key, &data) {
-		return domain.CachedList{}, false
-	}
-	return domain.CachedList{Items: unwrapListItems(data.Items), FetchedAt: data.FetchedAt, Version: data.Version}, true
+	var l domain.CachedList
+	ok := false
+	s.db.View(func(tx *bolt.Tx) error {
+		l, ok = decodeSnapshot(tx.Bucket(bucketSnapshots).Get([]byte(key)))
+		return nil
+	})
+	return l, ok
 }
 
-func (s *Store) Save(key string, data domain.CachedList) error {
-	return s.set(bucketSnapshots, key, storedSnapshot{Items: wrapListItems(data.Items), FetchedAt: data.FetchedAt, Version: data.Version})
+// Save replaces the snapshot stored under key.
+func (s *Store) Save(key string, l domain.CachedList) error {
+	data, err := encodeSnapshot(l)
+	if err != nil {
+		return err
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket(bucketSnapshots).Put([]byte(key), data)
+	})
 }
 
 // Update hands every snapshot that mentions one of ids to fn and saves the
@@ -40,43 +48,14 @@ func (s *Store) Update(ids []string, fn func(map[string]domain.CachedList) map[s
 	for i, id := range ids {
 		needles[i], _ = json.Marshal(id)
 	}
-	mentions := func(data []byte) bool {
-		return slices.ContainsFunc(needles, func(n []byte) bool { return bytes.Contains(data, n) })
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	var saved []string
-	if s.db == nil {
-		prefix := string(bucketSnapshots) + ":"
-		lists := make(map[string]domain.CachedList)
-		for key, data := range s.cache {
-			if name, ok := strings.CutPrefix(key, prefix); ok && mentions(data) {
-				if l, ok := decodeSnapshot(data); ok {
-					lists[name] = l
-				}
-			}
-		}
-		staged := make(map[string][]byte)
-		for key, l := range fn(lists) {
-			data, err := encodeSnapshot(l)
-			if err != nil {
-				return nil, err
-			}
-			staged[prefix+key] = data
-			saved = append(saved, key)
-		}
-		maps.Copy(s.cache, staged)
-		slices.Sort(saved)
-		return saved, nil
-	}
 	err := s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucketSnapshots)
 		lists := make(map[string]domain.CachedList)
 		err := b.ForEach(func(k, v []byte) error {
-			if mentions(v) {
-				if l, ok := decodeSnapshot(v); ok {
-					lists[string(k)] = l
-				}
+			mentioned := slices.ContainsFunc(needles, func(n []byte) bool { return bytes.Contains(v, n) })
+			if l, ok := decodeSnapshot(v); mentioned && ok {
+				lists[string(k)] = l
 			}
 			return nil
 		})
@@ -104,7 +83,7 @@ func (s *Store) Update(ids []string, fn func(map[string]domain.CachedList) map[s
 
 func decodeSnapshot(data []byte) (domain.CachedList, bool) {
 	var snapshot storedSnapshot
-	if json.Unmarshal(data, &snapshot) != nil {
+	if data == nil || json.Unmarshal(data, &snapshot) != nil {
 		return domain.CachedList{}, false
 	}
 	return domain.CachedList{Items: unwrapListItems(snapshot.Items), FetchedAt: snapshot.FetchedAt, Version: snapshot.Version}, true

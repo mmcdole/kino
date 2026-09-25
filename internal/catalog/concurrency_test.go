@@ -27,10 +27,7 @@ func (c *gatedCache) Load(key string) (domain.CachedList, bool) {
 }
 
 func TestCacheDecodeDoesNotBlockUnrelatedLoads(t *testing.T) {
-	cache, err := store.Open("", "", "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	cache := store.NewMemory()
 	defer cache.Close()
 	a := Resource{Kind: Movies, ID: "a", LibraryID: "a"}
 	b := Resource{Kind: Movies, ID: "b", LibraryID: "b"}
@@ -58,10 +55,7 @@ func TestCacheDecodeDoesNotBlockUnrelatedLoads(t *testing.T) {
 }
 
 func TestMutationDuringCacheDecodeRejectsOldPayload(t *testing.T) {
-	cache, err := store.Open("", "", "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	cache := store.NewMemory()
 	defer cache.Close()
 	r := Resource{Kind: Movies, ID: "a", LibraryID: "a"}
 	if err := cache.Save(r.Key(), domain.CachedList{FetchedAt: time.Now(), Items: []domain.ListItem{&domain.MediaItem{ID: "movie"}}}); err != nil {

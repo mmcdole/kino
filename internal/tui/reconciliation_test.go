@@ -15,10 +15,7 @@ import (
 
 func TestMutationBeforeQueuedInitialLoad(t *testing.T) {
 	m := testModel(t)
-	cache, err := store.Open("", "", "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	cache := store.NewMemory()
 	defer cache.Close()
 	backend := &browsingBackend{gate: make(chan struct{})}
 	close(backend.gate)
@@ -62,10 +59,7 @@ func TestUncertainMutationDoesNotRestoreRemovedLibrary(t *testing.T) {
 
 func TestWatchCompletionAfterBackUpdatesParent(t *testing.T) {
 	m := testModel(t)
-	cache, err := store.Open("", "", "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	cache := store.NewMemory()
 	defer cache.Close()
 	svc := catalog.NewService(context.Background(), &browsingBackend{}, cache)
 	defer svc.Close()
