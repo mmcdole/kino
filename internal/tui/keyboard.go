@@ -286,7 +286,7 @@ func (m Model) handleMarkWatched() (tea.Model, tea.Cmd) {
 		return m.notAvailableHere("Mark watched (w)")
 	}
 	r, _ := m.topResource()
-	return m, m.beginMutation(catalog.Mutation{Kind: catalog.Watch, ItemID: item.ID, Title: item.Title, LibraryID: r.LibraryID, Played: true})
+	return m, m.beginMutation(catalog.Mutation{Kind: catalog.Watch, ItemID: item.ID, ShowID: item.ShowID, SeasonID: item.ParentID, Title: item.Title, LibraryID: r.LibraryID, Played: true})
 }
 
 // handleMarkUnwatched marks the selected item as unwatched
@@ -300,7 +300,7 @@ func (m Model) handleMarkUnwatched() (tea.Model, tea.Cmd) {
 		return m.notAvailableHere("Mark unwatched (u)")
 	}
 	r, _ := m.topResource()
-	return m, m.beginMutation(catalog.Mutation{Kind: catalog.Watch, ItemID: item.ID, Title: item.Title, LibraryID: r.LibraryID})
+	return m, m.beginMutation(catalog.Mutation{Kind: catalog.Watch, ItemID: item.ID, ShowID: item.ShowID, SeasonID: item.ParentID, Title: item.Title, LibraryID: r.LibraryID})
 }
 
 // handlePlay plays the selected item from the beginning

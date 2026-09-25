@@ -1,7 +1,11 @@
 package store
 
 import (
+	"bytes"
 	"encoding/json"
+	"maps"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/mmcdole/kino/internal/domain"
@@ -28,83 +32,84 @@ func (s *Store) Save(key string, data domain.CachedList) error {
 	return s.set(bucketSnapshots, key, storedSnapshot{Items: wrapListItems(data.Items), FetchedAt: data.FetchedAt, Version: data.Version})
 }
 
-// PatchWatchState updates every cached projection in one transaction. Parent
-// counters are adjusted once, even when an episode occurs in several lists.
-func (s *Store) PatchWatchState(itemID string, played bool) error {
+// Update hands every snapshot that mentions one of ids to fn and saves the
+// snapshots fn returns, all in one transaction. It returns the saved keys.
+// Matching is a cheap scan of the encoded data, so only candidates are decoded.
+func (s *Store) Update(ids []string, fn func(map[string]domain.CachedList) map[string]domain.CachedList) ([]string, error) {
+	needles := make([][]byte, len(ids))
+	for i, id := range ids {
+		needles[i], _ = json.Marshal(id)
+	}
+	mentions := func(data []byte) bool {
+		return slices.ContainsFunc(needles, func(n []byte) bool { return bytes.Contains(data, n) })
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	apply := func(tx *bolt.Tx, memory map[string][]byte) error {
-		var showID, seasonID string
-		flipped := false
-		patch := func(key string, data []byte) []byte {
-			var snapshot storedSnapshot
-			if json.Unmarshal(data, &snapshot) != nil {
-				return nil
-			}
-			changed := false
-			for i := range snapshot.Items {
-				item := snapshot.Items[i].Movie
-				if item == nil || item.ID != itemID {
-					continue
+	var saved []string
+	if s.db == nil {
+		prefix := string(bucketSnapshots) + ":"
+		lists := make(map[string]domain.CachedList)
+		for key, data := range s.cache {
+			if name, ok := strings.CutPrefix(key, prefix); ok && mentions(data) {
+				if l, ok := decodeSnapshot(data); ok {
+					lists[name] = l
 				}
-				if item.IsPlayed != played {
-					flipped = true
-					showID = item.ShowID
-					seasonID = item.ParentID
-				}
-				item.IsPlayed = played
-				item.ViewOffset = 0
-				changed = true
 			}
-			if !changed {
-				return nil
-			}
-			out, _ := json.Marshal(snapshot)
-			return out
 		}
-		if err := updateEach(tx, memory, bucketSnapshots, nil, patch); err != nil {
+		staged := make(map[string][]byte)
+		for key, l := range fn(lists) {
+			data, err := encodeSnapshot(l)
+			if err != nil {
+				return nil, err
+			}
+			staged[prefix+key] = data
+			saved = append(saved, key)
+		}
+		maps.Copy(s.cache, staged)
+		slices.Sort(saved)
+		return saved, nil
+	}
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucketSnapshots)
+		lists := make(map[string]domain.CachedList)
+		err := b.ForEach(func(k, v []byte) error {
+			if mentions(v) {
+				if l, ok := decodeSnapshot(v); ok {
+					lists[string(k)] = l
+				}
+			}
+			return nil
+		})
+		if err != nil {
 			return err
 		}
-		if !flipped || showID == "" {
-			return nil
+		for key, l := range fn(lists) {
+			data, err := encodeSnapshot(l)
+			if err != nil {
+				return err
+			}
+			if err := b.Put([]byte(key), data); err != nil {
+				return err
+			}
+			saved = append(saved, key)
 		}
-		delta := 1
-		if played {
-			delta = -1
-		}
-		return updateEach(tx, memory, bucketSnapshots, nil, func(key string, data []byte) []byte {
-			var snapshot storedSnapshot
-			if json.Unmarshal(data, &snapshot) != nil {
-				return nil
-			}
-			changed := false
-			for _, item := range snapshot.Items {
-				if item.Show != nil && item.Show.ID == showID {
-					item.Show.UnwatchedCount = clampCount(item.Show.UnwatchedCount+delta, item.Show.EpisodeCount)
-					changed = true
-				}
-				if item.Season != nil && item.Season.ID == seasonID {
-					item.Season.UnwatchedCount = clampCount(item.Season.UnwatchedCount+delta, item.Season.EpisodeCount)
-					changed = true
-				}
-			}
-			if !changed {
-				return nil
-			}
-			out, _ := json.Marshal(snapshot)
-			return out
-		})
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	if s.db != nil {
-		return s.db.Update(func(tx *bolt.Tx) error { return apply(tx, nil) })
+	slices.Sort(saved)
+	return saved, nil
+}
+
+func decodeSnapshot(data []byte) (domain.CachedList, bool) {
+	var snapshot storedSnapshot
+	if json.Unmarshal(data, &snapshot) != nil {
+		return domain.CachedList{}, false
 	}
-	staged := make(map[string][]byte, len(s.cache))
-	for key, value := range s.cache {
-		staged[key] = value
-	}
-	if err := apply(nil, staged); err != nil {
-		return err
-	}
-	s.cache = staged
-	return nil
+	return domain.CachedList{Items: unwrapListItems(snapshot.Items), FetchedAt: snapshot.FetchedAt, Version: snapshot.Version}, true
+}
+
+func encodeSnapshot(l domain.CachedList) ([]byte, error) {
+	return json.Marshal(storedSnapshot{Items: wrapListItems(l.Items), FetchedAt: l.FetchedAt, Version: l.Version})
 }

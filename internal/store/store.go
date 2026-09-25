@@ -140,54 +140,6 @@ func (s *Store) set(bucket []byte, key string, value any) error {
 	return nil
 }
 
-func clampCount(n, max int) int {
-	if n < 0 {
-		return 0
-	}
-	if max > 0 && n > max {
-		return max
-	}
-	return n
-}
-
-// updateEach reads and transforms values within the caller's write transaction.
-func updateEach(tx *bolt.Tx, memory map[string][]byte, bucket []byte, filter func(string) bool, transform func(string, []byte) []byte) error {
-	if tx != nil {
-		b := tx.Bucket(bucket)
-		var keys []string
-		if err := b.ForEach(func(k, v []byte) error {
-			if filter == nil || filter(string(k)) {
-				keys = append(keys, string(k))
-			}
-			return nil
-		}); err != nil {
-			return err
-		}
-		for _, key := range keys {
-			if data := transform(key, b.Get([]byte(key))); data != nil {
-				if err := b.Put([]byte(key), data); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
-	}
-	prefix := string(bucket) + ":"
-	for key, value := range memory {
-		if !strings.HasPrefix(key, prefix) {
-			continue
-		}
-		name := strings.TrimPrefix(key, prefix)
-		if filter != nil && !filter(name) {
-			continue
-		}
-		if data := transform(name, value); data != nil {
-			memory[key] = data
-		}
-	}
-	return nil
-}
-
 // wrapListItems converts domain.ListItem slice to serializable wrappers
 func wrapListItems(items []domain.ListItem) []listItemWrapper {
 	wrappers := make([]listItemWrapper, len(items))
