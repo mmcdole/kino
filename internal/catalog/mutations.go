@@ -101,6 +101,11 @@ func (s *Service) fence(key string, change *Change) {
 	change.Revisions[key] = s.revisions[key]
 }
 
+// expire republishes key as needing revalidation. Callers hold s.mu.
+func (s *Service) expire(key string) {
+	s.refreshState(key, func(st *State) { st.Snapshot.Stale = true })
+}
+
 // watchScope returns the collections an item's watch state can appear in:
 // its library's collections and every playlist. Callers hold s.mu.
 func (s *Service) watchScope(m Mutation) []string {
@@ -148,6 +153,7 @@ func (s *Service) reconcileWatch(m Mutation, change Change, err error) (Change, 
 		for _, key := range scope {
 			s.fence(key, &change)
 			s.invalid[key] = true
+			s.expire(key)
 			change.Resources = append(change.Resources, s.known[key])
 		}
 		return change, err
@@ -170,15 +176,19 @@ func (s *Service) reconcileWatch(m Mutation, change Change, err error) (Change, 
 		s.fence(key, &change)
 		entry, ok := entries[key]
 		if s.invalid[key] || !ok {
+			s.expire(key)
 			change.Resources = append(change.Resources, r)
 			continue
 		}
 		s.cacheRevisions[key] = change.Revisions[key]
-		change.Snapshots = append(change.Snapshots, Snapshot{Resource: r, CachedList: entry, Revision: change.Revisions[key], FromCache: true, Stale: !s.fresh(r, entry)})
+		snapshot := Snapshot{Resource: r, CachedList: entry, Revision: change.Revisions[key], FromCache: true, Stale: !s.fresh(r, entry)}
+		s.accept(snapshot)
+		change.Snapshots = append(change.Snapshots, snapshot)
 	}
 	for _, key := range interrupted {
 		if _, done := change.Revisions[key]; !done {
 			s.fence(key, &change)
+			s.expire(key)
 			change.Resources = append(change.Resources, s.known[key])
 		}
 	}
@@ -199,10 +209,12 @@ func (s *Service) reconcilePlaylists(m Mutation, change Change, err error) (Chan
 	}
 	s.mu.Unlock()
 
+	entries := make(map[string]domain.CachedList)
 	saved := make(map[string]error)
 	for _, r := range change.Resources {
 		if entry, ok := s.cache.Load(r.Key()); ok {
 			entry.FetchedAt = time.Time{}
+			entries[r.Key()] = entry
 			saved[r.Key()] = s.cache.Save(r.Key(), entry)
 			change.Warning = errors.Join(change.Warning, saved[r.Key()])
 		}
@@ -210,11 +222,18 @@ func (s *Service) reconcilePlaylists(m Mutation, change Change, err error) (Chan
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for key, saveErr := range saved {
-		if saveErr != nil {
-			s.invalid[key] = true
-		} else {
+	for _, r := range change.Resources {
+		key := r.Key()
+		saveErr, ok := saved[key]
+		switch {
+		case ok && saveErr == nil:
 			s.cacheRevisions[key] = change.Revisions[key]
+			s.accept(Snapshot{Resource: r, CachedList: entries[key], Revision: change.Revisions[key], FromCache: true, Stale: true})
+		case ok:
+			s.invalid[key] = true
+			s.expire(key)
+		default:
+			s.expire(key)
 		}
 	}
 	return change, err

@@ -52,6 +52,9 @@ type Service struct {
 	cacheRevisions map[string]uint64
 	invalid        map[string]bool
 	nextObserver   uint64
+	states         map[string]State
+	changed        map[string]struct{}
+	signal         chan struct{}
 	now            func() time.Time
 }
 
@@ -65,6 +68,9 @@ func NewService(ctx context.Context, backend Backend, cache Cache) *Service {
 		cacheRevisions: make(map[string]uint64),
 		invalid:        make(map[string]bool),
 		mutations:      make(chan struct{}, 1),
+		states:         make(map[string]State),
+		changed:        make(map[string]struct{}),
+		signal:         make(chan struct{}, 1),
 		now:            time.Now,
 	}
 }
@@ -140,6 +146,9 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy, observer 
 				delete(s.active, key)
 			}
 		}
+		if ok {
+			s.accept(cached)
+		}
 		current := s.active[key]
 		if current == nil && policy == Browse && ok && !cached.Stale {
 			s.mu.Unlock()
@@ -149,6 +158,7 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy, observer 
 			workCtx, cancel := context.WithTimeout(s.ctx, r.Timeout())
 			current = &flight{resource: r, ctx: workCtx, cancel: cancel, done: make(chan struct{}), observers: make(map[uint64]Observer)}
 			s.active[key] = current
+			s.startAttempt(r)
 			s.wg.Add(1)
 			go s.run(r, current, cached, policy == Revalidate && ok && !cached.Stale)
 		}
@@ -195,6 +205,7 @@ func (s *Service) release(key string, f *flight, id uint64) {
 	if len(f.observers) == 0 && s.active[key] == f {
 		f.cancel()
 		delete(s.active, key)
+		s.refreshState(key, nil)
 	}
 }
 
@@ -203,6 +214,9 @@ func (s *Service) run(r Resource, f *flight, cached Snapshot, canCheckCount bool
 	defer f.cancel()
 	progress := func(loaded, total int) {
 		s.mu.Lock()
+		if s.active[r.Key()] == f {
+			s.refreshState(r.Key(), func(st *State) { st.Progress = Progress{loaded, total} })
+		}
 		callbacks := make([]func(Progress), 0, len(f.observers))
 		for _, o := range f.observers {
 			if o.Progress != nil {
@@ -269,6 +283,14 @@ func (s *Service) run(r Resource, f *flight, cached Snapshot, canCheckCount bool
 	f.result, f.err = result, err
 	if s.active[r.Key()] == f {
 		delete(s.active, r.Key())
+		if err == nil {
+			s.accept(result)
+		}
+		s.refreshState(r.Key(), func(st *State) {
+			if err != nil && !errors.Is(err, context.Canceled) {
+				st.Err = err
+			}
+		})
 	}
 	close(f.done)
 }
