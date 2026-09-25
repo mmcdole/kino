@@ -1,13 +1,10 @@
 package store
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
+	"encoding/json"
 	"time"
 
 	"github.com/mmcdole/kino/internal/domain"
-	bolt "go.etcd.io/bbolt"
 )
 
 // listItemWrapper wraps ListItem for JSON serialization
@@ -20,64 +17,22 @@ type listItemWrapper struct {
 	Playlist *domain.Playlist  `json:"playlist,omitempty"`
 }
 
-// Store is the persistent snapshot cache, backed by BoltDB. Bolt serializes
-// writers and gives readers consistent views, so Store needs no locking.
-type Store struct {
-	db *bolt.DB
+type storedSnapshot struct {
+	Items     []listItemWrapper `json:"items"`
+	FetchedAt time.Time         `json:"fetched_at"`
+	Version   int64             `json:"version"`
 }
 
-// Open opens (or creates) the cache database in dir.
-func Open(dir string) (*Store, error) {
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, err
+func decodeSnapshot(data []byte) (domain.CachedList, bool) {
+	var snapshot storedSnapshot
+	if data == nil || json.Unmarshal(data, &snapshot) != nil {
+		return domain.CachedList{}, false
 	}
-
-	dbPath := filepath.Join(dir, "kino.db")
-	db, err := bolt.Open(dbPath, 0600, &bolt.Options{Timeout: 1 * time.Second})
-	if err != nil {
-		return nil, fmt.Errorf("failed to open bolt db: %w", err)
-	}
-
-	// The snapshots bucket is authoritative. Discard other collection buckets
-	// so reads cannot mix incompatible schemas.
-	err = db.Update(func(tx *bolt.Tx) error {
-		if _, err := tx.CreateBucketIfNotExists(bucketSnapshots); err != nil {
-			return err
-		}
-		for _, name := range []string{"libraries", "content", "seasons", "episodes", "playlists"} {
-			if tx.Bucket([]byte(name)) != nil {
-				if err := tx.DeleteBucket([]byte(name)); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		db.Close()
-		return nil, err
-	}
-
-	// JSON cache files are not read by this store.
-	cleanupLegacyJSONCache(dir)
-
-	return &Store{db: db}, nil
+	return domain.CachedList{Items: unwrapListItems(snapshot.Items), FetchedAt: snapshot.FetchedAt, Version: snapshot.Version}, true
 }
 
-// cleanupLegacyJSONCache removes JSON files that are not used by snapshot storage.
-func cleanupLegacyJSONCache(cacheDir string) {
-	matches, err := filepath.Glob(filepath.Join(cacheDir, "*.json"))
-	if err != nil || len(matches) == 0 {
-		return
-	}
-	for _, path := range matches {
-		os.Remove(path) // Ignore errors
-	}
-}
-
-// Close waits for open transactions and closes the database.
-func (s *Store) Close() error {
-	return s.db.Close()
+func encodeSnapshot(l domain.CachedList) ([]byte, error) {
+	return json.Marshal(storedSnapshot{Items: wrapListItems(l.Items), FetchedAt: l.FetchedAt, Version: l.Version})
 }
 
 // wrapListItems converts domain.ListItem slice to serializable wrappers

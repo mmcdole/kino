@@ -99,7 +99,7 @@ func await(t *testing.T, m *Model, svc *catalog.Service, done <-chan tea.Msg) *M
 
 func TestCatalogDiskCacheAndTUIRequestLifecycle(t *testing.T) {
 	dir := t.TempDir()
-	cache, err := store.Open(dir)
+	cache, err := store.OpenDisk(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestCatalogDiskCacheAndTUIRequestLifecycle(t *testing.T) {
 	if err := cache.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := store.Open(dir)
+	reopened, err := store.OpenDisk(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
