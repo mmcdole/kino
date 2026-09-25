@@ -63,6 +63,11 @@ const (
 // revision. Reads, count checks, and local patches never extend this age.
 const MaxAge = 5 * time.Minute
 
+// ContentMaxAge bounds how long a library's item list is trusted on a count
+// and server version check alone. Opening the library still refreshes it once
+// MaxAge has passed, so watch state stays current where it is shown.
+const ContentMaxAge = 24 * time.Hour
+
 type Snapshot struct {
 	Resource Resource
 	domain.CachedList
