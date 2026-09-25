@@ -1,11 +1,9 @@
 package jellyfin
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -14,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mmcdole/kino/internal/domain"
+	"github.com/mmcdole/kino/internal/mediaserver/httpx"
 )
 
 const (
@@ -24,13 +23,12 @@ const (
 
 // Client implements the MediaSource interface for Jellyfin
 type Client struct {
-	baseURL    string
-	token      string
-	userID     string
-	deviceID   string
-	httpClient *http.Client
-	retryDelay time.Duration // first retry backoff; doubles per attempt
-	logger     *slog.Logger
+	baseURL  string
+	token    string
+	userID   string
+	deviceID string
+	api      httpx.Client
+	logger   *slog.Logger
 }
 
 // NewClient creates a new Jellyfin API client
@@ -38,143 +36,49 @@ func NewClient(baseURL, token, userID, deviceID string, logger *slog.Logger) *Cl
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Client{
+	c := &Client{
 		baseURL:  strings.TrimRight(baseURL, "/"),
 		token:    token,
 		userID:   userID,
 		deviceID: deviceID,
-		httpClient: &http.Client{
-			Timeout: defaultTimeout,
-		},
-		retryDelay: baseRetryDelay,
-		logger:     logger,
+		logger:   logger,
 	}
+	c.api = httpx.Client{
+		Name:    "jellyfin",
+		BaseURL: c.baseURL,
+		HTTP:    &http.Client{Timeout: defaultTimeout},
+		Header: func(h http.Header) {
+			h.Set("X-Emby-Authorization", buildAuthHeader(c.token, c.deviceID))
+		},
+		Retries:    maxRetries,
+		RetryDelay: baseRetryDelay,
+		Logger:     logger,
+	}
+	return c
 }
 
-// do performs an authenticated HTTP request to the Jellyfin API. All error
-// mapping lives here: 401 → domain.ErrAuthFailed, transport failures →
-// domain.ErrServerOffline (wrapped with the cause), any 2xx → success.
-// Idempotent requests (retry=true) are retried on network errors and 5xx
-// responses with exponential backoff.
-func (c *Client) do(ctx context.Context, method, path string, query url.Values, jsonBody interface{}, retry bool) ([]byte, error) {
-	reqURL := fmt.Sprintf("%s%s", c.baseURL, path)
-	if query != nil {
-		reqURL = fmt.Sprintf("%s?%s", reqURL, query.Encode())
-	}
+// get performs an idempotent request, retried on transient failures.
+func (c *Client) get(ctx context.Context, path string, query url.Values) ([]byte, error) {
+	return c.api.Do(ctx, httpx.Request{Method: http.MethodGet, Path: path, Query: query, Retry: true})
+}
 
-	var bodyBytes []byte
-	if jsonBody != nil {
-		var err error
-		bodyBytes, err = json.Marshal(jsonBody)
+// send performs a mutation with an optional JSON body. It is never retried.
+func (c *Client) send(ctx context.Context, method, path string, query url.Values, body any) ([]byte, error) {
+	r := httpx.Request{Method: method, Path: path, Query: query}
+	if body != nil {
+		data, err := json.Marshal(body)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal request: %w", err)
 		}
+		r.Body = data
 	}
-
-	attempts := 1
-	if retry {
-		attempts = maxRetries + 1
-	}
-
-	var lastErr error
-	for attempt := 0; attempt < attempts; attempt++ {
-		// Check context before each attempt
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-
-		// Wait before retry (exponential backoff)
-		if attempt > 0 {
-			delay := c.retryDelay * time.Duration(1<<(attempt-1)) // 500ms, 1s, 2s
-			c.logger.Debug("retrying request", "attempt", attempt, "delay", delay, "url", reqURL)
-			select {
-			case <-time.After(delay):
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
-		}
-
-		var reqBody io.Reader
-		if bodyBytes != nil {
-			reqBody = bytes.NewReader(bodyBytes)
-		}
-		req, err := http.NewRequestWithContext(ctx, method, reqURL, reqBody)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create request: %w", err)
-		}
-
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("X-Emby-Authorization", buildAuthHeader(c.token, c.deviceID))
-		if bodyBytes != nil {
-			req.Header.Set("Content-Type", "application/json")
-		}
-
-		c.logger.Debug("jellyfin request", "method", method, "path", path, "attempt", attempt)
-
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			lastErr = fmt.Errorf("%w: %w", domain.ErrServerOffline, err)
-			c.logger.Warn("jellyfin request failed", "error", err, "method", method, "path", path, "attempt", attempt)
-			continue
-		}
-
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			return nil, fmt.Errorf("failed to read response: %w", err)
-		}
-
-		switch {
-		case resp.StatusCode == http.StatusUnauthorized:
-			return nil, domain.ErrAuthFailed
-		case resp.StatusCode == http.StatusNotFound:
-			return nil, domain.ErrItemNotFound
-		case resp.StatusCode >= 500:
-			lastErr = fmt.Errorf("server error: %d - %s", resp.StatusCode, truncateForLog(body))
-			c.logger.Warn("jellyfin server error",
-				"status", resp.StatusCode,
-				"attempt", attempt,
-				"method", method,
-				"path", path,
-			)
-			continue
-		case resp.StatusCode >= 200 && resp.StatusCode < 300:
-			return body, nil
-		default:
-			c.logger.Error("jellyfin request error", "status", resp.StatusCode, "path", path, "body", truncateForLog(body))
-			return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-		}
-	}
-
-	c.logger.Error("jellyfin request failed", "error", lastErr, "method", method, "path", path)
-	return nil, lastErr
-}
-
-// doRequest performs an idempotent (retried) GET-style request
-func (c *Client) doRequest(ctx context.Context, method, path string, query url.Values) ([]byte, error) {
-	return c.do(ctx, method, path, query, nil, true)
-}
-
-// truncateForLog bounds response bodies before they reach the log file
-// (a reverse proxy's 502 page can be arbitrarily large)
-func truncateForLog(body []byte) string {
-	const max = 512
-	if len(body) > max {
-		return string(body[:max]) + "...(truncated)"
-	}
-	return string(body)
+	return c.api.Do(ctx, r)
 }
 
 // GetLibraries returns all available libraries (Views)
 func (c *Client) GetLibraries(ctx context.Context) ([]domain.Library, error) {
 	path := fmt.Sprintf("/Users/%s/Views", c.userID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	body, err := c.get(ctx, path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +106,7 @@ func (c *Client) GetMovies(ctx context.Context, libID string, offset, limit int)
 	query.Set("SortOrder", "Ascending")
 
 	path := fmt.Sprintf("/Users/%s/Items", c.userID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, query)
+	body, err := c.get(ctx, path, query)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -236,7 +140,7 @@ func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) 
 	query.Set("SortOrder", "Ascending")
 
 	path := fmt.Sprintf("/Users/%s/Items", c.userID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, query)
+	body, err := c.get(ctx, path, query)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -271,7 +175,7 @@ func (c *Client) GetMixedContent(ctx context.Context, libID string, offset, limi
 	query.Set("SortOrder", "Ascending")
 
 	path := fmt.Sprintf("/Users/%s/Items", c.userID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, query)
+	body, err := c.get(ctx, path, query)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -314,7 +218,7 @@ func (c *Client) GetLibraryItemCount(ctx context.Context, libID, libType string)
 	query.Set("EnableTotalRecordCount", "true")
 
 	path := fmt.Sprintf("/Users/%s/Items", c.userID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, query)
+	body, err := c.get(ctx, path, query)
 	if err != nil {
 		return 0, err
 	}
@@ -333,7 +237,7 @@ func (c *Client) GetSeasons(ctx context.Context, showID string) ([]*domain.Seaso
 	query.Set("Fields", "ChildCount,RecursiveItemCount")
 
 	path := fmt.Sprintf("/Shows/%s/Seasons", showID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, query)
+	body, err := c.get(ctx, path, query)
 	if err != nil {
 		return nil, err
 	}
@@ -357,7 +261,7 @@ func (c *Client) GetEpisodes(ctx context.Context, seasonID string) ([]*domain.Me
 	query.Set("SortOrder", "Ascending")
 
 	path := fmt.Sprintf("/Users/%s/Items", c.userID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, query)
+	body, err := c.get(ctx, path, query)
 	if err != nil {
 		return nil, err
 	}
@@ -378,7 +282,7 @@ func (c *Client) ResolvePlayableURL(ctx context.Context, itemID string) (string,
 	query.Set("MaxStreamingBitrate", "140000000") // High bitrate for direct play
 
 	path := fmt.Sprintf("/Items/%s/PlaybackInfo", itemID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, query)
+	body, err := c.get(ctx, path, query)
 	if err != nil {
 		return "", err
 	}
@@ -405,7 +309,7 @@ func (c *Client) ResolvePlayableURL(ctx context.Context, itemID string) (string,
 // MarkPlayed marks an item as fully watched
 func (c *Client) MarkPlayed(ctx context.Context, itemID string) error {
 	path := fmt.Sprintf("/Users/%s/PlayedItems/%s", c.userID, itemID)
-	if _, err := c.do(ctx, http.MethodPost, path, nil, nil, false); err != nil {
+	if _, err := c.send(ctx, http.MethodPost, path, nil, nil); err != nil {
 		return fmt.Errorf("failed to mark as played: %w", err)
 	}
 	return nil
@@ -414,7 +318,7 @@ func (c *Client) MarkPlayed(ctx context.Context, itemID string) error {
 // MarkUnplayed marks an item as unwatched
 func (c *Client) MarkUnplayed(ctx context.Context, itemID string) error {
 	path := fmt.Sprintf("/Users/%s/PlayedItems/%s", c.userID, itemID)
-	if _, err := c.do(ctx, http.MethodDelete, path, nil, nil, false); err != nil {
+	if _, err := c.send(ctx, http.MethodDelete, path, nil, nil); err != nil {
 		return fmt.Errorf("failed to mark as unplayed: %w", err)
 	}
 	return nil
@@ -428,7 +332,7 @@ func (c *Client) GetPlaylists(ctx context.Context) ([]*domain.Playlist, error) {
 	query.Set("Fields", "ChildCount,DateCreated")
 
 	path := fmt.Sprintf("/Users/%s/Items", c.userID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, query)
+	body, err := c.get(ctx, path, query)
 	if err != nil {
 		return nil, err
 	}
@@ -448,7 +352,7 @@ func (c *Client) GetPlaylistItems(ctx context.Context, playlistID string) ([]*do
 	query.Set("Fields", "Overview,MediaSources,DateCreated")
 
 	path := fmt.Sprintf("/Playlists/%s/Items", playlistID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, query)
+	body, err := c.get(ctx, path, query)
 	if err != nil {
 		return nil, err
 	}
@@ -484,7 +388,7 @@ func (c *Client) CreatePlaylist(ctx context.Context, title string, itemIDs []str
 		reqBody["Ids"] = itemIDs
 	}
 
-	respBody, err := c.do(ctx, http.MethodPost, "/Playlists", nil, reqBody, false)
+	respBody, err := c.send(ctx, http.MethodPost, "/Playlists", nil, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create playlist: %w", err)
 	}
@@ -517,7 +421,7 @@ func (c *Client) AddToPlaylist(ctx context.Context, playlistID string, itemIDs [
 	query.Set("UserId", c.userID)
 
 	path := fmt.Sprintf("/Playlists/%s/Items", playlistID)
-	if _, err := c.do(ctx, http.MethodPost, path, query, nil, false); err != nil {
+	if _, err := c.send(ctx, http.MethodPost, path, query, nil); err != nil {
 		return fmt.Errorf("failed to add items to playlist: %w", err)
 	}
 	return nil
@@ -537,7 +441,7 @@ func (c *Client) RemoveFromPlaylist(ctx context.Context, playlistID string, item
 	query.Set("EntryIds", entryID)
 
 	path := fmt.Sprintf("/Playlists/%s/Items", playlistID)
-	if _, err := c.do(ctx, http.MethodDelete, path, query, nil, false); err != nil {
+	if _, err := c.send(ctx, http.MethodDelete, path, query, nil); err != nil {
 		return fmt.Errorf("failed to remove item from playlist: %w", err)
 	}
 	return nil
@@ -550,7 +454,7 @@ func (c *Client) resolvePlaylistEntryID(ctx context.Context, playlistID, itemID 
 	query.Set("UserId", c.userID)
 
 	path := fmt.Sprintf("/Playlists/%s/Items", playlistID)
-	body, err := c.doRequest(ctx, http.MethodGet, path, query)
+	body, err := c.get(ctx, path, query)
 	if err != nil {
 		return "", err
 	}
@@ -577,7 +481,7 @@ func (c *Client) resolvePlaylistEntryID(ctx context.Context, playlistID, itemID 
 // DeletePlaylist deletes a playlist
 func (c *Client) DeletePlaylist(ctx context.Context, playlistID string) error {
 	path := fmt.Sprintf("/Items/%s", playlistID)
-	if _, err := c.do(ctx, http.MethodDelete, path, nil, nil, false); err != nil {
+	if _, err := c.send(ctx, http.MethodDelete, path, nil, nil); err != nil {
 		return fmt.Errorf("failed to delete playlist: %w", err)
 	}
 	return nil

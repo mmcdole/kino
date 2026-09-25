@@ -19,7 +19,7 @@ func testClient(t *testing.T, handler http.Handler) *Client {
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 	c := NewClient(srv.URL, "tok", "user1", "dev1", nil)
-	c.retryDelay = 0
+	c.api.RetryDelay = 0
 	return c
 }
 
@@ -76,7 +76,7 @@ func TestRetryPolicy(t *testing.T) {
 	}))
 	ctx := context.Background()
 
-	if _, err := c.doRequest(ctx, http.MethodGet, "/Users/user1/Views", nil); err == nil {
+	if _, err := c.GetLibraries(ctx); err == nil {
 		t.Fatal("expected error")
 	}
 	if got := gets.Load(); got != int32(maxRetries+1) {
