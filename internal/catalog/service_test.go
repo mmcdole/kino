@@ -122,20 +122,46 @@ func TestConcurrentBrowseSharesFetchAndDetachedResults(t *testing.T) {
 	}
 }
 
-func TestExpiredContentRefetchesDespiteUnchangedCountAndVersion(t *testing.T) {
-	var calls atomic.Int32
-	svc, cache := testService(t, fakeBackend{movies: func(context.Context) ([]*domain.MediaItem, int, error) {
-		calls.Add(1)
-		return []*domain.MediaItem{{ID: "movie", IsPlayed: true}}, 1, nil
-	}})
-	r := Resource{Kind: Movies, ID: "lib", LibraryID: "lib", Version: 100}
-	cache.Save(r.Key(), domain.CachedList{Items: []domain.ListItem{&domain.MediaItem{ID: "movie"}}, Version: 100, FetchedAt: time.Now().Add(-MaxAge - time.Second)})
-	result, err := svc.Load(context.Background(), r, Revalidate)
-	if err != nil {
-		t.Fatal(err)
+func TestLibraryContentAndWatchStateAgeSeparately(t *testing.T) {
+	tests := []struct {
+		name      string
+		policy    Policy
+		age       time.Duration
+		version   int64
+		wantFetch bool
+	}{
+		{"background check trusts a day-old list with matching count", Revalidate, time.Hour, 100, false},
+		{"opening a library refreshes watch state after five minutes", Browse, MaxAge + time.Second, 100, true},
+		{"lists older than a day are downloaded again", Revalidate, ContentMaxAge + time.Second, 100, true},
+		{"a new server version forces a download", Revalidate, time.Hour, 101, true},
 	}
-	if calls.Load() != 1 || !result.Items[0].(*domain.MediaItem).IsPlayed {
-		t.Fatal("expired user state was accepted as fresh")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var fetches atomic.Int32
+			svc, cache := testService(t, fakeBackend{
+				count: func(context.Context) (int, error) { return 1, nil },
+				movies: func(context.Context) ([]*domain.MediaItem, int, error) {
+					fetches.Add(1)
+					return []*domain.MediaItem{{ID: "movie", IsPlayed: true}}, 1, nil
+				},
+			})
+			r := Resource{Kind: Movies, ID: "lib", LibraryID: "lib", Version: test.version}
+			fetched := time.Now().Add(-test.age)
+			cache.Save(r.Key(), domain.CachedList{Items: []domain.ListItem{&domain.MediaItem{ID: "movie"}}, Version: 100, FetchedAt: fetched})
+			result, err := svc.Load(context.Background(), r, test.policy)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := fetches.Load() == 1; got != test.wantFetch {
+				t.Fatalf("downloaded = %v, want %v", got, test.wantFetch)
+			}
+			if !test.wantFetch && (!result.Validated || !result.FetchedAt.Equal(fetched)) {
+				t.Fatal("count check did not validate, or renewed the list's age")
+			}
+			if test.wantFetch && !result.Items[0].(*domain.MediaItem).IsPlayed {
+				t.Fatal("expired user state was accepted as fresh")
+			}
+		})
 	}
 }
 

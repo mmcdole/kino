@@ -88,13 +88,16 @@ previous network error.
 | Policy | Behavior |
 | --- | --- |
 | Browse | Return a fresh snapshot, or show retained data while fetching; join existing work. |
-| Revalidate | Check the server even with fresh data. Young library snapshots may use a count check. |
+| Revalidate | Check the server even with fresh data. Library item lists younger than a day may use a count check. |
 | Refresh | Supersede active work and fetch a complete replacement. Retain the old snapshot until success. |
 
-Every collection has a five-minute maximum cache age, checked on access.
-A count check, local watch patch, or cache read never renews the fetch timestamp.
-Expired snapshots require a full fetch even if counts and server versions match.
-There is no periodic polling while a view sits idle; explicit refresh is available.
+Every collection has a five-minute maximum cache age for browsing, checked on
+access, so opening a view after that refreshes its watch state. Background
+revalidation of a library trusts its item list for up to a day when the item
+count and server version still match, so startup does not download every library
+again. A count check, local watch patch, or cache read never renews the fetch
+timestamp. There is no periodic polling while a view sits idle; explicit refresh
+is available.
 
 A failed refresh preserves usable cached data and returns the error with it.
 Authentication failures retain their classification and produce a persistent

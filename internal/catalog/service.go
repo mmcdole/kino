@@ -83,8 +83,22 @@ func (s *Service) Close() {
 }
 
 func (s *Service) fresh(r Resource, entry domain.CachedList) bool {
+	return s.younger(r, entry, MaxAge)
+}
+
+// countCheckable reports whether revalidation may confirm a library's cached
+// item list by its count instead of downloading it again.
+func (s *Service) countCheckable(r Resource, entry domain.CachedList) bool {
+	switch r.Kind {
+	case Movies, Shows, Mixed:
+		return s.younger(r, entry, ContentMaxAge)
+	}
+	return false
+}
+
+func (s *Service) younger(r Resource, entry domain.CachedList, limit time.Duration) bool {
 	age := s.now().Sub(entry.FetchedAt)
-	return !entry.FetchedAt.IsZero() && age >= 0 && age < MaxAge && (r.Version == 0 || entry.Version == r.Version)
+	return !entry.FetchedAt.IsZero() && age >= 0 && age < limit && (r.Version == 0 || entry.Version == r.Version)
 }
 
 // Load is the single browsing path. Cached data, foreground loads, startup
@@ -159,7 +173,7 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy) (Snapshot
 			s.active[key] = current
 			s.startAttempt(r)
 			s.wg.Add(1)
-			go s.run(r, current, cached, policy == Revalidate && ok && !cached.Stale)
+			go s.run(r, current, cached, policy == Revalidate && ok && !s.invalid[key] && s.countCheckable(r, entry))
 		}
 		current.subscribers++
 		s.mu.Unlock()
@@ -215,7 +229,6 @@ func (s *Service) run(r Resource, f *flight, cached Snapshot, canCheckCount bool
 	var err error
 	entry := cached.CachedList
 	ok := false
-	canCheckCount = canCheckCount && (r.Kind == Movies || r.Kind == Shows || r.Kind == Mixed)
 	if canCheckCount {
 		var count int
 		count, err = s.backend.GetLibraryItemCount(f.ctx, r.LibraryID, libraryType(r.Kind))
