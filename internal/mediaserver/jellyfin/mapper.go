@@ -8,12 +8,6 @@ import (
 	"github.com/mmcdole/kino/internal/mediaserver/normalize"
 )
 
-const (
-	// Jellyfin uses 100-nanosecond ticks
-	ticksPerMillisecond = 10000
-	ticksPerSecond      = 10000000
-)
-
 // mapLibraries converts Jellyfin virtual folders to media libraries
 func mapLibraries(items []baseItem) []media.Library {
 	libraries := make([]media.Library, 0, len(items))

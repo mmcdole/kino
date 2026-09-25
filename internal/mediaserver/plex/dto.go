@@ -138,21 +138,3 @@ type pinCheckResponse struct {
 	AuthToken string `json:"authToken"`
 	ExpiresAt string `json:"expiresAt"`
 }
-
-// playlistMetadata represents a Plex playlist
-type playlistMetadata struct {
-	RatingKey    string `json:"ratingKey"`
-	Key          string `json:"key"`
-	GUID         string `json:"guid,omitempty"` // Plex internal GUID
-	Guids        []guid `json:"Guid,omitempty"` // External IDs
-	Type         string `json:"type"`
-	Title        string `json:"title"`
-	Summary      string `json:"summary,omitempty"`
-	Smart        int    `json:"smart"` // 1 = smart playlist, 0 = regular
-	PlaylistType string `json:"playlistType"`
-	Composite    string `json:"composite,omitempty"`
-	Duration     int    `json:"duration,omitempty"`
-	LeafCount    int    `json:"leafCount,omitempty"`
-	AddedAt      int64  `json:"addedAt,omitempty"`
-	UpdatedAt    int64  `json:"updatedAt,omitempty"`
-}
