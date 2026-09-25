@@ -36,12 +36,15 @@ type Index struct {
 	libraries map[string]indexedLibrary
 }
 
+// NewIndex returns an empty index.
 func NewIndex() *Index { return &Index{libraries: make(map[string]indexedLibrary)} }
 
-func (s *Index) ReplaceLibrary(id string, revision uint64, items []domain.ListItem) {
-	s.mu.RLock()
-	old, exists := s.libraries[id]
-	s.mu.RUnlock()
+// ReplaceLibrary indexes a library's items unless a newer revision is already
+// indexed.
+func (ix *Index) ReplaceLibrary(id string, revision uint64, items []domain.ListItem) {
+	ix.mu.RLock()
+	old, exists := ix.libraries[id]
+	ix.mu.RUnlock()
 	if exists && old.revision >= revision {
 		return
 	}
@@ -59,28 +62,29 @@ func (s *Index) ReplaceLibrary(id string, revision uint64, items []domain.ListIt
 		entry.items = append(entry.items, Entry{Item: item, Title: item.GetTitle(), Type: kind, LibraryID: id})
 		entry.titles = append(entry.titles, strings.ToLower(item.GetTitle()))
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if old, ok := s.libraries[id]; ok && old.revision >= revision {
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+	if old, ok := ix.libraries[id]; ok && old.revision >= revision {
 		return
 	}
-	s.libraries[id] = entry
+	ix.libraries[id] = entry
 }
 
-func (s *Index) Search(ctx context.Context, query string, libraries []domain.Library) []Result {
+// Search matches query against the given libraries, best match first.
+func (ix *Index) Search(ctx context.Context, query string, libraries []domain.Library) []Result {
 	if query == "" || ctx.Err() != nil {
 		return nil
 	}
 	var items []Entry
 	var titles []string
-	s.mu.RLock()
+	ix.mu.RLock()
 	for _, lib := range libraries {
-		entry := s.libraries[lib.ID]
+		entry := ix.libraries[lib.ID]
 		items = append(items, entry.items...)
 		titles = append(titles, entry.titles...)
 	}
-	s.mu.RUnlock()
-	matches := FuzzySearch(query, titles)
+	ix.mu.RUnlock()
+	matches := fuzzySearch(query, titles)
 	results := make([]Result, 0, len(matches))
 	for _, match := range matches {
 		if ctx.Err() != nil {

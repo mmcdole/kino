@@ -5,14 +5,14 @@ import (
 	"unicode"
 )
 
-// FuzzyMatch represents a search match result
-type FuzzyMatch struct {
+// fuzzyMatch represents a search match result
+type fuzzyMatch struct {
 	Index          int   // Index in source slice
 	Score          int   // Match score (lower = better)
 	MatchedIndexes []int // Character positions that matched (for highlighting)
 }
 
-// FuzzySearch performs token-based fuzzy matching optimized for media titles.
+// fuzzySearch performs token-based fuzzy matching optimized for media titles.
 //
 // Algorithm:
 //  1. Tokenize query into words
@@ -22,7 +22,7 @@ type FuzzyMatch struct {
 //  5. Typo tolerance based on token length
 //
 // Returns matches sorted by score (lower = better).
-func FuzzySearch(query string, titles []string) []FuzzyMatch {
+func fuzzySearch(query string, titles []string) []fuzzyMatch {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil
@@ -33,7 +33,7 @@ func FuzzySearch(query string, titles []string) []FuzzyMatch {
 		return nil
 	}
 
-	var matches []FuzzyMatch
+	var matches []fuzzyMatch
 
 	for i, title := range titles {
 		if match, ok := matchTitle(title, queryTokens, i); ok {
@@ -45,16 +45,16 @@ func FuzzySearch(query string, titles []string) []FuzzyMatch {
 	return matches
 }
 
-// Token represents a word and its position in the original string
-type Token struct {
+// token represents a word and its position in the original string
+type token struct {
 	Text  string // Lowercase text
 	Start int    // Start position in original string
 	End   int    // End position (exclusive) in original string
 }
 
 // tokenize splits text into word tokens, tracking positions
-func tokenize(text string) []Token {
-	var tokens []Token
+func tokenize(text string) []token {
+	var tokens []token
 	runes := []rune(strings.ToLower(text))
 
 	inWord := false
@@ -69,7 +69,7 @@ func tokenize(text string) []Token {
 			inWord = true
 		} else if !isWordChar && inWord {
 			// Ending a word
-			tokens = append(tokens, Token{
+			tokens = append(tokens, token{
 				Text:  string(runes[wordStart:i]),
 				Start: wordStart,
 				End:   i,
@@ -80,7 +80,7 @@ func tokenize(text string) []Token {
 
 	// Don't forget the last word if text doesn't end with separator
 	if inWord {
-		tokens = append(tokens, Token{
+		tokens = append(tokens, token{
 			Text:  string(runes[wordStart:]),
 			Start: wordStart,
 			End:   len(runes),
@@ -90,14 +90,14 @@ func tokenize(text string) []Token {
 	return tokens
 }
 
-// TokenMatch represents how a query token matched a title
-type TokenMatch struct {
+// tokenMatch represents how a query token matched a title
+type tokenMatch struct {
 	Score          int   // Match quality (lower = better)
 	MatchedIndexes []int // Character positions in title that matched
 }
 
 // matchTitle attempts to match all query tokens against the title
-func matchTitle(title string, queryTokens []Token, index int) (FuzzyMatch, bool) {
+func matchTitle(title string, queryTokens []token, index int) (fuzzyMatch, bool) {
 	lowerTitle := strings.ToLower(title)
 	titleTokens := tokenize(title)
 
@@ -113,7 +113,7 @@ func matchTitle(title string, queryTokens []Token, index int) (FuzzyMatch, bool)
 
 		if bestMatch.Score < 0 {
 			// No match found for this query token
-			return FuzzyMatch{}, false
+			return fuzzyMatch{}, false
 		}
 
 		// Mark this title token as used
@@ -131,7 +131,7 @@ func matchTitle(title string, queryTokens []Token, index int) (FuzzyMatch, bool)
 		totalScore += extraWords * 5
 	}
 
-	return FuzzyMatch{
+	return fuzzyMatch{
 		Index:          index,
 		Score:          totalScore,
 		MatchedIndexes: dedupeAndSort(allMatchedIndexes),
@@ -139,8 +139,8 @@ func matchTitle(title string, queryTokens []Token, index int) (FuzzyMatch, bool)
 }
 
 // findBestTokenMatch finds the best matching title token for a query token
-func findBestTokenMatch(queryToken Token, titleTokens []Token, lowerTitle string, usedTitleTokens []bool) (TokenMatch, int) {
-	bestMatch := TokenMatch{Score: -1}
+func findBestTokenMatch(queryToken token, titleTokens []token, lowerTitle string, usedTitleTokens []bool) (tokenMatch, int) {
+	bestMatch := tokenMatch{Score: -1}
 	bestTitleIdx := -1
 
 	// First, try to match against title tokens (word-level matching)
@@ -169,33 +169,33 @@ func findBestTokenMatch(queryToken Token, titleTokens []Token, lowerTitle string
 
 // matchTokenToToken matches a query token against a title token
 // Returns score < 0 if no match
-func matchTokenToToken(query string, titleToken Token) TokenMatch {
+func matchTokenToToken(query string, titleToken token) tokenMatch {
 	title := titleToken.Text
 
 	// Exact match (best)
 	if query == title {
 		indexes := makeIndexRange(titleToken.Start, titleToken.End)
-		return TokenMatch{Score: 0, MatchedIndexes: indexes}
+		return tokenMatch{Score: 0, MatchedIndexes: indexes}
 	}
 
 	// Prefix match (very good)
 	if strings.HasPrefix(title, query) {
 		indexes := makeIndexRange(titleToken.Start, titleToken.Start+len([]rune(query)))
-		return TokenMatch{Score: 10, MatchedIndexes: indexes}
+		return tokenMatch{Score: 10, MatchedIndexes: indexes}
 	}
 
 	// Title token starts with query (query is prefix)
 	if strings.HasPrefix(query, title) {
 		// Query is longer than title token - partial match
 		indexes := makeIndexRange(titleToken.Start, titleToken.End)
-		return TokenMatch{Score: 20, MatchedIndexes: indexes}
+		return tokenMatch{Score: 20, MatchedIndexes: indexes}
 	}
 
 	// Substring match within the token
 	if idx := strings.Index(title, query); idx >= 0 {
 		start := titleToken.Start + idx
 		indexes := makeIndexRange(start, start+len([]rune(query)))
-		return TokenMatch{Score: 50 + idx, MatchedIndexes: indexes}
+		return tokenMatch{Score: 50 + idx, MatchedIndexes: indexes}
 	}
 
 	// Fuzzy match with typo tolerance
@@ -203,22 +203,22 @@ func matchTokenToToken(query string, titleToken Token) TokenMatch {
 	if maxTypos > 0 {
 		dist, indexes := levenshteinWithPositions(query, title, titleToken.Start)
 		if dist <= maxTypos {
-			return TokenMatch{Score: 100 + dist*20, MatchedIndexes: indexes}
+			return tokenMatch{Score: 100 + dist*20, MatchedIndexes: indexes}
 		}
 	}
 
-	return TokenMatch{Score: -1}
+	return tokenMatch{Score: -1}
 }
 
 // matchSubstring finds query as a substring anywhere in the title
-func matchSubstring(query string, lowerTitle string) TokenMatch {
+func matchSubstring(query string, lowerTitle string) tokenMatch {
 	if idx := strings.Index(lowerTitle, query); idx >= 0 {
 		// Convert byte index to rune index
 		runeIdx := len([]rune(lowerTitle[:idx]))
 		indexes := makeIndexRange(runeIdx, runeIdx+len([]rune(query)))
-		return TokenMatch{Score: 150 + runeIdx, MatchedIndexes: indexes}
+		return tokenMatch{Score: 150 + runeIdx, MatchedIndexes: indexes}
 	}
-	return TokenMatch{Score: -1}
+	return tokenMatch{Score: -1}
 }
 
 // allowedTypos returns the number of typos allowed based on word length
@@ -339,7 +339,7 @@ func dedupeAndSort(indexes []int) []int {
 }
 
 // sortMatches sorts by score (lower = better), then by title length
-func sortMatches(matches []FuzzyMatch, titles []string) {
+func sortMatches(matches []fuzzyMatch, titles []string) {
 	for i := 1; i < len(matches); i++ {
 		j := i
 		for j > 0 && compareFuzzyMatches(matches[j], matches[j-1], titles) {
@@ -349,7 +349,7 @@ func sortMatches(matches []FuzzyMatch, titles []string) {
 	}
 }
 
-func compareFuzzyMatches(a, b FuzzyMatch, titles []string) bool {
+func compareFuzzyMatches(a, b fuzzyMatch, titles []string) bool {
 	if a.Score != b.Score {
 		return a.Score < b.Score
 	}
