@@ -81,17 +81,21 @@ func (m *Model) drillSelected() tea.Cmd {
 func (m *Model) handleBack() tea.Cmd {
 	m.clearNavPlan()
 	m.cancelPendingModal()
-	if !m.ColumnStack.CanGoBack() {
-		return nil
-	}
-	top := m.ColumnStack.Top()
-	if r, ok := m.resource(top.ContentID()); ok {
-		m.requests.stop(viewOwner(r))
-		m.updateResourceFeedback(r)
-	}
-	m.ColumnStack.Pop()
-	m.updateLayout()
+	m.popTo(m.ColumnStack.Len() - 1)
 	return nil
+}
+
+// popTo closes the columns above depth, never the root, and detaches their
+// foreground loads.
+func (m *Model) popTo(depth int) {
+	for m.ColumnStack.Len() > max(depth, 1) {
+		col := m.ColumnStack.Pop()
+		if r, ok := m.resource(col.ContentID()); ok {
+			m.requests.stop(viewOwner(r))
+			m.updateResourceFeedback(r)
+		}
+	}
+	m.updateLayout()
 }
 
 func (m *Model) advanceNavPlanAfterLoad(key string, final bool) tea.Cmd {
@@ -128,14 +132,7 @@ func (m *Model) advanceNavPlanAfterLoad(key string, final bool) tea.Cmd {
 func (m *Model) navigateToSearchResult(item search.FilterItem) tea.Cmd {
 	m.clearNavPlan()
 	m.cancelPendingModal()
-	for m.ColumnStack.CanGoBack() {
-		col := m.ColumnStack.Top()
-		m.requests.stop("view:" + col.ContentID())
-		if r, ok := m.resource(col.ContentID()); ok {
-			m.updateResourceFeedback(r)
-		}
-		m.ColumnStack.Pop()
-	}
+	m.popTo(1)
 	lib := m.findLibrary(item.LibraryID)
 	if lib == nil {
 		return m.notify(NoticeError, "Library no longer available")
@@ -165,17 +162,9 @@ func (m *Model) pruneNavigation() {
 		if exists && parent.SetSelectedByID(expected) {
 			continue
 		}
-		for m.ColumnStack.Len() > i {
-			col := m.ColumnStack.Top()
-			m.requests.stop("view:" + col.ContentID())
-			if r, ok := m.resource(col.ContentID()); ok {
-				m.updateResourceFeedback(r)
-			}
-			m.ColumnStack.Pop()
-		}
+		m.popTo(i)
 		m.clearNavPlan()
 		m.notify(NoticeAlert, "Item no longer exists in this view — navigation reset")
-		m.updateLayout()
 		return
 	}
 }

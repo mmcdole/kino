@@ -73,11 +73,6 @@ func (cs *ColumnStack) Reset(col *components.ListColumn) {
 	cs.columns = append(cs.columns, col)
 }
 
-// CanGoBack returns true if we can navigate back (not at root)
-func (cs *ColumnStack) CanGoBack() bool {
-	return len(cs.columns) > 1
-}
-
 // UpdateSpinnerFrame updates the spinner frame for all columns
 func (cs *ColumnStack) UpdateSpinnerFrame(frame int) {
 	for _, col := range cs.columns {
