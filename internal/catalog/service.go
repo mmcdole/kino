@@ -167,15 +167,8 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy) (Snapshot
 			return Snapshot{}, err
 		}
 		cached := Snapshot{Resource: r, CachedList: entry, Revision: s.cacheRevisions[key], FromCache: true, Stale: s.invalid[key] || !s.fresh(r, entry)}
-		if old := s.active[key]; old != nil && old.resource.Version != r.Version {
-			old.cancel()
-			delete(s.active, key)
-		}
-		if policy == Refresh {
-			if old := s.active[key]; old != nil {
-				old.cancel()
-				delete(s.active, key)
-			}
+		if old := s.active[key]; old != nil && (policy == Refresh || old.resource.Version != r.Version) {
+			s.cancelFlight(key)
 		}
 		if ok {
 			s.accept(cached)
@@ -225,10 +218,21 @@ func (s *Service) release(key string, f *flight) {
 	defer s.mu.Unlock()
 	f.subscribers--
 	if f.subscribers == 0 && s.active[key] == f {
-		f.cancel()
-		delete(s.active, key)
+		s.cancelFlight(key)
 		s.refreshState(key, nil)
 	}
+}
+
+// cancelFlight stops key's in-flight fetch, if any, and reports whether there
+// was one. Callers hold s.mu.
+func (s *Service) cancelFlight(key string) bool {
+	f := s.active[key]
+	if f == nil {
+		return false
+	}
+	f.cancel()
+	delete(s.active, key)
+	return true
 }
 
 func (s *Service) run(r Resource, f *flight, cached Snapshot, canCheckCount bool) {

@@ -90,15 +90,12 @@ func (s *Service) Mutate(ctx context.Context, m Mutation) (Change, error) {
 }
 
 // fence cancels in-flight fetches for key and advances its revision, so a
-// response fetched before a write cannot undo it. It records the new revision
-// in revised. Callers hold s.mu.
-func (s *Service) fence(key string, revised map[string]uint64) {
-	if f := s.active[key]; f != nil {
-		f.cancel()
-		delete(s.active, key)
-	}
+// response fetched before a write cannot undo it. It returns the new
+// revision. Callers hold s.mu.
+func (s *Service) fence(key string) uint64 {
+	s.cancelFlight(key)
 	s.revisions[key]++
-	revised[key] = s.revisions[key]
+	return s.revisions[key]
 }
 
 // expire republishes key as needing revalidation. Callers hold s.mu.
@@ -133,9 +130,7 @@ func (s *Service) reconcileWatch(m Mutation, change Change, err error) (Change, 
 	scope := s.watchScope(m)
 	var interrupted []string
 	for _, key := range scope {
-		if f := s.active[key]; f != nil {
-			f.cancel()
-			delete(s.active, key)
+		if s.cancelFlight(key) {
 			interrupted = append(interrupted, key)
 		}
 	}
@@ -152,7 +147,7 @@ func (s *Service) reconcileWatch(m Mutation, change Change, err error) (Change, 
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		for _, key := range scope {
-			s.fence(key, revised)
+			s.fence(key)
 			s.invalid[key] = true
 			s.expire(key)
 			change.Resources = append(change.Resources, s.known[key])
@@ -174,7 +169,7 @@ func (s *Service) reconcileWatch(m Mutation, change Change, err error) (Change, 
 		if !known {
 			continue // patched on disk; nothing in this session shows it
 		}
-		s.fence(key, revised)
+		revised[key] = s.fence(key)
 		entry, ok := entries[key]
 		if s.invalid[key] || !ok {
 			s.expire(key)
@@ -186,7 +181,7 @@ func (s *Service) reconcileWatch(m Mutation, change Change, err error) (Change, 
 	}
 	for _, key := range interrupted {
 		if _, done := revised[key]; !done {
-			s.fence(key, revised)
+			s.fence(key)
 			s.expire(key)
 			change.Resources = append(change.Resources, s.known[key])
 		}
@@ -205,7 +200,7 @@ func (s *Service) reconcilePlaylists(m Mutation, change Change, err error) (Chan
 	}
 	s.mu.Lock()
 	for _, r := range change.Resources {
-		s.fence(r.Key(), revised)
+		revised[r.Key()] = s.fence(r.Key())
 	}
 	s.mu.Unlock()
 
