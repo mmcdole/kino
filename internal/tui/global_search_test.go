@@ -22,11 +22,11 @@ func TestGlobalSearchRapidTypingKeepsModalAndResultsStable(t *testing.T) {
 			t.Fatal("search modal moved as the query changed")
 		}
 	}
-	results := func(prefix string, n int) []search.FilterResult {
-		items := make([]search.FilterResult, n)
+	results := func(prefix string, n int) []search.Result {
+		items := make([]search.Result, n)
 		for i := range items {
 			title := fmt.Sprintf("%s %02d", prefix, i)
-			items[i] = search.FilterResult{FilterItem: search.FilterItem{Item: &domain.MediaItem{ID: title, Title: title}, Title: title, LibraryID: "a"}}
+			items[i] = search.Result{Entry: search.Entry{Item: &domain.MediaItem{ID: title, Title: title}, Title: title, LibraryID: "a"}}
 		}
 		return items
 	}

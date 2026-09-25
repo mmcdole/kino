@@ -129,7 +129,7 @@ func (m *Model) advanceNavPlanAfterLoad(key string, final bool) tea.Cmd {
 	return cmd
 }
 
-func (m *Model) navigateToSearchResult(item search.FilterItem) tea.Cmd {
+func (m *Model) navigateToSearchResult(item search.Entry) tea.Cmd {
 	m.clearNavPlan()
 	m.cancelPendingModal()
 	m.popTo(1)

@@ -12,11 +12,11 @@ import (
 	"github.com/mmcdole/kino/internal/search"
 )
 
-func searchResults(n int) []search.FilterResult {
-	results := make([]search.FilterResult, n)
+func searchResults(n int) []search.Result {
+	results := make([]search.Result, n)
 	for i := range results {
 		title := fmt.Sprintf("Movie %02d", i)
-		results[i] = search.FilterResult{FilterItem: search.FilterItem{Item: &domain.MediaItem{ID: title, Title: title}, Title: title, LibraryID: "lib"}}
+		results[i] = search.Result{Entry: search.Entry{Item: &domain.MediaItem{ID: title, Title: title}, Title: title, LibraryID: "lib"}}
 	}
 	return results
 }

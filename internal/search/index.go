@@ -8,9 +8,24 @@ import (
 	"github.com/mmcdole/kino/internal/domain"
 )
 
+// Entry is one searchable title in the index.
+type Entry struct {
+	Item      domain.ListItem // *MediaItem or *Show
+	Title     string
+	Type      domain.MediaType
+	LibraryID string
+}
+
+// Result is an entry that matched a query, with match metadata.
+type Result struct {
+	Entry
+	MatchedIndexes []int
+	Score          int
+}
+
 type indexedLibrary struct {
 	revision uint64
-	items    []FilterItem
+	items    []Entry
 	titles   []string
 }
 
@@ -41,7 +56,7 @@ func (s *Index) ReplaceLibrary(id string, revision uint64, items []domain.ListIt
 		default:
 			continue
 		}
-		entry.items = append(entry.items, FilterItem{Item: item, Title: item.GetTitle(), Type: kind, LibraryID: id})
+		entry.items = append(entry.items, Entry{Item: item, Title: item.GetTitle(), Type: kind, LibraryID: id})
 		entry.titles = append(entry.titles, strings.ToLower(item.GetTitle()))
 	}
 	s.mu.Lock()
@@ -52,11 +67,11 @@ func (s *Index) ReplaceLibrary(id string, revision uint64, items []domain.ListIt
 	s.libraries[id] = entry
 }
 
-func (s *Index) Search(ctx context.Context, query string, libraries []domain.Library) []FilterResult {
+func (s *Index) Search(ctx context.Context, query string, libraries []domain.Library) []Result {
 	if query == "" || ctx.Err() != nil {
 		return nil
 	}
-	var items []FilterItem
+	var items []Entry
 	var titles []string
 	s.mu.RLock()
 	for _, lib := range libraries {
@@ -66,14 +81,14 @@ func (s *Index) Search(ctx context.Context, query string, libraries []domain.Lib
 	}
 	s.mu.RUnlock()
 	matches := FuzzySearch(query, titles)
-	results := make([]FilterResult, 0, len(matches))
+	results := make([]Result, 0, len(matches))
 	for _, match := range matches {
 		if ctx.Err() != nil {
 			return nil
 		}
 		item := items[match.Index]
 		item.Item = domain.CloneItems([]domain.ListItem{item.Item})[0]
-		results = append(results, FilterResult{FilterItem: item, MatchedIndexes: match.MatchedIndexes, Score: match.Score})
+		results = append(results, Result{Entry: item, MatchedIndexes: match.MatchedIndexes, Score: match.Score})
 	}
 	return results
 }

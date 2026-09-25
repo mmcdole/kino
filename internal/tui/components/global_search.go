@@ -20,7 +20,7 @@ type GlobalSearch struct {
 	loadingVisible bool
 	resultsQuery   string
 	input          textinput.Model
-	results        []search.FilterResult
+	results        []search.Result
 	cursor         int
 	offset         int
 	width          int
@@ -61,10 +61,10 @@ func (o *GlobalSearch) Reset() {
 }
 
 // SetResults replaces the results, preserving selection when the same query is reindexed.
-func (o *GlobalSearch) SetResults(results []search.FilterResult) {
-	var selected *search.FilterItem
+func (o *GlobalSearch) SetResults(results []search.Result) {
+	var selected *search.Entry
 	if o.resultsQuery == o.Query() && o.cursor < len(o.results) {
-		selected = &o.results[o.cursor].FilterItem
+		selected = &o.results[o.cursor].Entry
 	}
 	o.loading = false
 	o.loadingVisible = false
@@ -120,12 +120,12 @@ func (o *GlobalSearch) QueryChanged() bool {
 	return false
 }
 
-// Selected returns the selected result's FilterItem
-func (o GlobalSearch) Selected() *search.FilterItem {
+// Selected returns the selected result's Entry
+func (o GlobalSearch) Selected() *search.Entry {
 	if o.loading || len(o.results) == 0 || o.cursor >= len(o.results) {
 		return nil
 	}
-	return &o.results[o.cursor].FilterItem
+	return &o.results[o.cursor].Entry
 }
 
 // ResultCount returns the number of results
@@ -313,7 +313,7 @@ func highlightMatches(text string, matchedIndexes []int, selected bool) string {
 	return result.String()
 }
 
-func (o GlobalSearch) renderResult(result search.FilterResult, selected bool, width int) string {
+func (o GlobalSearch) renderResult(result search.Result, selected bool, width int) string {
 	var badge string
 	switch result.Type {
 	case domain.MediaTypeMovie:

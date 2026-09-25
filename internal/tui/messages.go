@@ -44,6 +44,6 @@ type SearchDebounceMsg struct {
 type ShowSearchLoadingMsg struct{ Seq uint64 }
 type SearchResultsMsg struct {
 	Request request
-	Results []search.FilterResult
+	Results []search.Result
 }
 type SearchIndexChangedMsg struct{}
