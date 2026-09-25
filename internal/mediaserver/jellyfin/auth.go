@@ -1,7 +1,6 @@
 package jellyfin
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -9,12 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
-	"syscall"
 	"time"
-
-	"golang.org/x/term"
 
 	"github.com/mmcdole/kino/internal/domain"
 )
@@ -23,72 +18,13 @@ const (
 	authTimeout = 30 * time.Second
 )
 
-// AuthFlow handles Jellyfin username/password authentication
-type AuthFlow struct {
-	deviceID   string
-	logger     *slog.Logger
-	httpClient *http.Client
-}
-
-// NewAuthFlow creates a new Jellyfin authentication flow
-func NewAuthFlow(deviceID string, logger *slog.Logger) *AuthFlow {
+// Authenticate signs in to a Jellyfin server with a username and password.
+// The device ID must be unique per install (see buildAuthHeader).
+func Authenticate(ctx context.Context, serverURL, deviceID, username, password string, logger *slog.Logger) (*domain.Credentials, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &AuthFlow{
-		deviceID: deviceID,
-		logger:   logger,
-		httpClient: &http.Client{
-			Timeout: authTimeout,
-		},
-	}
-}
-
-// Run executes the Jellyfin username/password authentication flow.
-// It prompts the user for credentials and authenticates against the server.
-func (f *AuthFlow) Run(ctx context.Context, serverURL string) (*domain.Credentials, error) {
-	serverURL = strings.TrimRight(serverURL, "/")
-
-	fmt.Println()
-	fmt.Println("Jellyfin Authentication")
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━")
-
-	// Prompt for username
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Print("Username: ")
-	username, err := reader.ReadString('\n')
-	if err != nil {
-		return nil, fmt.Errorf("failed to read username: %w", err)
-	}
-	username = strings.TrimSpace(username)
-
-	// Prompt for password (hidden input)
-	fmt.Print("Password: ")
-	passwordBytes, err := term.ReadPassword(int(syscall.Stdin))
-	if err != nil {
-		return nil, fmt.Errorf("failed to read password: %w", err)
-	}
-	password := string(passwordBytes)
-	fmt.Println() // Add newline after hidden input
-
-	fmt.Println()
-	fmt.Println("Authenticating...")
-
-	// Authenticate
-	result, err := f.authenticate(ctx, serverURL, username, password)
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Println()
-	fmt.Println("Authentication successful!")
-
-	return result, nil
-}
-
-// authenticate performs the actual authentication against the Jellyfin server
-func (f *AuthFlow) authenticate(ctx context.Context, serverURL, username, password string) (*domain.Credentials, error) {
-	url := serverURL + "/Users/AuthenticateByName"
+	url := strings.TrimRight(serverURL, "/") + "/Users/AuthenticateByName"
 
 	// Build request body
 	body := map[string]string{
@@ -107,11 +43,11 @@ func (f *AuthFlow) authenticate(ctx context.Context, serverURL, username, passwo
 
 	// Set required headers
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Emby-Authorization", buildAuthHeader("", f.deviceID)) // No token yet
+	req.Header.Set("X-Emby-Authorization", buildAuthHeader("", deviceID)) // No token yet
 
-	resp, err := f.httpClient.Do(req)
+	resp, err := (&http.Client{Timeout: authTimeout}).Do(req)
 	if err != nil {
-		f.logger.Error("Jellyfin auth request failed", "error", err)
+		logger.Error("Jellyfin auth request failed", "error", err)
 		return nil, fmt.Errorf("%w: %v", domain.ErrServerOffline, err)
 	}
 	defer resp.Body.Close()
@@ -126,7 +62,7 @@ func (f *AuthFlow) authenticate(ctx context.Context, serverURL, username, passwo
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		f.logger.Error("Jellyfin auth error", "status", resp.StatusCode, "body", string(respBody))
+		logger.Error("Jellyfin auth error", "status", resp.StatusCode, "body", string(respBody))
 		return nil, fmt.Errorf("authentication failed with status %d", resp.StatusCode)
 	}
 
