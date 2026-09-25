@@ -93,7 +93,7 @@ func run() error {
 
 	// The disk cache enables offline browsing; without it, cache in memory.
 	var cache snapshotCache
-	if disk, err := store.Open(config.CacheDir(cfg.Server.URL, cfg.Server.UserID)); err == nil {
+	if disk, err := store.Open(store.Dir(cfg.Server.URL, cfg.Server.UserID)); err == nil {
 		cache = disk
 	} else {
 		logger.Warn("store unavailable, continuing memory-only", "error", err)
@@ -133,7 +133,7 @@ func run() error {
 		if err := cache.Close(); err != nil {
 			return err
 		}
-		if err := config.ClearCache(); err != nil {
+		if err := store.Clear(); err != nil {
 			return err
 		}
 	}

@@ -2,7 +2,6 @@ package config
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -219,34 +218,4 @@ func (c *Config) ClearServer() error {
 // IsConfigured returns true if the server URL and token are set
 func (c *Config) IsConfigured() bool {
 	return c.Server.URL != "" && c.Server.Token != ""
-}
-
-// DefaultCachePath returns the default cache directory path for the current OS
-func DefaultCachePath() string {
-	switch runtime.GOOS {
-	case "windows":
-		return filepath.Join(os.Getenv("LOCALAPPDATA"), "kino", "cache")
-	default:
-		home, _ := os.UserHomeDir()
-		return filepath.Join(home, ".local", "share", "kino", "cache")
-	}
-}
-
-// CacheDir returns the cache directory for one server and user. Watch state,
-// resume positions and playlists are per user, so two accounts on the same
-// server never share a cache. (Plex configs have no user ID; those stay keyed
-// by URL alone.)
-func CacheDir(serverURL, userID string) string {
-	normalized := strings.TrimRight(strings.ToLower(serverURL+"|"+userID), "/")
-	hash := sha256.Sum256([]byte(normalized))
-	return filepath.Join(DefaultCachePath(), hex.EncodeToString(hash[:6]))
-}
-
-// ClearCache removes all cached data
-func ClearCache() error {
-	cachePath := DefaultCachePath()
-	if err := os.RemoveAll(cachePath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to clear cache: %w", err)
-	}
-	return nil
 }
