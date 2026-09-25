@@ -135,7 +135,7 @@ func TestCatalogDiskCacheAndTUIRequestLifecycle(t *testing.T) {
 
 	mutation := catalog.Mutation{Kind: catalog.Watch, ItemID: "movie", LibraryID: r.LibraryID, Played: true}
 	req := m.requests.begin("mutation:watch:movie", catalog.Resource{}, catalog.Browse)
-	m = await(t, m, svc, start(MutationCmd(svc, req, mutation)))
+	m = await(t, m, svc, start(mutateCmd(svc, req, mutation)))
 	persisted, ok := cache.Load(r.Key())
 	if !ok || !persisted.Items[0].(*domain.MediaItem).IsPlayed || !col.SelectedMediaItem().IsPlayed {
 		t.Fatal("watch change did not reconcile persistence and view")

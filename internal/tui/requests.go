@@ -67,7 +67,7 @@ func (m *Model) loadResource(r catalog.Resource, policy catalog.Policy, backgrou
 	req := m.requests.begin(owner, r, policy)
 	m.track(r)
 	m.updateResourceFeedback(r)
-	return LoadResourceCmd(m.Catalog, req)
+	return loadCmd(m.Catalog, req)
 }
 
 func libraryStateID(r catalog.Resource) string {

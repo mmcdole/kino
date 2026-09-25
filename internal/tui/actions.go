@@ -32,7 +32,7 @@ func (m *Model) beginMutation(change catalog.Mutation) tea.Cmd {
 		return m.notify(NoticeInfo, "Already updating — waiting for the server")
 	}
 	req := m.requests.begin(owner, catalog.Resource{}, catalog.Browse)
-	return MutationCmd(m.Catalog, req, change)
+	return mutateCmd(m.Catalog, req, change)
 }
 
 func (m *Model) beginPlayback(item domain.MediaItem, resume bool) tea.Cmd {
@@ -41,7 +41,7 @@ func (m *Model) beginPlayback(item domain.MediaItem, resume bool) tea.Cmd {
 		return nil
 	}
 	req := m.requests.begin(owner, catalog.Resource{}, catalog.Browse)
-	return PlayItemCmd(m.PlaybackSvc, req, item, resume)
+	return playCmd(m.PlaybackSvc, req, item, resume)
 }
 
 func (m *Model) cancelPendingModal() {

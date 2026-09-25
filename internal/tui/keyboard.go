@@ -26,7 +26,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		switch {
 		case key.Matches(msg, Keys.Confirm):
 			m.loggingOut = true
-			return LogoutCmd(m.Session)
+			return logoutCmd(m.Session)
 		case key.Matches(msg, Keys.Deny):
 			m.overlay = overlayNone
 		}
@@ -321,7 +321,7 @@ func (m *Model) handlePlaylistModal() tea.Cmd {
 	m.PlaylistModal.SetSize(m.Width, m.Height)
 	m.overlay = overlayPlaylists
 	req := m.requests.begin("playlist-modal", catalog.Resource{}, catalog.Browse)
-	return LoadPlaylistModalDataCmd(m.Catalog, req, *item)
+	return playlistMembershipCmd(m.Catalog, req, *item)
 }
 
 // handleDelete handles deletion of playlists or playlist items
