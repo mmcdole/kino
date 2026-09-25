@@ -250,6 +250,10 @@ func (m *Model) handleLoadDone(msg LoadDoneMsg) tea.Cmd {
 			m.clearNavPlan()
 		}
 		cmds = append(cmds, m.notifyError("Loading "+m.resourceName(r), msg.Err))
+	} else {
+		// A fresh cached snapshot settles the load without publishing a new
+		// state, so pending navigation must also advance here.
+		cmds = append(cmds, m.advanceNavPlanAfterLoad(r.Key(), true))
 	}
 	if msg.Warning != nil {
 		cmds = append(cmds, m.notifyError("Loaded "+m.resourceName(r), msg.Warning))
