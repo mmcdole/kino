@@ -49,7 +49,7 @@ func main() {
 
 func run() error {
 	// Load configuration
-	cfg, err := config.LoadConfig()
+	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -195,7 +195,7 @@ func runSetupFlow(cfg *config.Config, logger *slog.Logger) error {
 	cfg.Server.UserID = result.UserID
 	cfg.Server.Username = result.Username
 
-	if err := config.SaveConfig(cfg); err != nil {
+	if err := cfg.Save(); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 

@@ -26,6 +26,8 @@ type Config struct {
 	Player  PlayerConfig  `mapstructure:"player"`
 	UI      UIConfig      `mapstructure:"ui"`
 	Logging LoggingConfig `mapstructure:"logging"`
+
+	v *viper.Viper // the instance Load read; Save writes through it
 }
 
 // ServerConfig holds media server configuration
@@ -60,6 +62,7 @@ type LoggingConfig struct {
 // DefaultConfig returns the default configuration
 func DefaultConfig() *Config {
 	return &Config{
+		v: viper.New(),
 		UI: UIConfig{
 			ShowWatchStatus:   true,
 			ShowLibraryCounts: false,
@@ -93,25 +96,29 @@ func defaultConfigPath() string {
 	}
 }
 
-// LoadConfig loads configuration from file and environment
-func LoadConfig() (*Config, error) {
+// Load reads the config file from the default directory or the working
+// directory, applies KINO_* environment overrides, and remembers the file so
+// Save writes back to the same place.
+func Load() (*Config, error) {
 	cfg := DefaultConfig()
+	v := viper.New()
+	cfg.v = v
 
-	viper.SetConfigName("config")
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath(defaultConfigPath())
-	viper.AddConfigPath(".")
+	v.SetConfigName("config")
+	v.SetConfigType("yaml")
+	v.AddConfigPath(defaultConfigPath())
+	v.AddConfigPath(".")
 	// The config file contains the server token: never world-readable
-	viper.SetConfigPermissions(0o600)
+	v.SetConfigPermissions(0o600)
 
 	// Environment variable overrides. Both pieces are required for nested
 	// keys to actually work: the replacer maps server.token →
 	// KINO_SERVER_TOKEN, and explicit BindEnv registers each key so
 	// Unmarshal sees env-only values (AutomaticEnv alone is invisible to
 	// Unmarshal for keys absent from defaults/config).
-	viper.SetEnvPrefix("KINO")
-	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	viper.AutomaticEnv()
+	v.SetEnvPrefix("KINO")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
 	for _, key := range []string{
 		"server.type", "server.url", "server.token", "server.user_id",
 		"server.username", "server.device_id",
@@ -119,11 +126,10 @@ func LoadConfig() (*Config, error) {
 		"ui.show_watch_status", "ui.show_library_counts",
 		"logging.file", "logging.level",
 	} {
-		_ = viper.BindEnv(key)
+		_ = v.BindEnv(key)
 	}
 
-	// Read config file if it exists
-	if err := viper.ReadInConfig(); err != nil {
+	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return nil, fmt.Errorf("error reading config file: %w", err)
 		}
@@ -131,11 +137,11 @@ func LoadConfig() (*Config, error) {
 	}
 
 	// Credentials require private permissions even when the file exists.
-	if configFile := viper.ConfigFileUsed(); configFile != "" {
+	if configFile := v.ConfigFileUsed(); configFile != "" {
 		_ = os.Chmod(configFile, 0o600)
 	}
 
-	if err := viper.Unmarshal(cfg); err != nil {
+	if err := v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("error parsing config: %w", err)
 	}
 
@@ -146,9 +152,8 @@ func LoadConfig() (*Config, error) {
 		cfg.Server.DeviceID = generateDeviceID()
 		// Persist immediately for already-configured installs so the ID
 		// stays stable across runs. Fresh installs save during setup.
-		if configFile := viper.ConfigFileUsed(); configFile != "" {
-			viper.Set("server.device_id", cfg.Server.DeviceID)
-			if err := viper.WriteConfigAs(configFile); err != nil {
+		if v.ConfigFileUsed() != "" {
+			if err := cfg.Save(); err != nil {
 				return nil, fmt.Errorf("failed to save device ID: %w", err)
 			}
 		}
@@ -167,47 +172,47 @@ func generateDeviceID() string {
 	return "kino-" + hex.EncodeToString(buf)
 }
 
-// SaveConfig saves the current configuration, writing back to the file that
-// was loaded (a ./config.yaml stays in place instead of forking a stale copy
-// into the default path) or to the default path for fresh installs.
-func SaveConfig(cfg *Config) error {
-	configFile := viper.ConfigFileUsed()
-	if configFile == "" {
-		configPath := defaultConfigPath()
-		if err := os.MkdirAll(configPath, 0755); err != nil {
+// Save writes the configuration back to the file it was loaded from (a
+// ./config.yaml stays in place instead of forking a stale copy into the
+// default path), or to the default path for fresh installs.
+func (c *Config) Save() error {
+	file := c.v.ConfigFileUsed()
+	if file == "" {
+		dir := defaultConfigPath()
+		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("failed to create config directory: %w", err)
 		}
-		configFile = filepath.Join(configPath, "config.yaml")
+		file = filepath.Join(dir, "config.yaml")
 	}
 
-	viper.SetConfigPermissions(0o600)
-
-	// Set server fields individually to ensure correct key names (snake_case)
-	viper.Set("server.type", cfg.Server.Type)
-	viper.Set("server.url", cfg.Server.URL)
-	viper.Set("server.token", cfg.Server.Token)
-	viper.Set("server.user_id", cfg.Server.UserID)
-	viper.Set("server.username", cfg.Server.Username)
-	viper.Set("server.device_id", cfg.Server.DeviceID)
-
-	// Set player fields
-	viper.Set("player.command", cfg.Player.Command)
-	viper.Set("player.args", cfg.Player.Args)
-	viper.Set("player.start_flag", cfg.Player.StartFlag)
-
-	// Set UI fields
-	viper.Set("ui.show_watch_status", cfg.UI.ShowWatchStatus)
-	viper.Set("ui.show_library_counts", cfg.UI.ShowLibraryCounts)
-
-	// Set logging fields
-	viper.Set("logging.file", cfg.Logging.File)
-	viper.Set("logging.level", cfg.Logging.Level)
-
-	if err := viper.WriteConfigAs(configFile); err != nil {
+	for key, value := range map[string]any{
+		"server.type":            c.Server.Type,
+		"server.url":             c.Server.URL,
+		"server.token":           c.Server.Token,
+		"server.user_id":         c.Server.UserID,
+		"server.username":        c.Server.Username,
+		"server.device_id":       c.Server.DeviceID,
+		"player.command":         c.Player.Command,
+		"player.args":            c.Player.Args,
+		"player.start_flag":      c.Player.StartFlag,
+		"ui.show_watch_status":   c.UI.ShowWatchStatus,
+		"ui.show_library_counts": c.UI.ShowLibraryCounts,
+		"logging.file":           c.Logging.File,
+		"logging.level":          c.Logging.Level,
+	} {
+		c.v.Set(key, value)
+	}
+	if err := c.v.WriteConfigAs(file); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
-
 	return nil
+}
+
+// ClearServer removes the server and credentials, keeping the device ID and
+// all other settings, and saves the result.
+func (c *Config) ClearServer() error {
+	c.Server = ServerConfig{DeviceID: c.Server.DeviceID}
+	return c.Save()
 }
 
 // IsConfigured returns true if the server URL and token are set
@@ -226,34 +231,14 @@ func DefaultCachePath() string {
 	}
 }
 
-// ClearServerConfig removes all server-related configuration (type, URL, credentials)
-// while preserving other settings (player, UI, logging)
+// ClearServerConfig signs out by clearing the server and credentials in the
+// config file on disk.
 func ClearServerConfig() error {
-	// Clear server fields in viper
-	viper.Set("server.type", "")
-	viper.Set("server.url", "")
-	viper.Set("server.token", "")
-	viper.Set("server.user_id", "")
-	viper.Set("server.username", "")
-
-	// Write back to the loaded config file: clearing credentials in a copy
-	// at the default path while a ./config.yaml still holds the token would
-	// be a sign-out that doesn't sign out
-	configFile := viper.ConfigFileUsed()
-	if configFile == "" {
-		configPath := defaultConfigPath()
-		if err := os.MkdirAll(configPath, 0755); err != nil {
-			return fmt.Errorf("failed to create config directory: %w", err)
-		}
-		configFile = filepath.Join(configPath, "config.yaml")
+	cfg, err := Load()
+	if err != nil {
+		return err
 	}
-
-	viper.SetConfigPermissions(0o600)
-	if err := viper.WriteConfigAs(configFile); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
-	}
-
-	return nil
+	return cfg.ClearServer()
 }
 
 // ClearCache removes all cached data
