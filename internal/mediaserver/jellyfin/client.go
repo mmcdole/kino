@@ -29,6 +29,7 @@ type Client struct {
 	userID     string
 	deviceID   string
 	httpClient *http.Client
+	retryDelay time.Duration // first retry backoff; doubles per attempt
 	logger     *slog.Logger
 }
 
@@ -45,7 +46,8 @@ func NewClient(baseURL, token, userID, deviceID string, logger *slog.Logger) *Cl
 		httpClient: &http.Client{
 			Timeout: defaultTimeout,
 		},
-		logger: logger,
+		retryDelay: baseRetryDelay,
+		logger:     logger,
 	}
 }
 
@@ -83,7 +85,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 
 		// Wait before retry (exponential backoff)
 		if attempt > 0 {
-			delay := baseRetryDelay * time.Duration(1<<(attempt-1)) // 500ms, 1s, 2s
+			delay := c.retryDelay * time.Duration(1<<(attempt-1)) // 500ms, 1s, 2s
 			c.logger.Debug("retrying request", "attempt", attempt, "delay", delay, "url", reqURL)
 			select {
 			case <-time.After(delay):

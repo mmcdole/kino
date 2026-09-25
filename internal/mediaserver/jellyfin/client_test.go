@@ -3,6 +3,7 @@ package jellyfin
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -17,7 +18,9 @@ func testClient(t *testing.T, handler http.Handler) *Client {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-	return NewClient(srv.URL, "tok", "user1", "dev1", nil)
+	c := NewClient(srv.URL, "tok", "user1", "dev1", nil)
+	c.retryDelay = 0
+	return c
 }
 
 // Every request path — including mutations — must map 401 to ErrAuthFailed
@@ -50,7 +53,7 @@ func TestMutations401MapToErrAuthFailed(t *testing.T) {
 
 // Network errors wrap ErrServerOffline while preserving the cause.
 func TestNetworkErrorWrapsServerOffline(t *testing.T) {
-	c := NewClient("http://127.0.0.1:1", "tok", "user1", "dev1", nil) // nothing listens here
+	c := NewClient(closedURL(t), "tok", "user1", "dev1", nil)
 	err := c.MarkPlayed(context.Background(), "x")
 	if !errors.Is(err, domain.ErrServerOffline) {
 		t.Fatalf("network error not mapped: %v", err)
@@ -134,4 +137,17 @@ func TestDeviceIDInAuthHeader(t *testing.T) {
 	if !strings.Contains(header, want) {
 		t.Fatalf("auth header missing %s: %q", want, header)
 	}
+}
+
+// closedURL returns the address of a local port that just stopped listening,
+// so connections are refused immediately instead of timing out.
+func closedURL(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := l.Addr().String()
+	l.Close()
+	return "http://" + addr
 }

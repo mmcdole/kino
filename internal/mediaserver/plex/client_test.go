@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -21,6 +22,7 @@ func testClient(t *testing.T, handler http.Handler) *Client {
 	t.Cleanup(srv.Close)
 	c := NewClient(srv.URL, "tok", "client1", nil)
 	c.machineIdentifier = "machine1"
+	c.retryDelay = 0
 	return c
 }
 
@@ -50,7 +52,7 @@ func TestMutations401MapToErrAuthFailed(t *testing.T) {
 
 // Network errors wrap ErrServerOffline while preserving the cause.
 func TestNetworkErrorWrapsServerOffline(t *testing.T) {
-	c := NewClient("http://127.0.0.1:1", "tok", "client1", nil)
+	c := NewClient(closedURL(t), "tok", "client1", nil)
 	err := c.DeletePlaylist(context.Background(), "p")
 	if !errors.Is(err, domain.ErrServerOffline) {
 		t.Fatalf("network error not mapped: %v", err)
@@ -158,4 +160,17 @@ func TestPlaylistIdentityIsLazySharedAndRetryable(t *testing.T) {
 			}
 		})
 	}
+}
+
+// closedURL returns the address of a local port that just stopped listening,
+// so connections are refused immediately instead of timing out.
+func closedURL(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := l.Addr().String()
+	l.Close()
+	return "http://" + addr
 }
