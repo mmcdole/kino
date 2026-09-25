@@ -24,11 +24,18 @@ type Mutation struct {
 	ItemID     string
 	ShowID     string // parents of an episode, for watch count rollup
 	SeasonID   string
-	ItemIDs    []string
 	PlaylistID string
 	LibraryID  string
 	Title      string
 	Played     bool
+}
+
+// itemIDs returns the mutation's item as the list playlist writes take.
+func (m Mutation) itemIDs() []string {
+	if m.ItemID == "" {
+		return nil
+	}
+	return []string{m.ItemID}
 }
 
 // Change reports a write. Reconciled snapshots are published through Updates;
@@ -69,9 +76,9 @@ func (s *Service) Mutate(ctx context.Context, m Mutation) (Change, error) {
 			err = s.backend.MarkUnplayed(ctx, m.ItemID)
 		}
 	case CreatePlaylist:
-		change.Playlist, err = s.backend.CreatePlaylist(ctx, m.Title, m.ItemIDs)
+		change.Playlist, err = s.backend.CreatePlaylist(ctx, m.Title, m.itemIDs())
 	case AddToPlaylist:
-		err = s.backend.AddToPlaylist(ctx, m.PlaylistID, m.ItemIDs)
+		err = s.backend.AddToPlaylist(ctx, m.PlaylistID, m.itemIDs())
 	case RemoveFromPlaylist:
 		err = s.backend.RemoveFromPlaylist(ctx, m.PlaylistID, m.ItemID)
 	case DeletePlaylist:

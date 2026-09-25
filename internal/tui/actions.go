@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -9,8 +8,9 @@ import (
 	"github.com/mmcdole/kino/internal/domain"
 )
 
-// mutationOwner identifies what a write changes. Writes to different items in
-// the same playlist are independent; the catalog serializes them.
+// mutationOwner identifies what a write changes. Adding and removing the same
+// item in a playlist share an owner so they cannot be reordered; writes to
+// different items are independent, and the catalog serializes them.
 func mutationOwner(change catalog.Mutation) string {
 	switch change.Kind {
 	case catalog.Watch:
@@ -20,7 +20,7 @@ func mutationOwner(change catalog.Mutation) string {
 	case catalog.DeletePlaylist:
 		return "mutation:playlist:" + change.PlaylistID
 	default:
-		return "mutation:playlist:" + change.PlaylistID + ":" + change.ItemID + strings.Join(change.ItemIDs, ",")
+		return "mutation:playlist:" + change.PlaylistID + ":" + change.ItemID
 	}
 }
 

@@ -209,6 +209,15 @@ func TestPlaylistRemovalsForDifferentItemsAreIndependent(t *testing.T) {
 	}
 }
 
+func TestPlaylistAddAndRemoveOfOneItemCannotReorder(t *testing.T) {
+	m := testModel(t)
+	m.beginMutation(catalog.Mutation{Kind: catalog.AddToPlaylist, PlaylistID: "p", ItemID: "a"})
+	m.beginMutation(catalog.Mutation{Kind: catalog.RemoveFromPlaylist, PlaylistID: "p", ItemID: "a"})
+	if m.notice.Text == "" {
+		t.Fatal("a removal started while the add of the same item was pending")
+	}
+}
+
 func TestOverlayReceivesKeysBeforeColumnsAndGlobalKeys(t *testing.T) {
 	m := testModel(t)
 	m.handleGlobalSearch()

@@ -434,10 +434,10 @@ func (m *Model) applyPlaylistCreate() tea.Cmd {
 		return nil
 	}
 
-	cmds := []tea.Cmd{m.beginMutation(catalog.Mutation{Kind: catalog.CreatePlaylist, Title: title, ItemIDs: []string{item.ID}})}
+	cmds := []tea.Cmd{m.beginMutation(catalog.Mutation{Kind: catalog.CreatePlaylist, Title: title, ItemID: item.ID})}
 	for _, change := range changes {
 		if change.Add {
-			cmds = append(cmds, m.beginMutation(catalog.Mutation{Kind: catalog.AddToPlaylist, PlaylistID: change.PlaylistID, ItemIDs: []string{item.ID}}))
+			cmds = append(cmds, m.beginMutation(catalog.Mutation{Kind: catalog.AddToPlaylist, PlaylistID: change.PlaylistID, ItemID: item.ID}))
 		} else {
 			cmds = append(cmds, m.beginMutation(catalog.Mutation{Kind: catalog.RemoveFromPlaylist, PlaylistID: change.PlaylistID, ItemID: item.ID}))
 		}
@@ -457,7 +457,7 @@ func (m *Model) applyPlaylistChanges() tea.Cmd {
 	var cmds []tea.Cmd
 	for _, change := range changes {
 		if change.Add {
-			cmds = append(cmds, m.beginMutation(catalog.Mutation{Kind: catalog.AddToPlaylist, PlaylistID: change.PlaylistID, ItemIDs: []string{item.ID}}))
+			cmds = append(cmds, m.beginMutation(catalog.Mutation{Kind: catalog.AddToPlaylist, PlaylistID: change.PlaylistID, ItemID: item.ID}))
 		} else {
 			cmds = append(cmds, m.beginMutation(catalog.Mutation{Kind: catalog.RemoveFromPlaylist, PlaylistID: change.PlaylistID, ItemID: item.ID}))
 		}
