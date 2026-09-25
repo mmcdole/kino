@@ -15,7 +15,7 @@ import (
 func loadCmd(svc Catalog, req request) tea.Cmd {
 	return func() tea.Msg {
 		snapshot, err := svc.Load(req.ctx, req.Resource, req.Policy)
-		return LoadDoneMsg{Request: req, Warning: snapshot.Warning, Err: err}
+		return loadDoneMsg{Request: req, Warning: snapshot.Warning, Err: err}
 	}
 }
 
@@ -26,7 +26,7 @@ func listen(svc Catalog, ctx context.Context) tea.Cmd {
 		if err != nil {
 			return nil
 		}
-		return StatesMsg(states)
+		return statesMsg(states)
 	}
 }
 
@@ -34,7 +34,7 @@ func listen(svc Catalog, ctx context.Context) tea.Cmd {
 func mutateCmd(svc Catalog, req request, mutation catalog.Mutation) tea.Cmd {
 	return func() tea.Msg {
 		change, err := svc.Mutate(req.ctx, mutation)
-		return ActionMsg{Request: req, Change: change, Err: err}
+		return actionMsg{Request: req, Change: change, Err: err}
 	}
 }
 
@@ -47,7 +47,7 @@ func playCmd(svc Playback, req request, item domain.MediaItem, resume bool) tea.
 		} else {
 			err = svc.Play(req.ctx, item)
 		}
-		return ActionMsg{Request: req, Item: item, Playback: true, Err: err}
+		return actionMsg{Request: req, Item: item, Playback: true, Err: err}
 	}
 }
 
@@ -55,16 +55,16 @@ func playCmd(svc Playback, req request, item domain.MediaItem, resume bool) tea.
 func playlistMembershipCmd(svc Catalog, req request, item domain.MediaItem) tea.Cmd {
 	return func() tea.Msg {
 		membership, err := svc.PlaylistMembership(req.ctx, item.ID)
-		return PlaylistModalDataMsg{Request: req, Membership: membership, Item: item, Err: err}
+		return playlistModalDataMsg{Request: req, Membership: membership, Item: item, Err: err}
 	}
 }
 
 // tick advances spinner animation by one frame.
 func tick() tea.Cmd {
-	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return TickMsg{} })
+	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
 // logoutCmd ends the signed-in session.
 func logoutCmd(session Session) tea.Cmd {
-	return func() tea.Msg { return LogoutCompleteMsg{Error: session.Logout()} }
+	return func() tea.Msg { return logoutCompleteMsg{Error: session.Logout()} }
 }

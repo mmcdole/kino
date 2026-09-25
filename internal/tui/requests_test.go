@@ -16,7 +16,7 @@ func testModel(t *testing.T) *Model {
 	t.Helper()
 	m := NewModel(context.Background(), nil, nil, nil, search.NewIndex(), Options{})
 	t.Cleanup(m.requests.cancel)
-	m.Libraries = []domain.Library{{ID: "a", Name: "A", Type: "movie"}, {ID: "b", Name: "B", Type: "movie"}}
+	m.libraries = []domain.Library{{ID: "a", Name: "A", Type: "movie"}, {ID: "b", Name: "B", Type: "movie"}}
 	m.libraryColumn().SetItems(domain.LibraryItems(m.allLibraryEntries()))
 	return m
 }
@@ -34,18 +34,18 @@ func state(r catalog.Resource, revision uint64, ids ...string) catalog.State {
 }
 func updateModel(m *Model, msg tea.Msg) *Model { m.Update(msg); return m }
 func publish(m *Model, states ...catalog.State) *Model {
-	return updateModel(m, StatesMsg(states))
+	return updateModel(m, statesMsg(states))
 }
 
 func TestFailureFromAbandonedViewCannotFailCurrentLoad(t *testing.T) {
 	m := testModel(t)
-	a, b := catalog.LibraryResource(m.Libraries[0]), catalog.LibraryResource(m.Libraries[1])
+	a, b := catalog.LibraryResource(m.libraries[0]), catalog.LibraryResource(m.libraries[1])
 	m.pushColumn(a, "A")
 	old := m.requests.active[viewOwner(a)]
 	m.handleBack()
 	m.pushColumn(b, "B")
-	m = updateModel(m, LoadDoneMsg{Request: old, Err: errors.New("A failed")})
-	if !m.ColumnStack.Top().IsLoading() {
+	m = updateModel(m, loadDoneMsg{Request: old, Err: errors.New("A failed")})
+	if !m.columns.Top().IsLoading() {
 		t.Fatal("abandoned request failed the current view")
 	}
 	if m.notice.Text != "" {
@@ -55,27 +55,27 @@ func TestFailureFromAbandonedViewCannotFailCurrentLoad(t *testing.T) {
 
 func TestBackgroundCompletionUpdatesOpenCachedView(t *testing.T) {
 	m := testModel(t)
-	r := catalog.LibraryResource(m.Libraries[0])
+	r := catalog.LibraryResource(m.libraries[0])
 	m.pushColumn(r, "A")
 	view := m.requests.active[viewOwner(r)]
 	cached := state(r, 0, "old")
 	cached.Snapshot.Validated, cached.Fetching, cached.Attempt = false, true, 1
 	m = publish(m, cached)
-	col := m.ColumnStack.Top()
+	col := m.columns.Top()
 	if col.IsLoading() || !col.IsRefreshing() || col.ItemCount() != 1 {
 		t.Fatal("cached refresh hid content or lost its indicator")
 	}
 	m.loadResource(r, catalog.Revalidate, true)
 	background := m.requests.active[syncOwner(r)]
 	m = publish(m, state(r, 1, "new", "old"))
-	m = updateModel(m, LoadDoneMsg{Request: background})
+	m = updateModel(m, loadDoneMsg{Request: background})
 	if col.ItemCount() != 2 || col.SelectedMediaItem().ID != "old" {
 		t.Fatal("sync did not update and preserve selection")
 	}
 	if !col.IsRefreshing() {
 		t.Fatal("one completion cleared another pending request")
 	}
-	m = updateModel(m, LoadDoneMsg{Request: view})
+	m = updateModel(m, loadDoneMsg{Request: view})
 	if col.IsRefreshing() {
 		t.Fatal("completed refresh left spinner running")
 	}
@@ -83,18 +83,18 @@ func TestBackgroundCompletionUpdatesOpenCachedView(t *testing.T) {
 
 func TestRefreshFailureRetainsContentAndStopsSpinner(t *testing.T) {
 	m := testModel(t)
-	r := catalog.LibraryResource(m.Libraries[0])
+	r := catalog.LibraryResource(m.libraries[0])
 	m.pushColumn(r, "A")
 	req := m.requests.active[viewOwner(r)]
 	failed := state(r, 1, "old")
 	failed.Err = domain.ErrServerOffline
 	m = publish(m, failed)
-	m = updateModel(m, LoadDoneMsg{Request: req, Err: domain.ErrServerOffline})
-	col := m.ColumnStack.Top()
+	m = updateModel(m, loadDoneMsg{Request: req, Err: domain.ErrServerOffline})
+	col := m.columns.Top()
 	if col.IsLoading() || col.IsRefreshing() || col.ItemCount() != 1 || !col.HasLoadFailed() {
 		t.Fatal("failed refresh discarded usable view, left spinner, or hid retry")
 	}
-	if m.notice.Kind != NoticeError {
+	if m.notice.Kind != noticeError {
 		t.Fatal("failed refresh was silent")
 	}
 }
@@ -107,14 +107,14 @@ func TestAllOperationErrorsUseAuthenticationAlert(t *testing.T) {
 			var msg tea.Msg
 			switch kind {
 			case "browse":
-				msg = LoadDoneMsg{Request: req, Err: domain.ErrAuthFailed}
+				msg = loadDoneMsg{Request: req, Err: domain.ErrAuthFailed}
 			case "modal":
-				msg = PlaylistModalDataMsg{Request: req, Err: domain.ErrAuthFailed}
+				msg = playlistModalDataMsg{Request: req, Err: domain.ErrAuthFailed}
 			default:
-				msg = ActionMsg{Request: req, Playback: kind == "playback", Err: domain.ErrAuthFailed}
+				msg = actionMsg{Request: req, Playback: kind == "playback", Err: domain.ErrAuthFailed}
 			}
 			m = updateModel(m, msg)
-			if m.notice.Kind != NoticeAlert || m.notice.Text != authFailedStatusMsg {
+			if m.notice.Kind != noticeAlert || m.notice.Text != authFailedStatusMsg {
 				t.Fatalf("%s bypassed error classification: %+v", kind, m.notice)
 			}
 		})
@@ -124,28 +124,28 @@ func TestAllOperationErrorsUseAuthenticationAlert(t *testing.T) {
 func TestModalDismissalAndReplacementRejectLateResponses(t *testing.T) {
 	m := testModel(t)
 	old := m.requests.begin("playlist-modal", catalog.Resource{}, catalog.Browse)
-	m.PlaylistModal.BeginLoading(&domain.MediaItem{ID: "old"})
+	m.playlistModal.BeginLoading(&domain.MediaItem{ID: "old"})
 	m.overlay = overlayPlaylists
 	m.cancelPendingModal()
-	m = updateModel(m, PlaylistModalDataMsg{Request: old, Item: domain.MediaItem{ID: "old"}})
+	m = updateModel(m, playlistModalDataMsg{Request: old, Item: domain.MediaItem{ID: "old"}})
 	if m.overlay == overlayPlaylists {
 		t.Fatal("dismissed modal reopened")
 	}
 	newer := m.requests.begin("playlist-modal", catalog.Resource{}, catalog.Browse)
-	m = updateModel(m, PlaylistModalDataMsg{Request: newer, Item: domain.MediaItem{ID: "new"}})
-	m = updateModel(m, PlaylistModalDataMsg{Request: old, Item: domain.MediaItem{ID: "old"}})
-	if m.PlaylistModal.Item().ID != "new" {
+	m = updateModel(m, playlistModalDataMsg{Request: newer, Item: domain.MediaItem{ID: "new"}})
+	m = updateModel(m, playlistModalDataMsg{Request: old, Item: domain.MediaItem{ID: "old"}})
+	if m.playlistModal.Item().ID != "new" {
 		t.Fatal("late response reset active modal")
 	}
 }
 
 func TestUnrelatedActionErrorLeavesColumnLoading(t *testing.T) {
 	m := testModel(t)
-	r := catalog.LibraryResource(m.Libraries[0])
+	r := catalog.LibraryResource(m.libraries[0])
 	m.pushColumn(r, "A")
 	req := m.requests.begin("playback:x", catalog.Resource{}, catalog.Browse)
-	m = updateModel(m, ActionMsg{Request: req, Playback: true, Err: errors.New("player unavailable")})
-	if !m.ColumnStack.Top().IsLoading() {
+	m = updateModel(m, actionMsg{Request: req, Playback: true, Err: errors.New("player unavailable")})
+	if !m.columns.Top().IsLoading() {
 		t.Fatal("player error stopped column loading")
 	}
 }
@@ -156,8 +156,8 @@ func TestColdStartupFailureKeepsRetryableRoot(t *testing.T) {
 	m.loadResource(catalog.Resource{Kind: catalog.Libraries}, catalog.Revalidate, false)
 	r := catalog.Resource{Kind: catalog.Libraries}
 	req := m.requests.active[viewOwner(r)]
-	m = updateModel(m, LoadDoneMsg{Request: req, Err: domain.ErrServerOffline})
-	if m.ColumnStack.Top() == nil || m.ColumnStack.Top().IsLoading() {
+	m = updateModel(m, loadDoneMsg{Request: req, Err: domain.ErrServerOffline})
+	if m.columns.Top() == nil || m.columns.Top().IsLoading() {
 		t.Fatal("failed startup has no retryable root")
 	}
 	cmd := m.handleRefresh()
@@ -168,24 +168,24 @@ func TestColdStartupFailureKeepsRetryableRoot(t *testing.T) {
 
 func TestRemovedLibraryDetachesRequestsAndNavigation(t *testing.T) {
 	m := testModel(t)
-	r := catalog.LibraryResource(m.Libraries[0])
+	r := catalog.LibraryResource(m.libraries[0])
 	m.pushColumn(r, "A")
 	m.loadResource(r, catalog.Revalidate, true)
 	late := m.requests.active[syncOwner(r)]
 	root := catalog.Resource{Kind: catalog.Libraries}
 	m = publish(m, catalog.State{Resource: root, Known: true, Snapshot: snapshot(root, 1)})
-	if m.ColumnStack.Len() != 1 {
+	if m.columns.Len() != 1 {
 		t.Fatal("removed library remains open")
 	}
-	if _, ok := m.LibraryStates[r.LibraryID]; ok {
+	if _, ok := m.libraryStates[r.LibraryID]; ok {
 		t.Fatal("removed library remains in sync status")
 	}
 	if m.requests.owns(late) || late.ctx.Err() == nil {
 		t.Fatal("removed subscription remains active")
 	}
 	m = publish(m, state(r, 2, "late"))
-	m = updateModel(m, LoadDoneMsg{Request: late})
-	if _, ok := m.LibraryStates[r.LibraryID]; ok {
+	m = updateModel(m, loadDoneMsg{Request: late})
+	if _, ok := m.libraryStates[r.LibraryID]; ok {
 		t.Fatal("late state recreated removed library")
 	}
 	if _, ok := m.collections[r.Key()]; ok {
@@ -222,7 +222,7 @@ func TestOverlayReceivesKeysBeforeColumnsAndGlobalKeys(t *testing.T) {
 	m := testModel(t)
 	m.handleGlobalSearch()
 	m = updateModel(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
-	if m.overlay != overlaySearch || m.GlobalSearch.Query() != "q" {
+	if m.overlay != overlaySearch || m.globalSearch.Query() != "q" {
 		t.Fatal("q quit or left search instead of typing into it")
 	}
 	m = updateModel(m, tea.KeyMsg{Type: tea.KeyEsc})
@@ -232,7 +232,7 @@ func TestOverlayReceivesKeysBeforeColumnsAndGlobalKeys(t *testing.T) {
 
 	m.overlay, m.confirmDelete = overlayConfirmDelete, &domain.Playlist{ID: "p", Title: "P"}
 	m = updateModel(m, tea.KeyMsg{Type: tea.KeyEsc})
-	if m.overlay != overlayNone || m.confirmDelete != nil || m.ColumnStack.Len() != 1 {
+	if m.overlay != overlayNone || m.confirmDelete != nil || m.columns.Len() != 1 {
 		t.Fatal("esc on a confirmation did more than cancel it")
 	}
 }
@@ -243,15 +243,15 @@ func (s fakeSession) Logout() error { return s.err }
 
 func TestLogoutUsesSessionAndReportsFailure(t *testing.T) {
 	m := testModel(t)
-	m.Session = fakeSession{err: errors.New("read-only config")}
+	m.session = fakeSession{err: errors.New("read-only config")}
 	m.handleLogout()
 	cmd := m.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m = updateModel(m, cmd())
-	if m.LoggedOut || m.loggingOut || m.notice.Kind != NoticeError {
+	if m.LoggedOut || m.loggingOut || m.notice.Kind != noticeError {
 		t.Fatalf("failed logout was not reported: %+v", m.notice)
 	}
 
-	m.Session = fakeSession{}
+	m.session = fakeSession{}
 	m.handleLogout()
 	cmd = m.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m = updateModel(m, cmd())
@@ -261,15 +261,15 @@ func TestLogoutUsesSessionAndReportsFailure(t *testing.T) {
 }
 
 func TestAllLibraryEntriesDoesNotAliasLibraries(t *testing.T) {
-	m := &Model{Libraries: make([]domain.Library, 1, 2)}
-	m.Libraries[0] = domain.Library{ID: "movies"}
+	m := &Model{libraries: make([]domain.Library, 1, 2)}
+	m.libraries[0] = domain.Library{ID: "movies"}
 
 	entries := m.allLibraryEntries()
 	entries[0].Name = "changed"
-	if m.Libraries[0].Name != "" {
+	if m.libraries[0].Name != "" {
 		t.Fatal("allLibraryEntries shares its backing array with m.Libraries")
 	}
-	if got := m.Libraries[:2][1].ID; got != "" {
+	if got := m.libraries[:2][1].ID; got != "" {
 		t.Fatalf("Playlists entry written into m.Libraries spare capacity: %q", got)
 	}
 }

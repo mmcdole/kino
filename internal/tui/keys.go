@@ -2,8 +2,8 @@ package tui
 
 import "github.com/charmbracelet/bubbles/key"
 
-// KeyMap defines all key bindings for the application
-type KeyMap struct {
+// keyMap defines all key bindings for the application
+type keyMap struct {
 	// Navigation
 	Right key.Binding
 	Enter key.Binding
@@ -32,9 +32,9 @@ type KeyMap struct {
 	Deny    key.Binding
 }
 
-// DefaultKeyMap returns the default key bindings
-func DefaultKeyMap() KeyMap {
-	return KeyMap{
+// defaultKeyMap returns the default key bindings
+func defaultKeyMap() keyMap {
+	return keyMap{
 		// Navigation
 		Right: key.NewBinding(
 			key.WithKeys("l", "right"),
@@ -127,5 +127,5 @@ func DefaultKeyMap() KeyMap {
 	}
 }
 
-// Keys is the global key bindings instance
-var Keys = DefaultKeyMap()
+// keys is the global key bindings instance
+var keys = defaultKeyMap()

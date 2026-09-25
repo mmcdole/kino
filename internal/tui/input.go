@@ -24,20 +24,20 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case overlayConfirmLogout:
 		switch {
-		case key.Matches(msg, Keys.Confirm):
+		case key.Matches(msg, keys.Confirm):
 			m.loggingOut = true
-			return logoutCmd(m.Session)
-		case key.Matches(msg, Keys.Deny):
+			return logoutCmd(m.session)
+		case key.Matches(msg, keys.Deny):
 			m.overlay = overlayNone
 		}
 		return nil
 	case overlayConfirmDelete:
 		playlist := m.confirmDelete
 		switch {
-		case key.Matches(msg, Keys.Confirm):
+		case key.Matches(msg, keys.Confirm):
 			m.overlay, m.confirmDelete = overlayNone, nil
 			return m.beginMutation(catalog.Mutation{Kind: catalog.DeletePlaylist, PlaylistID: playlist.ID})
-		case key.Matches(msg, Keys.Deny), key.Matches(msg, Keys.Escape):
+		case key.Matches(msg, keys.Deny), key.Matches(msg, keys.Escape):
 			m.overlay, m.confirmDelete = overlayNone, nil
 		}
 		return nil
@@ -50,56 +50,56 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 	case overlayInput:
 		return m.handleInputModalInput(msg)
 	}
-	if top := m.ColumnStack.Top(); top != nil && top.IsFilterTyping() {
+	if top := m.columns.Top(); top != nil && top.IsFilterTyping() {
 		top.Update(msg)
 		return nil
 	}
 
 	// Global keys
 	switch {
-	case key.Matches(msg, Keys.Quit):
+	case key.Matches(msg, keys.Quit):
 		m.requests.cancel()
 		return tea.Quit
-	case key.Matches(msg, Keys.Help):
+	case key.Matches(msg, keys.Help):
 		return m.handleHelp()
-	case key.Matches(msg, Keys.Escape):
+	case key.Matches(msg, keys.Escape):
 		return m.handleEscape()
-	case key.Matches(msg, Keys.Filter):
+	case key.Matches(msg, keys.Filter):
 		return m.handleFilter()
-	case key.Matches(msg, Keys.GlobalSearch):
+	case key.Matches(msg, keys.GlobalSearch):
 		return m.handleGlobalSearch()
-	case key.Matches(msg, Keys.Sort):
+	case key.Matches(msg, keys.Sort):
 		return m.handleSort()
-	case key.Matches(msg, Keys.Back):
+	case key.Matches(msg, keys.Back):
 		return m.handleBack()
-	case key.Matches(msg, Keys.Right):
+	case key.Matches(msg, keys.Right):
 		return m.handleDrillIn()
-	case key.Matches(msg, Keys.Enter):
+	case key.Matches(msg, keys.Enter):
 		return m.handleEnter()
-	case key.Matches(msg, Keys.Refresh):
+	case key.Matches(msg, keys.Refresh):
 		return m.handleRefresh()
-	case key.Matches(msg, Keys.RefreshAll):
+	case key.Matches(msg, keys.RefreshAll):
 		return m.handleRefreshAll()
-	case key.Matches(msg, Keys.MarkWatched):
+	case key.Matches(msg, keys.MarkWatched):
 		return m.handleMarkWatched()
-	case key.Matches(msg, Keys.MarkUnwatched):
+	case key.Matches(msg, keys.MarkUnwatched):
 		return m.handleMarkUnwatched()
-	case key.Matches(msg, Keys.Play):
+	case key.Matches(msg, keys.Play):
 		return m.handlePlay()
-	case key.Matches(msg, Keys.ToggleInspector):
+	case key.Matches(msg, keys.ToggleInspector):
 		return m.handleToggleInspector()
-	case key.Matches(msg, Keys.Logout):
+	case key.Matches(msg, keys.Logout):
 		return m.handleLogout()
-	case key.Matches(msg, Keys.PlaylistModal):
+	case key.Matches(msg, keys.PlaylistModal):
 		return m.handlePlaylistModal()
-	case key.Matches(msg, Keys.Delete):
+	case key.Matches(msg, keys.Delete):
 		return m.handleDelete()
-	case key.Matches(msg, Keys.NewPlaylist):
+	case key.Matches(msg, keys.NewPlaylist):
 		return m.handleNewPlaylist()
 	}
 
 	// Let the focused column handle remaining keys (j/k/g/G navigation)
-	if top := m.ColumnStack.Top(); top != nil {
+	if top := m.columns.Top(); top != nil {
 		if _, cmd := top.Update(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
@@ -120,16 +120,16 @@ func (m *Model) handleHelp() tea.Cmd {
 
 // handleEscape clears active filter or cancels a pending search selection
 func (m *Model) handleEscape() tea.Cmd {
-	if top := m.ColumnStack.Top(); top != nil && top.IsFiltering() {
+	if top := m.columns.Top(); top != nil && top.IsFiltering() {
 		top.ClearFilter()
 		return nil
 	}
 	if m.pendingSelect != nil {
 		m.pendingSelect = nil
-		return m.notify(NoticeInfo, "Navigation cancelled")
+		return m.notify(noticeInfo, "Navigation cancelled")
 	}
 	// Esc dismisses a persistent alert once the user has read it
-	if m.notice.Kind == NoticeAlert && m.notice.Text != "" {
+	if m.notice.Kind == noticeAlert && m.notice.Text != "" {
 		m.clearNotice()
 		return nil
 	}
@@ -138,7 +138,7 @@ func (m *Model) handleEscape() tea.Cmd {
 
 // handleFilter toggles filter mode in the current column
 func (m *Model) handleFilter() tea.Cmd {
-	if top := m.ColumnStack.Top(); top != nil {
+	if top := m.columns.Top(); top != nil {
 		top.ToggleFilter()
 	}
 	return nil
@@ -146,10 +146,10 @@ func (m *Model) handleFilter() tea.Cmd {
 
 // handleGlobalSearch opens the global search modal
 func (m *Model) handleGlobalSearch() tea.Cmd {
-	m.GlobalSearch.Reset()
-	m.GlobalSearch.SetSize(m.Width, m.Height)
+	m.globalSearch.Reset()
+	m.globalSearch.SetSize(m.width, m.height)
 	m.overlay = overlaySearch
-	return m.GlobalSearch.Init()
+	return m.globalSearch.Init()
 }
 
 // handleDrillIn handles drilling into the selected item (l key)
@@ -157,14 +157,14 @@ func (m *Model) handleDrillIn() tea.Cmd {
 	// Manual navigation cancels any pending search selection; a stale
 	// selection resuming on a later load would teleport the user
 	m.pendingSelect = nil
-	top := m.ColumnStack.Top()
+	top := m.columns.Top()
 	if top == nil {
 		return nil
 	}
 	if !top.CanDrillInto() {
 		if item := top.SelectedMediaItem(); item != nil {
 			return tea.Batch(
-				m.notify(NoticeInfo, "Launching: "+item.Title),
+				m.notify(noticeInfo, "Launching: "+item.Title),
 				m.beginPlayback(*item, item.ShouldResume()),
 			)
 		}
@@ -176,7 +176,7 @@ func (m *Model) handleDrillIn() tea.Cmd {
 // handleEnter handles the enter key press
 func (m *Model) handleEnter() tea.Cmd {
 	m.pendingSelect = nil
-	top := m.ColumnStack.Top()
+	top := m.columns.Top()
 	if top == nil {
 		return nil
 	}
@@ -185,7 +185,7 @@ func (m *Model) handleEnter() tea.Cmd {
 	}
 	if item := top.SelectedMediaItem(); item != nil {
 		return tea.Batch(
-			m.notify(NoticeInfo, "Launching: "+item.Title),
+			m.notify(noticeInfo, "Launching: "+item.Title),
 			m.beginPlayback(*item, item.ShouldResume()),
 		)
 	}
@@ -194,7 +194,7 @@ func (m *Model) handleEnter() tea.Cmd {
 
 // handleSort opens the sort modal for movies/shows columns
 func (m *Model) handleSort() tea.Cmd {
-	top := m.ColumnStack.Top()
+	top := m.columns.Top()
 	if top == nil {
 		return nil
 	}
@@ -203,7 +203,7 @@ func (m *Model) handleSort() tea.Cmd {
 		return m.notAvailableHere("Sort (s)")
 	}
 	field, dir := top.SortState()
-	m.SortModal.Show(opts, field, dir)
+	m.sortModal.Show(opts, field, dir)
 	m.overlay = overlaySort
 	return nil
 }
@@ -215,7 +215,7 @@ func (m *Model) handleRefresh() tea.Cmd {
 		return nil
 	}
 	if r.Kind == catalog.Libraries {
-		lib := m.ColumnStack.Top().SelectedLibrary()
+		lib := m.columns.Top().SelectedLibrary()
 		if lib == nil {
 			return m.loadResource(r, catalog.Refresh, false)
 		}
@@ -235,8 +235,8 @@ func (m *Model) handleRefreshAll() tea.Cmd {
 		m.loadResource(catalog.Resource{Kind: catalog.Libraries}, catalog.Refresh, false),
 		m.syncLibraries(catalog.Refresh),
 	}
-	for i := 1; i < m.ColumnStack.Len(); i++ {
-		r, _ := m.resource(m.ColumnStack.Get(i).ContentID())
+	for i := 1; i < m.columns.Len(); i++ {
+		r, _ := m.resource(m.columns.Get(i).ContentID())
 		if r.Kind == catalog.Seasons || r.Kind == catalog.Episodes || r.Kind == catalog.PlaylistItems {
 			cmds = append(cmds, m.loadResource(r, catalog.Refresh, false))
 		}
@@ -246,7 +246,7 @@ func (m *Model) handleRefreshAll() tea.Cmd {
 
 // handleMarkWatched marks the selected item as watched
 func (m *Model) handleMarkWatched() tea.Cmd {
-	top := m.ColumnStack.Top()
+	top := m.columns.Top()
 	if top == nil {
 		return nil
 	}
@@ -260,7 +260,7 @@ func (m *Model) handleMarkWatched() tea.Cmd {
 
 // handleMarkUnwatched marks the selected item as unwatched
 func (m *Model) handleMarkUnwatched() tea.Cmd {
-	top := m.ColumnStack.Top()
+	top := m.columns.Top()
 	if top == nil {
 		return nil
 	}
@@ -274,7 +274,7 @@ func (m *Model) handleMarkUnwatched() tea.Cmd {
 
 // handlePlay plays the selected item from the beginning
 func (m *Model) handlePlay() tea.Cmd {
-	top := m.ColumnStack.Top()
+	top := m.columns.Top()
 	if top == nil {
 		return nil
 	}
@@ -283,7 +283,7 @@ func (m *Model) handlePlay() tea.Cmd {
 		return m.notAvailableHere("Play (p)")
 	}
 	return tea.Batch(
-		m.notify(NoticeInfo, "Launching: "+item.Title),
+		m.notify(noticeInfo, "Launching: "+item.Title),
 		m.beginPlayback(*item, false),
 	)
 }
@@ -291,12 +291,12 @@ func (m *Model) handlePlay() tea.Cmd {
 // notAvailableHere emits a short status explaining that a key does nothing
 // for the current selection, instead of silently ignoring it
 func (m *Model) notAvailableHere(action string) tea.Cmd {
-	return m.notify(NoticeInfo, action+" is not available for this item")
+	return m.notify(noticeInfo, action+" is not available for this item")
 }
 
 // handleToggleInspector toggles the inspector panel visibility
 func (m *Model) handleToggleInspector() tea.Cmd {
-	m.ShowInspector = !m.ShowInspector
+	m.showInspector = !m.showInspector
 	m.updateLayout()
 	return nil
 }
@@ -309,7 +309,7 @@ func (m *Model) handleLogout() tea.Cmd {
 
 // handlePlaylistModal opens the playlist modal for the selected item
 func (m *Model) handlePlaylistModal() tea.Cmd {
-	top := m.ColumnStack.Top()
+	top := m.columns.Top()
 	if top == nil {
 		return nil
 	}
@@ -317,16 +317,16 @@ func (m *Model) handlePlaylistModal() tea.Cmd {
 	if item == nil {
 		return m.notAvailableHere("Playlists (space)")
 	}
-	m.PlaylistModal.BeginLoading(item)
-	m.PlaylistModal.SetSize(m.Width, m.Height)
+	m.playlistModal.BeginLoading(item)
+	m.playlistModal.SetSize(m.width, m.height)
 	m.overlay = overlayPlaylists
 	req := m.requests.begin("playlist-modal", catalog.Resource{}, catalog.Browse)
-	return playlistMembershipCmd(m.Catalog, req, *item)
+	return playlistMembershipCmd(m.catalog, req, *item)
 }
 
 // handleDelete handles deletion of playlists or playlist items
 func (m *Model) handleDelete() tea.Cmd {
-	top := m.ColumnStack.Top()
+	top := m.columns.Top()
 	r, ok := m.topResource()
 	if top == nil || !ok {
 		return nil
@@ -343,7 +343,7 @@ func (m *Model) handleDelete() tea.Cmd {
 			return nil
 		}
 	default:
-		return m.notify(NoticeInfo, "Remove (x) only works in playlists")
+		return m.notify(noticeInfo, "Remove (x) only works in playlists")
 	}
 	return nil
 }
@@ -353,7 +353,7 @@ func (m *Model) handleNewPlaylist() tea.Cmd {
 	if r, ok := m.topResource(); !ok || r.Kind != catalog.Playlists {
 		return nil
 	}
-	m.InputModal.Show("New Playlist")
+	m.inputModal.Show("New Playlist")
 	m.overlay = overlayInput
 	return nil
 }
@@ -366,17 +366,17 @@ func (m *Model) handleNewPlaylist() tea.Cmd {
 func (m *Model) handleGlobalSearchInput(msg tea.KeyMsg) tea.Cmd {
 	var cmd tea.Cmd
 	var outcome components.Outcome
-	m.GlobalSearch, cmd, outcome = m.GlobalSearch.Update(msg)
+	m.globalSearch, cmd, outcome = m.globalSearch.Update(msg)
 	cmds := []tea.Cmd{cmd}
 	switch outcome {
 	case components.Cancel:
 		m.closeSearch()
 	case components.Submit:
-		result := m.GlobalSearch.Selected()
+		result := m.globalSearch.Selected()
 		m.closeSearch()
 		cmds = append(cmds, m.navigateToSearchResult(*result))
 	default:
-		if m.GlobalSearch.QueryChanged() {
+		if m.globalSearch.QueryChanged() {
 			cmds = append(cmds, m.scheduleSearch())
 		}
 	}
@@ -392,9 +392,9 @@ func (m *Model) closeSearch() {
 
 // handleSortModalInput handles input while the sort modal is open
 func (m *Model) handleSortModalInput(msg tea.KeyMsg) tea.Cmd {
-	outcome, selection := m.SortModal.HandleKeyMsg(msg)
+	outcome, selection := m.sortModal.HandleKeyMsg(msg)
 	if outcome == components.Submit {
-		if top := m.ColumnStack.Top(); top != nil {
+		if top := m.columns.Top(); top != nil {
 			top.ApplySort(selection.Field, selection.Direction)
 		}
 	}
@@ -407,13 +407,13 @@ func (m *Model) handleSortModalInput(msg tea.KeyMsg) tea.Cmd {
 // handlePlaylistModalInput handles input while the playlist modal is open.
 // Closing the modal applies its checkbox changes.
 func (m *Model) handlePlaylistModalInput(msg tea.KeyMsg) tea.Cmd {
-	if m.PlaylistModal.IsLoading() {
+	if m.playlistModal.IsLoading() {
 		if msg.String() == "esc" {
 			m.cancelPendingModal()
 		}
 		return nil
 	}
-	outcome, create := m.PlaylistModal.HandleKeyMsg(msg)
+	outcome, create := m.playlistModal.HandleKeyMsg(msg)
 	if outcome != components.Submit {
 		return nil
 	}
@@ -426,9 +426,9 @@ func (m *Model) handlePlaylistModalInput(msg tea.KeyMsg) tea.Cmd {
 
 // applyPlaylistCreate creates a new playlist and applies checkbox changes
 func (m *Model) applyPlaylistCreate() tea.Cmd {
-	title := m.PlaylistModal.NewPlaylistTitle()
-	item := m.PlaylistModal.Item()
-	changes := m.PlaylistModal.GetChanges()
+	title := m.playlistModal.NewPlaylistTitle()
+	item := m.playlistModal.Item()
+	changes := m.playlistModal.GetChanges()
 
 	if title == "" || item == nil {
 		return nil
@@ -447,8 +447,8 @@ func (m *Model) applyPlaylistCreate() tea.Cmd {
 
 // applyPlaylistChanges applies pending playlist checkbox changes
 func (m *Model) applyPlaylistChanges() tea.Cmd {
-	changes := m.PlaylistModal.GetChanges()
-	item := m.PlaylistModal.Item()
+	changes := m.playlistModal.GetChanges()
+	item := m.playlistModal.Item()
 
 	if len(changes) == 0 || item == nil {
 		return nil
@@ -469,11 +469,11 @@ func (m *Model) applyPlaylistChanges() tea.Cmd {
 func (m *Model) handleInputModalInput(msg tea.KeyMsg) tea.Cmd {
 	var cmd tea.Cmd
 	var outcome components.Outcome
-	m.InputModal, cmd, outcome = m.InputModal.Update(msg)
+	m.inputModal, cmd, outcome = m.inputModal.Update(msg)
 	switch outcome {
 	case components.Submit:
 		m.overlay = overlayNone
-		if title := m.InputModal.Value(); title != "" {
+		if title := m.inputModal.Value(); title != "" {
 			return m.beginMutation(catalog.Mutation{Kind: catalog.CreatePlaylist, Title: title})
 		}
 		return nil

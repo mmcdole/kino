@@ -22,8 +22,8 @@ func playlistsLibraryEntry() domain.Library {
 // new slice. Appending to m.Libraries directly could write into its spare
 // capacity, and the library column keeps pointers into the returned slice.
 func (m *Model) allLibraryEntries() []domain.Library {
-	entries := make([]domain.Library, 0, len(m.Libraries)+1)
-	entries = append(entries, m.Libraries...)
+	entries := make([]domain.Library, 0, len(m.libraries)+1)
+	entries = append(entries, m.libraries...)
 	return append(entries, playlistsLibraryEntry())
 }
 

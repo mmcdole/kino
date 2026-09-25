@@ -6,21 +6,21 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// NoticeKind classifies footer notifications. The kind decides styling and
+// noticeKind classifies footer notifications. The kind decides styling and
 // lifetime — call sites never pick durations.
-type NoticeKind int
+type noticeKind int
 
 const (
-	NoticeInfo    NoticeKind = iota // neutral event ("Launching: ...")
-	NoticeSuccess                   // completed action ("Marked watched: ...")
-	NoticeError                     // failed action; longer lifetime for reading
-	NoticeAlert                     // needs the user: persists until superseded by another alert or dismissed with Esc
+	noticeInfo    noticeKind = iota // neutral event ("Launching: ...")
+	noticeSuccess                   // completed action ("Marked watched: ...")
+	noticeError                     // failed action; longer lifetime for reading
+	noticeAlert                     // needs the user: persists until superseded by another alert or dismissed with Esc
 )
 
-// Notice is the single footer notification slot.
-type Notice struct {
+// notice is the single footer notification slot.
+type notice struct {
 	Text string
-	Kind NoticeKind
+	Kind noticeKind
 	Seq  int
 }
 
@@ -29,40 +29,40 @@ const (
 	noticeDurationLong  = 6 * time.Second // errors
 )
 
-// ClearNoticeMsg expires the notice with the matching sequence number.
+// clearNoticeMsg expires the notice with the matching sequence number.
 // Carrying the sequence means a stale timer from an earlier notice can never
 // clear a newer one.
-type ClearNoticeMsg struct{ Seq int }
+type clearNoticeMsg struct{ Seq int }
 
 // notify posts a footer notification and returns its expiry timer command.
 // Alerts return nil (no timer) and cannot be displaced by non-alert notices.
-func (m *Model) notify(kind NoticeKind, text string) tea.Cmd {
-	if m.notice.Kind == NoticeAlert && m.notice.Text != "" && kind != NoticeAlert {
+func (m *Model) notify(kind noticeKind, text string) tea.Cmd {
+	if m.notice.Kind == noticeAlert && m.notice.Text != "" && kind != noticeAlert {
 		// An active alert outranks transient notices; drop them rather than
 		// hide an actionable message
 		return nil
 	}
 
 	m.noticeSeq++
-	m.notice = Notice{Text: text, Kind: kind, Seq: m.noticeSeq}
+	m.notice = notice{Text: text, Kind: kind, Seq: m.noticeSeq}
 
-	if kind == NoticeAlert {
+	if kind == noticeAlert {
 		return nil
 	}
 
 	duration := noticeDurationShort
-	if kind == NoticeError {
+	if kind == noticeError {
 		duration = noticeDurationLong
 	}
 	seq := m.noticeSeq
 	return tea.Tick(duration, func(time.Time) tea.Msg {
-		return ClearNoticeMsg{Seq: seq}
+		return clearNoticeMsg{Seq: seq}
 	})
 }
 
 // clearNotice removes the current notice unconditionally (explicit dismiss).
 func (m *Model) clearNotice() {
-	m.notice = Notice{}
+	m.notice = notice{}
 }
 
 // expireNotice clears the notice only if seq still identifies it.

@@ -108,8 +108,8 @@ func TestCatalogDiskCacheAndTUIRequestLifecycle(t *testing.T) {
 	svc := catalog.NewService(context.Background(), backend, cache)
 	defer svc.Close()
 	m := testModel(t)
-	m.Catalog = svc
-	r := catalog.LibraryResource(m.Libraries[0])
+	m.catalog = svc
+	r := catalog.LibraryResource(m.libraries[0])
 	if err := cache.Save(r.Key(), domain.CachedList{
 		Items:     []domain.ListItem{&domain.MediaItem{ID: "movie", Title: "Cached title"}},
 		FetchedAt: time.Now().Add(-time.Hour),
@@ -118,7 +118,7 @@ func TestCatalogDiskCacheAndTUIRequestLifecycle(t *testing.T) {
 	}
 
 	view := start(m.pushColumn(r, "A"))
-	col := m.ColumnStack.Top()
+	col := m.columns.Top()
 	m = pumpUntil(t, m, svc, func(*Model) bool { return col.HasContent() })
 	if col.SelectedMediaItem().Title != "Cached title" || !col.IsRefreshing() {
 		t.Fatal("cached snapshot not shown during network load")

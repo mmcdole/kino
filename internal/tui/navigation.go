@@ -39,8 +39,8 @@ func columnOptions(kind catalog.Kind) components.ColumnOptions {
 func (m *Model) pushColumn(r catalog.Resource, title string) tea.Cmd {
 	col := components.NewListColumn(title, columnOptions(r.Kind))
 	col.SetContentID(r.Key())
-	col.SetShowWatchStatus(m.Options.ShowWatchStatus)
-	m.ColumnStack.Push(col)
+	col.SetShowWatchStatus(m.opts.ShowWatchStatus)
+	m.columns.Push(col)
 	m.track(r)
 	if st := m.collection(r); st.Known {
 		col.ReplaceItems(domain.CloneItems(st.Snapshot.Items))
@@ -50,7 +50,7 @@ func (m *Model) pushColumn(r catalog.Resource, title string) tea.Cmd {
 }
 
 func (m *Model) drillSelected() tea.Cmd {
-	top := m.ColumnStack.Top()
+	top := m.columns.Top()
 	if top == nil || !top.CanDrillInto() {
 		return nil
 	}
@@ -78,15 +78,15 @@ func (m *Model) drillSelected() tea.Cmd {
 func (m *Model) handleBack() tea.Cmd {
 	m.pendingSelect = nil
 	m.cancelPendingModal()
-	m.popTo(m.ColumnStack.Len() - 1)
+	m.popTo(m.columns.Len() - 1)
 	return nil
 }
 
 // popTo closes the columns above depth, never the root, and detaches their
 // foreground loads.
 func (m *Model) popTo(depth int) {
-	for m.ColumnStack.Len() > max(depth, 1) {
-		col := m.ColumnStack.Pop()
+	for m.columns.Len() > max(depth, 1) {
+		col := m.columns.Pop()
 		if r, ok := m.resource(col.ContentID()); ok {
 			m.requests.stop(viewOwner(r))
 			m.updateResourceFeedback(r)
@@ -99,7 +99,7 @@ func (m *Model) popTo(depth int) {
 // the load is final the item may still arrive, so a miss keeps waiting.
 func (m *Model) trySelect(key string, final bool) tea.Cmd {
 	p := m.pendingSelect
-	col := m.ColumnStack.Top()
+	col := m.columns.Top()
 	if p == nil || p.key != key || col == nil || col.ContentID() != key {
 		return nil
 	}
@@ -108,7 +108,7 @@ func (m *Model) trySelect(key string, final bool) tea.Cmd {
 			return nil
 		}
 		m.pendingSelect = nil
-		return m.notify(NoticeError, "Item not found (library may have changed)")
+		return m.notify(noticeError, "Item not found (library may have changed)")
 	}
 	m.pendingSelect = nil
 	if !p.open {
@@ -117,7 +117,7 @@ func (m *Model) trySelect(key string, final bool) tea.Cmd {
 	if cmd := m.drillSelected(); cmd != nil {
 		return cmd
 	}
-	return m.notify(NoticeError, "Navigation failed")
+	return m.notify(noticeError, "Navigation failed")
 }
 
 func (m *Model) navigateToSearchResult(item search.Entry) tea.Cmd {
@@ -126,7 +126,7 @@ func (m *Model) navigateToSearchResult(item search.Entry) tea.Cmd {
 	m.popTo(1)
 	lib := m.findLibrary(item.LibraryID)
 	if lib == nil {
-		return m.notify(NoticeError, "Library no longer available")
+		return m.notify(noticeError, "Library no longer available")
 	}
 	m.libraryColumn().SetSelectedByID(lib.ID)
 	r := catalog.LibraryResource(*lib)
@@ -137,13 +137,13 @@ func (m *Model) navigateToSearchResult(item search.Entry) tea.Cmd {
 // Revalidate the navigation ancestry when an authoritative parent snapshot
 // changes. Retained columns cannot silently acquire a different parent.
 func (m *Model) pruneNavigation() {
-	for i := 1; i < m.ColumnStack.Len(); i++ {
-		r, exists := m.resource(m.ColumnStack.Get(i).ContentID())
+	for i := 1; i < m.columns.Len(); i++ {
+		r, exists := m.resource(m.columns.Get(i).ContentID())
 		expected := r.ID
 		if r.Kind == catalog.Playlists {
 			expected = playlistsLibraryID
 		}
-		parent := m.ColumnStack.Get(i - 1)
+		parent := m.columns.Get(i - 1)
 		if !parent.HasContent() {
 			continue
 		}
@@ -152,7 +152,7 @@ func (m *Model) pruneNavigation() {
 		}
 		m.popTo(i)
 		m.pendingSelect = nil
-		m.notify(NoticeAlert, "Item no longer exists in this view — navigation reset")
+		m.notify(noticeAlert, "Item no longer exists in this view — navigation reset")
 		return
 	}
 }

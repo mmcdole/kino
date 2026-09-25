@@ -20,55 +20,52 @@ const authFailedStatusMsg = "Session expired or revoked — press L to log out, 
 // Layout proportions for Miller Columns
 const (
 	// 3-Column Smart Ratios (Inspector visible)
-	ParentColumnPercent3   = 25 // Parent context
-	ActiveColumnPercent3   = 35 // Active/focused
-	InspectorColumnPercent = 30 // Inspector (summary)
+	parentColumnPercent3   = 25 // Parent context
+	inspectorColumnPercent = 30 // Inspector (summary)
 
 	// 3-Column Focus Mode (Inspector hidden) - show more navigation context
-	GrandparentColumnPercent = 25 // Grandparent context
-	ParentColumnPercent2     = 30 // Parent context
-	ActiveColumnPercent2     = 45 // Active/focused
+	grandparentColumnPercent = 25 // Grandparent context
+	parentColumnPercent2     = 30 // Parent context
 
 	// Root level (single column + inspector)
-	RootColumnPercent    = 40
-	RootInspectorPercent = 60
+	rootColumnPercent = 40
 
-	MinColumnWidth = 15
+	minColumnWidth = 15
 
 	// Vertical layout: single footer line
-	ChromeHeight = 1
+	chromeHeight = 1
 )
 
 type Model struct {
 	overlay       overlay
-	Ready         bool
-	Width, Height int
-	SpinnerFrame  int
+	ready         bool
+	width, height int
+	spinnerFrame  int
 	ticking       bool // a spinner tick is scheduled
-	ShowInspector bool
+	showInspector bool
 	LoggedOut     bool
 	loggingOut    bool
 
-	Catalog     Catalog
-	PlaybackSvc Playback
-	SearchIndex *search.Index
-	Session     Session
-	Options     Options
+	catalog     Catalog
+	playback    Playback
+	searchIndex *search.Index
+	session     Session
+	opts        Options
 
-	ColumnStack   *ColumnStack
-	Inspector     components.Inspector
-	GlobalSearch  components.GlobalSearch
-	SortModal     components.SortModal
-	PlaylistModal components.PlaylistModal
-	InputModal    components.InputModal
+	columns       *columnStack
+	inspector     components.Inspector
+	globalSearch  components.GlobalSearch
+	sortModal     components.SortModal
+	playlistModal components.PlaylistModal
+	inputModal    components.InputModal
 
-	Libraries     []domain.Library
-	LibraryStates map[string]components.CollectionFeedback
+	libraries     []domain.Library
+	libraryStates map[string]components.CollectionFeedback
 	collections   map[string]catalog.State
 	indicators    map[string]uint64 // key → server attempt whose spinner is due
 	requests      *requests
 
-	notice        Notice
+	notice        notice
 	noticeSeq     int
 	searchSeq     uint64
 	pendingSelect *pendingSelect
@@ -77,13 +74,13 @@ type Model struct {
 
 func NewModel(ctx context.Context, svc Catalog, playback Playback, session Session, index *search.Index, opts Options) *Model {
 	m := &Model{
-		Catalog: svc, PlaybackSvc: playback, Session: session, SearchIndex: index, Options: opts,
-		ColumnStack:   NewColumnStack(),
-		Inspector:     components.NewInspector(),
-		GlobalSearch:  components.NewGlobalSearch(),
-		PlaylistModal: components.NewPlaylistModal(),
-		InputModal:    components.NewInputModal(),
-		LibraryStates: make(map[string]components.CollectionFeedback),
+		catalog: svc, playback: playback, session: session, searchIndex: index, opts: opts,
+		columns:       newColumnStack(),
+		inspector:     components.NewInspector(),
+		globalSearch:  components.NewGlobalSearch(),
+		playlistModal: components.NewPlaylistModal(),
+		inputModal:    components.NewInputModal(),
+		libraryStates: make(map[string]components.CollectionFeedback),
 		requests:      newRequests(ctx),
 		collections:   make(map[string]catalog.State),
 		indicators:    make(map[string]uint64),
@@ -94,13 +91,13 @@ func NewModel(ctx context.Context, svc Catalog, playback Playback, session Sessi
 	col.SetFeedback(components.CollectionFeedback{Pending: true})
 	col.SetShowWatchStatus(opts.ShowWatchStatus)
 	col.SetShowLibraryCounts(opts.ShowLibraryCounts)
-	m.ColumnStack.Reset(col)
+	m.columns.Reset(col)
 	m.track(root)
 	return m
 }
 func (m *Model) Init() tea.Cmd {
 	return tea.Batch(
-		listen(m.Catalog, m.requests.ctx),
+		listen(m.catalog, m.requests.ctx),
 		m.loadResource(catalog.Resource{Kind: catalog.Libraries}, catalog.Revalidate, false),
 	)
 }
@@ -140,7 +137,7 @@ func (m *Model) pendingActions() int {
 
 func (m *Model) update(msg tea.Msg) tea.Cmd {
 	if m.loggingOut {
-		if result, ok := msg.(LogoutCompleteMsg); ok {
+		if result, ok := msg.(logoutCompleteMsg); ok {
 			if result.Error != nil {
 				m.loggingOut = false
 				m.overlay = overlayNone
@@ -154,30 +151,30 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.Width, m.Height, m.Ready = msg.Width, msg.Height, true
+		m.width, m.height, m.ready = msg.Width, msg.Height, true
 		m.updateLayout()
 		return nil
 	case tea.KeyMsg:
 		return m.handleKeyMsg(msg)
-	case TickMsg:
-		m.SpinnerFrame++
-		m.ColumnStack.UpdateSpinnerFrame(m.SpinnerFrame)
+	case tickMsg:
+		m.spinnerFrame++
+		m.columns.UpdateSpinnerFrame(m.spinnerFrame)
 		if !m.animating() {
 			m.ticking = false
 			return nil
 		}
 		return tick()
-	case StatesMsg:
+	case statesMsg:
 		var cmds []tea.Cmd
 		for _, st := range msg {
 			cmds = append(cmds, m.applyState(st))
 		}
-		return tea.Batch(append(cmds, listen(m.Catalog, m.requests.ctx))...)
-	case LoadDoneMsg:
+		return tea.Batch(append(cmds, listen(m.catalog, m.requests.ctx))...)
+	case loadDoneMsg:
 		return m.handleLoadDone(msg)
-	case ActionMsg:
+	case actionMsg:
 		return m.handleAction(msg)
-	case PlaylistModalDataMsg:
+	case playlistModalDataMsg:
 		if !m.requests.owns(msg.Request) {
 			return nil
 		}
@@ -186,40 +183,40 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			m.overlay = overlayNone
 			return m.notifyError("Loading playlists", msg.Err)
 		}
-		m.PlaylistModal.Show(msg.Membership.Playlists, msg.Membership.Present, &msg.Item)
-		m.PlaylistModal.SetSize(m.Width, m.Height)
+		m.playlistModal.Show(msg.Membership.Playlists, msg.Membership.Present, &msg.Item)
+		m.playlistModal.SetSize(m.width, m.height)
 		return nil
-	case ClearNoticeMsg:
+	case clearNoticeMsg:
 		m.expireNotice(msg.Seq)
 		return nil
-	case ShowLoadingMsg:
+	case showLoadingMsg:
 		if st := m.collections[msg.Key]; st.Fetching && st.Attempt == msg.Attempt {
 			m.indicators[msg.Key] = msg.Attempt
 			m.updateResourceFeedback(st.Resource)
 		}
 		return nil
-	case SearchDebounceMsg:
+	case searchDebounceMsg:
 		if m.overlay != overlaySearch || msg.Seq != m.searchSeq {
 			return nil
 		}
 		req := m.requests.begin("search", catalog.Resource{}, catalog.Browse)
-		libraries := append([]domain.Library(nil), m.Libraries...)
+		libraries := append([]domain.Library(nil), m.libraries...)
 		return func() tea.Msg {
-			return SearchResultsMsg{Request: req, Results: m.SearchIndex.Search(req.ctx, msg.Query, libraries)}
+			return searchResultsMsg{Request: req, Results: m.searchIndex.Search(req.ctx, msg.Query, libraries)}
 		}
-	case ShowSearchLoadingMsg:
+	case showSearchLoadingMsg:
 		if m.overlay == overlaySearch && msg.Seq == m.searchSeq {
-			m.GlobalSearch.ShowLoading()
+			m.globalSearch.ShowLoading()
 		}
 		return nil
-	case SearchResultsMsg:
+	case searchResultsMsg:
 		if !m.requests.owns(msg.Request) || m.overlay != overlaySearch {
 			return nil
 		}
 		m.requests.finish(msg.Request)
-		m.GlobalSearch.SetResults(msg.Results)
+		m.globalSearch.SetResults(msg.Results)
 		return nil
-	case SearchIndexChangedMsg:
+	case searchIndexChangedMsg:
 		if m.overlay == overlaySearch {
 			return m.scheduleSearch()
 		}
@@ -229,16 +226,16 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
 	switch m.overlay {
 	case overlaySearch:
-		m.GlobalSearch, cmd, _ = m.GlobalSearch.Update(msg)
+		m.globalSearch, cmd, _ = m.globalSearch.Update(msg)
 	case overlayInput:
-		m.InputModal, cmd, _ = m.InputModal.Update(msg)
+		m.inputModal, cmd, _ = m.inputModal.Update(msg)
 	}
 	return cmd
 }
 
 // handleLoadDone reports the outcome of this model's own request. Content
 // and loading state come from the catalog's published state instead.
-func (m *Model) handleLoadDone(msg LoadDoneMsg) tea.Cmd {
+func (m *Model) handleLoadDone(msg loadDoneMsg) tea.Cmd {
 	if !m.requests.owns(msg.Request) {
 		return nil
 	}
@@ -262,7 +259,7 @@ func (m *Model) handleLoadDone(msg LoadDoneMsg) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func (m *Model) handleAction(msg ActionMsg) tea.Cmd {
+func (m *Model) handleAction(msg actionMsg) tea.Cmd {
 	if !m.requests.owns(msg.Request) {
 		return nil
 	}
@@ -271,7 +268,7 @@ func (m *Model) handleAction(msg ActionMsg) tea.Cmd {
 		if msg.Err != nil {
 			return m.notifyError("Starting playback", msg.Err)
 		}
-		return m.notify(NoticeSuccess, "Launched: "+msg.Item.Title)
+		return m.notify(noticeSuccess, "Launched: "+msg.Item.Title)
 	}
 	change := msg.Change
 	var cmds []tea.Cmd
@@ -286,8 +283,8 @@ func (m *Model) handleAction(msg ActionMsg) tea.Cmd {
 		// may have changed on the server revalidate if anything shows them.
 		background := libraryStateID(r) != ""
 		visible := false
-		for i := 0; i < m.ColumnStack.Len(); i++ {
-			visible = visible || m.ColumnStack.Get(i).ContentID() == r.Key()
+		for i := 0; i < m.columns.Len(); i++ {
+			visible = visible || m.columns.Get(i).ContentID() == r.Key()
 		}
 		if background || visible {
 			cmds = append(cmds, m.loadResource(r, catalog.Revalidate, background))
@@ -315,7 +312,7 @@ func (m *Model) handleAction(msg ActionMsg) tea.Cmd {
 		if change.Mutation.Kind == catalog.DeletePlaylist {
 			text = "Playlist deleted"
 		}
-		cmds = append(cmds, m.notify(NoticeSuccess, text))
+		cmds = append(cmds, m.notify(noticeSuccess, text))
 	}
 	if change.Warning != nil {
 		cmds = append(cmds, m.notifyError("Server updated; local cache needs refresh", change.Warning))
@@ -328,28 +325,28 @@ func (m *Model) notifyError(scope string, err error) tea.Cmd {
 		return nil
 	}
 	if errors.Is(err, domain.ErrAuthFailed) {
-		return m.notify(NoticeAlert, authFailedStatusMsg)
+		return m.notify(noticeAlert, authFailedStatusMsg)
 	}
-	return m.notify(NoticeError, fmt.Sprintf("%s: %v", scope, err))
+	return m.notify(noticeError, fmt.Sprintf("%s: %v", scope, err))
 }
 func (m *Model) activeSyncCount() int {
 	n := 0
-	for _, state := range m.LibraryStates {
+	for _, state := range m.libraryStates {
 		if state.Activity.Visible {
 			n++
 		}
 	}
 	return n
 }
-func (m *Model) libraryColumn() *components.ListColumn { return m.ColumnStack.Get(0) }
+func (m *Model) libraryColumn() *components.ListColumn { return m.columns.Get(0) }
 func (m *Model) updateLibraryStates() {
 	if col := m.libraryColumn(); col != nil {
-		col.SetLibraryStates(m.LibraryStates)
+		col.SetLibraryStates(m.libraryStates)
 	}
-	m.Inspector.SetLibraryStates(m.LibraryStates)
+	m.inspector.SetLibraryStates(m.libraryStates)
 }
 func (m *Model) findLibrary(id string) *domain.Library {
-	for _, lib := range m.Libraries {
+	for _, lib := range m.libraries {
 		if lib.ID == id {
 			return &lib
 		}
@@ -357,10 +354,10 @@ func (m *Model) findLibrary(id string) *domain.Library {
 	return nil
 }
 func (m *Model) updateInspector() {
-	if col := m.ColumnStack.Top(); col != nil {
-		m.Inspector.SetItem(col.SelectedItem())
+	if col := m.columns.Top(); col != nil {
+		m.inspector.SetItem(col.SelectedItem())
 	} else {
-		m.Inspector.SetItem(nil)
+		m.inspector.SetItem(nil)
 	}
 }
 func (m *Model) resourceName(r catalog.Resource) string {
@@ -370,8 +367,8 @@ func (m *Model) resourceName(r catalog.Resource) string {
 	if r.Kind == catalog.Playlists {
 		return "playlists"
 	}
-	for i := 0; i < m.ColumnStack.Len(); i++ {
-		if col := m.ColumnStack.Get(i); col.ContentID() == r.Key() {
+	for i := 0; i < m.columns.Len(); i++ {
+		if col := m.columns.Get(i); col.ContentID() == r.Key() {
 			return col.Title()
 		}
 	}
@@ -384,8 +381,8 @@ func (m *Model) resourceName(r catalog.Resource) string {
 // pruneLibraryRequests detaches removed libraries after an authoritative root
 // refresh. Queued results cannot recreate removed rows or keep sync active.
 func (m *Model) pruneLibraryRequests() {
-	allowed := make(map[string]bool, len(m.Libraries))
-	for _, lib := range m.Libraries {
+	allowed := make(map[string]bool, len(m.libraries))
+	for _, lib := range m.libraries {
 		allowed[lib.ID] = true
 	}
 	for key, st := range m.collections {
@@ -397,7 +394,7 @@ func (m *Model) pruneLibraryRequests() {
 		m.requests.stop(syncOwner(r))
 		delete(m.collections, key)
 		delete(m.indicators, key)
-		delete(m.LibraryStates, r.LibraryID)
+		delete(m.libraryStates, r.LibraryID)
 	}
 	m.updateLibraryStates()
 }

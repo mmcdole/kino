@@ -9,14 +9,14 @@ import (
 	"github.com/mmcdole/kino/internal/tui/styles"
 )
 
-// RenderSpinner renders a loading spinner
-func RenderSpinner(frame int) string {
+// renderSpinner renders a loading spinner
+func renderSpinner(frame int) string {
 	return styles.SpinnerStyle.Render(styles.SpinnerFrames[frame%len(styles.SpinnerFrames)])
 }
 
 // View renders the application
 func (m *Model) View() string {
-	if !m.Ready {
+	if !m.ready {
 		return "Loading..."
 	}
 
@@ -30,8 +30,8 @@ func (m *Model) View() string {
 		return m.renderDeletePlaylistConfirmation()
 	}
 
-	stackLen := m.ColumnStack.Len()
-	layout := m.calculateColumnLayout(m.Width)
+	stackLen := m.columns.Len()
+	layout := m.calculateColumnLayout(m.width)
 
 	var content string
 
@@ -39,21 +39,21 @@ func (m *Model) View() string {
 		content = ""
 	} else {
 		topIdx := stackLen - 1
-		currentCol := m.ColumnStack.Get(topIdx)
+		currentCol := m.columns.Get(topIdx)
 
 		// Build columns list based on what's visible
 		var columnViews []string
 
 		// Add grandparent column if visible (3+ columns, inspector hidden)
 		if layout.grandparentWidth > 0 {
-			grandparentCol := m.ColumnStack.Get(topIdx - 2)
+			grandparentCol := m.columns.Get(topIdx - 2)
 
 			columnViews = append(columnViews, grandparentCol.View())
 		}
 
 		// Add parent column if visible (2+ columns)
 		if layout.parentWidth > 0 {
-			parentCol := m.ColumnStack.Get(topIdx - 1)
+			parentCol := m.columns.Get(topIdx - 1)
 
 			columnViews = append(columnViews, parentCol.View())
 		}
@@ -65,7 +65,7 @@ func (m *Model) View() string {
 		// Add inspector if visible
 		if layout.inspectorWidth > 0 {
 
-			columnViews = append(columnViews, m.Inspector.View())
+			columnViews = append(columnViews, m.inspector.View())
 		}
 
 		content = lipgloss.JoinHorizontal(lipgloss.Top, columnViews...)
@@ -85,16 +85,16 @@ func (m *Model) View() string {
 	var modal string
 	switch m.overlay {
 	case overlaySearch:
-		modal = m.GlobalSearch.View()
+		modal = m.globalSearch.View()
 	case overlaySort:
-		modal = m.SortModal.View()
+		modal = m.sortModal.View()
 	case overlayPlaylists:
-		modal = m.PlaylistModal.View()
+		modal = m.playlistModal.View()
 	case overlayInput:
-		modal = m.InputModal.View()
+		modal = m.inputModal.View()
 	}
 	if modal != "" {
-		view = lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, modal)
+		view = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
 	}
 
 	return view
@@ -113,11 +113,11 @@ func (m *Model) renderFooter() string {
 	var left string
 	if m.notice.Text != "" {
 		switch m.notice.Kind {
-		case NoticeAlert:
+		case noticeAlert:
 			left = styles.AlertStyle.Render(m.notice.Text) + styles.DimStyle.Render("  esc to dismiss")
-		case NoticeError:
+		case noticeError:
 			left = styles.ErrorStyle.Render(m.notice.Text)
-		case NoticeSuccess:
+		case noticeSuccess:
 			left = styles.SuccessStyle.Render(m.notice.Text)
 		default:
 			left = styles.DimStyle.Render(m.notice.Text)
@@ -138,11 +138,11 @@ func (m *Model) renderFooter() string {
 	// Right side: compact background-sync segment + "? help" hint
 	right := styles.AccentStyle.Render("?") + styles.DimStyle.Render(" help")
 	if n := m.activeSyncCount(); n > 0 {
-		right = RenderSpinner(m.SpinnerFrame) + styles.DimStyle.Render(fmt.Sprintf(" %d syncing", n)) + "   " + right
+		right = renderSpinner(m.spinnerFrame) + styles.DimStyle.Render(fmt.Sprintf(" %d syncing", n)) + "   " + right
 	}
 
 	if pending := m.pendingActions(); pending > 0 {
-		right = RenderSpinner(m.SpinnerFrame) + styles.DimStyle.Render(fmt.Sprintf(" %d pending", pending)) + "   " + right
+		right = renderSpinner(m.spinnerFrame) + styles.DimStyle.Render(fmt.Sprintf(" %d pending", pending)) + "   " + right
 	}
 
 	// Layout: left + centered hints + right
@@ -151,14 +151,14 @@ func (m *Model) renderFooter() string {
 	rightWidth := lipgloss.Width(right)
 
 	totalContent := leftWidth + centerWidth + rightWidth
-	if totalContent >= m.Width {
+	if totalContent >= m.width {
 		// Not enough space - just left + right
-		gap := max(0, m.Width-leftWidth-rightWidth)
+		gap := max(0, m.width-leftWidth-rightWidth)
 		return left + strings.Repeat(" ", gap) + right
 	}
 
 	// Center the hints in available space
-	available := m.Width - leftWidth - rightWidth
+	available := m.width - leftWidth - rightWidth
 	leftPad := (available - centerWidth) / 2
 	rightPad := available - centerWidth - leftPad
 
@@ -188,7 +188,7 @@ SEARCH & VIEW
 Press any key to return...
 `
 
-	return lipgloss.Place(m.Width, m.Height,
+	return lipgloss.Place(m.width, m.height,
 		lipgloss.Center, lipgloss.Center,
 		styles.ModalStyle.Render(help))
 }
@@ -204,7 +204,7 @@ func (m *Model) renderLogoutConfirmation() string {
         [Y] Yes      [N] No
 `
 
-	return lipgloss.Place(m.Width, m.Height,
+	return lipgloss.Place(m.width, m.height,
 		lipgloss.Center, lipgloss.Center,
 		styles.ModalStyle.Render(modal))
 }
@@ -222,7 +222,7 @@ func (m *Model) renderDeletePlaylistConfirmation() string {
       [Y] Yes      [N] No
 `, name)
 
-	return lipgloss.Place(m.Width, m.Height,
+	return lipgloss.Place(m.width, m.height,
 		lipgloss.Center, lipgloss.Center,
 		styles.ModalStyle.Render(modal))
 }

@@ -13,7 +13,7 @@ const loadingIndicatorDelay = 200 * time.Millisecond
 // showLoadingCmd reveals the activity indicator for one server attempt if it
 // is still running after the delay, so quick loads never flash a spinner.
 func showLoadingCmd(key string, attempt uint64) tea.Cmd {
-	return tea.Tick(loadingIndicatorDelay, func(time.Time) tea.Msg { return ShowLoadingMsg{Key: key, Attempt: attempt} })
+	return tea.Tick(loadingIndicatorDelay, func(time.Time) tea.Msg { return showLoadingMsg{Key: key, Attempt: attempt} })
 }
 
 // updateResourceFeedback derives one feedback value from the collection's
@@ -32,13 +32,13 @@ func (m *Model) updateResourceFeedback(r catalog.Resource) {
 		Pending: pending, Activity: activity, Error: st.Err,
 		Summary: components.CollectionSummary{Count: len(st.Snapshot.Items), Known: st.Known, Stale: st.Snapshot.Stale || st.Err != nil},
 	}
-	for i := 0; i < m.ColumnStack.Len(); i++ {
-		if col := m.ColumnStack.Get(i); col.ContentID() == key {
+	for i := 0; i < m.columns.Len(); i++ {
+		if col := m.columns.Get(i); col.ContentID() == key {
 			col.SetFeedback(feedback)
 		}
 	}
 	if id := libraryStateID(r); id != "" {
-		m.LibraryStates[id] = feedback
+		m.libraryStates[id] = feedback
 		m.updateLibraryStates()
 	}
 }

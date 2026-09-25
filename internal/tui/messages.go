@@ -6,17 +6,17 @@ import (
 	"github.com/mmcdole/kino/internal/search"
 )
 
-// StatesMsg carries collection states published by the catalog.
-type StatesMsg []catalog.State
+// statesMsg carries collection states published by the catalog.
+type statesMsg []catalog.State
 
-// LoadDoneMsg reports that a load request settled.
-type LoadDoneMsg struct {
+// loadDoneMsg reports that a load request settled.
+type loadDoneMsg struct {
 	Request request
 	Warning error // usable data could not be persisted
 	Err     error
 }
 
-type ActionMsg struct {
+type actionMsg struct {
 	Request  request
 	Change   catalog.Change
 	Item     domain.MediaItem
@@ -24,26 +24,26 @@ type ActionMsg struct {
 	Err      error
 }
 
-type PlaylistModalDataMsg struct {
+type playlistModalDataMsg struct {
 	Request    request
 	Membership catalog.Membership
 	Item       domain.MediaItem
 	Err        error
 }
 
-type TickMsg struct{}
-type ShowLoadingMsg struct {
+type tickMsg struct{}
+type showLoadingMsg struct {
 	Key     string
 	Attempt uint64
 }
-type LogoutCompleteMsg struct{ Error error }
-type SearchDebounceMsg struct {
+type logoutCompleteMsg struct{ Error error }
+type searchDebounceMsg struct {
 	Seq   uint64
 	Query string
 }
-type ShowSearchLoadingMsg struct{ Seq uint64 }
-type SearchResultsMsg struct {
+type showSearchLoadingMsg struct{ Seq uint64 }
+type searchResultsMsg struct {
 	Request request
 	Results []search.Result
 }
-type SearchIndexChangedMsg struct{}
+type searchIndexChangedMsg struct{}

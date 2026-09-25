@@ -35,20 +35,20 @@ func TestGlobalSearchRapidTypingKeepsModalAndResultsStable(t *testing.T) {
 		assertStable()
 	}
 	startQuery := func() request {
-		m = updateModel(m, SearchDebounceMsg{Seq: m.searchSeq, Query: m.GlobalSearch.Query()})
+		m = updateModel(m, searchDebounceMsg{Seq: m.searchSeq, Query: m.globalSearch.Query()})
 		return m.requests.active["search"]
 	}
 
 	typeQuery("m")
 	first := startQuery()
-	m = updateModel(m, SearchResultsMsg{Request: first, Results: results("Movie", 15)})
+	m = updateModel(m, searchResultsMsg{Request: first, Results: results("Movie", 15)})
 	assertStable()
 	typeQuery("o")
 	oldSeq := m.searchSeq
 	old := startQuery()
 	typeQuery("v")
-	m = updateModel(m, ShowSearchLoadingMsg{Seq: oldSeq})
-	m = updateModel(m, SearchResultsMsg{Request: old, Results: results("Obsolete", 1)})
+	m = updateModel(m, showSearchLoadingMsg{Seq: oldSeq})
+	m = updateModel(m, searchResultsMsg{Request: old, Results: results("Obsolete", 1)})
 	if strings.Contains(m.View(), "Searching") || strings.Contains(m.View(), "Obsolete") || !strings.Contains(m.View(), "Movie 00") {
 		t.Fatal("stale search messages flashed or replaced retained results")
 	}
@@ -57,26 +57,26 @@ func TestGlobalSearchRapidTypingKeepsModalAndResultsStable(t *testing.T) {
 		t.Fatal("Enter activated a result while the query was pending")
 	}
 	current := startQuery()
-	m = updateModel(m, ShowSearchLoadingMsg{Seq: m.searchSeq})
+	m = updateModel(m, showSearchLoadingMsg{Seq: m.searchSeq})
 	if !strings.Contains(m.View(), "Searching") || !strings.Contains(m.View(), "Movie 00") {
 		t.Fatal("slow query did not retain results alongside activity feedback")
 	}
 	assertStable()
-	m = updateModel(m, SearchResultsMsg{Request: current, Results: results("Current", 1)})
-	m = updateModel(m, ShowSearchLoadingMsg{Seq: m.searchSeq})
+	m = updateModel(m, searchResultsMsg{Request: current, Results: results("Current", 1)})
+	m = updateModel(m, showSearchLoadingMsg{Seq: m.searchSeq})
 	if strings.Contains(m.View(), "Searching") || !strings.Contains(m.View(), "Current 00") {
 		t.Fatal("completed query did not settle")
 	}
 	assertStable()
 	m = updateModel(m, tea.KeyMsg{Type: tea.KeyCtrlU})
 	assertStable()
-	if m.GlobalSearch.ResultCount() != 0 || m.GlobalSearch.Query() != "" {
+	if m.globalSearch.ResultCount() != 0 || m.globalSearch.Query() != "" {
 		t.Fatal("clearing the query left old results")
 	}
 	m = updateModel(m, tea.KeyMsg{Type: tea.KeyEsc})
-	m = updateModel(m, ShowSearchLoadingMsg{Seq: m.searchSeq - 1})
-	m = updateModel(m, SearchResultsMsg{Request: current, Results: results("Late", 10)})
-	if m.overlay == overlaySearch || m.GlobalSearch.ResultCount() != 0 {
+	m = updateModel(m, showSearchLoadingMsg{Seq: m.searchSeq - 1})
+	m = updateModel(m, searchResultsMsg{Request: current, Results: results("Late", 10)})
+	if m.overlay == overlaySearch || m.globalSearch.ResultCount() != 0 {
 		t.Fatal("late messages changed a closed search")
 	}
 }

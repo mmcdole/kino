@@ -29,10 +29,10 @@ func (m *Model) beginMutation(change catalog.Mutation) tea.Cmd {
 	// A second keypress cannot reorder two writes to the same item. Keep the
 	// first operation pending until its result, rather than launching duplicates.
 	if _, pending := m.requests.active[owner]; pending {
-		return m.notify(NoticeInfo, "Already updating — waiting for the server")
+		return m.notify(noticeInfo, "Already updating — waiting for the server")
 	}
 	req := m.requests.begin(owner, catalog.Resource{}, catalog.Browse)
-	return mutateCmd(m.Catalog, req, change)
+	return mutateCmd(m.catalog, req, change)
 }
 
 func (m *Model) beginPlayback(item domain.MediaItem, resume bool) tea.Cmd {
@@ -41,11 +41,11 @@ func (m *Model) beginPlayback(item domain.MediaItem, resume bool) tea.Cmd {
 		return nil
 	}
 	req := m.requests.begin(owner, catalog.Resource{}, catalog.Browse)
-	return playCmd(m.PlaybackSvc, req, item, resume)
+	return playCmd(m.playback, req, item, resume)
 }
 
 func (m *Model) cancelPendingModal() {
-	if m.overlay == overlayPlaylists && m.PlaylistModal.IsLoading() {
+	if m.overlay == overlayPlaylists && m.playlistModal.IsLoading() {
 		m.overlay = overlayNone
 	}
 	m.requests.stop("playlist-modal")
@@ -54,14 +54,14 @@ func (m *Model) cancelPendingModal() {
 func (m *Model) scheduleSearch() tea.Cmd {
 	m.requests.stop("search")
 	m.searchSeq++
-	seq, query := m.searchSeq, m.GlobalSearch.Query()
+	seq, query := m.searchSeq, m.globalSearch.Query()
 	if query == "" {
-		m.GlobalSearch.SetResults(nil)
+		m.globalSearch.SetResults(nil)
 		return nil
 	}
-	m.GlobalSearch.SetLoading(true)
+	m.globalSearch.SetLoading(true)
 	return tea.Batch(
-		tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return SearchDebounceMsg{Seq: seq, Query: query} }),
-		tea.Tick(loadingIndicatorDelay, func(time.Time) tea.Msg { return ShowSearchLoadingMsg{Seq: seq} }),
+		tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return searchDebounceMsg{Seq: seq, Query: query} }),
+		tea.Tick(loadingIndicatorDelay, func(time.Time) tea.Msg { return showSearchLoadingMsg{Seq: seq} }),
 	)
 }

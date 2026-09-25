@@ -71,25 +71,25 @@ func (m *Model) applyState(st catalog.State) tea.Cmd {
 func (m *Model) project(snapshot catalog.Snapshot) tea.Cmd {
 	r := snapshot.Resource
 	if r.Kind == catalog.Libraries {
-		m.Libraries = nil
+		m.libraries = nil
 		for _, item := range snapshot.Items {
 			if lib, ok := item.(*domain.Library); ok {
-				m.Libraries = append(m.Libraries, *lib)
+				m.libraries = append(m.libraries, *lib)
 			}
 		}
 		m.libraryColumn().ReplaceItems(domain.LibraryItems(m.allLibraryEntries()))
 	} else {
-		for i := 0; i < m.ColumnStack.Len(); i++ {
-			if col := m.ColumnStack.Get(i); col.ContentID() == r.Key() {
+		for i := 0; i < m.columns.Len(); i++ {
+			if col := m.columns.Get(i); col.ContentID() == r.Key() {
 				col.ReplaceItems(domain.CloneItems(snapshot.Items))
 			}
 		}
 	}
 	if r.Kind == catalog.Movies || r.Kind == catalog.Shows || r.Kind == catalog.Mixed {
-		index := m.SearchIndex
+		index := m.searchIndex
 		return func() tea.Msg {
 			index.ReplaceLibrary(r.LibraryID, snapshot.Revision, snapshot.Items)
-			return SearchIndexChangedMsg{}
+			return searchIndexChangedMsg{}
 		}
 	}
 	return nil
@@ -98,7 +98,7 @@ func (m *Model) project(snapshot catalog.Snapshot) tea.Cmd {
 // syncLibraries loads every library and the playlists in the background.
 func (m *Model) syncLibraries(policy catalog.Policy) tea.Cmd {
 	var cmds []tea.Cmd
-	for _, lib := range m.Libraries {
+	for _, lib := range m.libraries {
 		cmds = append(cmds, m.loadResource(catalog.LibraryResource(lib), policy, true))
 	}
 	cmds = append(cmds, m.loadResource(catalog.Resource{Kind: catalog.Playlists}, policy, true))

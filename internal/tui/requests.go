@@ -67,11 +67,11 @@ func (m *Model) loadResource(r catalog.Resource, policy catalog.Policy, backgrou
 	req := m.requests.begin(owner, r, policy)
 	m.track(r)
 	m.updateResourceFeedback(r)
-	return loadCmd(m.Catalog, req)
+	return loadCmd(m.catalog, req)
 }
 
 func (m *Model) topResource() (catalog.Resource, bool) {
-	if col := m.ColumnStack.Top(); col != nil {
+	if col := m.columns.Top(); col != nil {
 		r, ok := m.resource(col.ContentID())
 		return r, ok
 	}

@@ -10,12 +10,12 @@ type columnLayout struct {
 
 // calculateColumnLayout computes column widths based on stack depth and inspector visibility
 func (m *Model) calculateColumnLayout(availableWidth int) columnLayout {
-	stackLen := m.ColumnStack.Len()
+	stackLen := m.columns.Len()
 	layout := columnLayout{}
 
 	// Helper to apply minimum width
 	applyMin := func(width int) int {
-		return max(width, MinColumnWidth)
+		return max(width, minColumnWidth)
 	}
 
 	switch stackLen {
@@ -25,8 +25,8 @@ func (m *Model) calculateColumnLayout(availableWidth int) columnLayout {
 
 	case 1:
 		// Root level: single column (Libraries)
-		if m.ShowInspector {
-			layout.activeWidth = applyMin(availableWidth * RootColumnPercent / 100)
+		if m.showInspector {
+			layout.activeWidth = applyMin(availableWidth * rootColumnPercent / 100)
 			layout.inspectorWidth = availableWidth - layout.activeWidth
 		} else {
 			layout.activeWidth = availableWidth
@@ -34,28 +34,28 @@ func (m *Model) calculateColumnLayout(availableWidth int) columnLayout {
 
 	case 2:
 		// 2 columns in stack
-		if m.ShowInspector {
+		if m.showInspector {
 			// [Parent | Active | Inspector]
-			layout.parentWidth = applyMin(availableWidth * ParentColumnPercent3 / 100)
-			layout.inspectorWidth = applyMin(availableWidth * InspectorColumnPercent / 100)
+			layout.parentWidth = applyMin(availableWidth * parentColumnPercent3 / 100)
+			layout.inspectorWidth = applyMin(availableWidth * inspectorColumnPercent / 100)
 			layout.activeWidth = applyMin(availableWidth - layout.parentWidth - layout.inspectorWidth)
 		} else {
 			// [Parent | Active]
-			layout.parentWidth = applyMin(availableWidth * ParentColumnPercent2 / 100)
+			layout.parentWidth = applyMin(availableWidth * parentColumnPercent2 / 100)
 			layout.activeWidth = applyMin(availableWidth - layout.parentWidth)
 		}
 
 	default:
 		// 3+ columns in stack
-		if m.ShowInspector {
+		if m.showInspector {
 			// [Parent | Active | Inspector]
-			layout.parentWidth = applyMin(availableWidth * ParentColumnPercent3 / 100)
-			layout.inspectorWidth = applyMin(availableWidth * InspectorColumnPercent / 100)
+			layout.parentWidth = applyMin(availableWidth * parentColumnPercent3 / 100)
+			layout.inspectorWidth = applyMin(availableWidth * inspectorColumnPercent / 100)
 			layout.activeWidth = applyMin(availableWidth - layout.parentWidth - layout.inspectorWidth)
 		} else {
 			// [Grandparent | Parent | Active]
-			layout.grandparentWidth = applyMin(availableWidth * GrandparentColumnPercent / 100)
-			layout.parentWidth = applyMin(availableWidth * ParentColumnPercent2 / 100)
+			layout.grandparentWidth = applyMin(availableWidth * grandparentColumnPercent / 100)
+			layout.parentWidth = applyMin(availableWidth * parentColumnPercent2 / 100)
 			layout.activeWidth = applyMin(availableWidth - layout.grandparentWidth - layout.parentWidth)
 		}
 	}
@@ -65,46 +65,46 @@ func (m *Model) calculateColumnLayout(availableWidth int) columnLayout {
 
 // updateLayout updates component sizes based on window size
 func (m *Model) updateLayout() {
-	if m.Width == 0 || m.Height == 0 {
+	if m.width == 0 || m.height == 0 {
 		return
 	}
 
-	contentHeight := m.Height - ChromeHeight
-	m.GlobalSearch.SetSize(m.Width, m.Height)
-	m.PlaylistModal.SetSize(m.Width, m.Height)
+	contentHeight := m.height - chromeHeight
+	m.globalSearch.SetSize(m.width, m.height)
+	m.playlistModal.SetSize(m.width, m.height)
 
-	stackLen := m.ColumnStack.Len()
+	stackLen := m.columns.Len()
 	if stackLen == 0 {
 		return
 	}
 
 	// Calculate layout using shared logic
-	layout := m.calculateColumnLayout(m.Width)
+	layout := m.calculateColumnLayout(m.width)
 	topIdx := stackLen - 1
 
 	// Apply calculated sizes to components
 	switch stackLen {
 	case 1:
-		m.ColumnStack.Get(0).SetSize(layout.activeWidth, contentHeight)
-		if m.ShowInspector {
-			m.Inspector.SetSize(layout.inspectorWidth, contentHeight)
+		m.columns.Get(0).SetSize(layout.activeWidth, contentHeight)
+		if m.showInspector {
+			m.inspector.SetSize(layout.inspectorWidth, contentHeight)
 		}
 
 	case 2:
-		m.ColumnStack.Get(topIdx-1).SetSize(layout.parentWidth, contentHeight)
-		m.ColumnStack.Get(topIdx).SetSize(layout.activeWidth, contentHeight)
-		if m.ShowInspector {
-			m.Inspector.SetSize(layout.inspectorWidth, contentHeight)
+		m.columns.Get(topIdx-1).SetSize(layout.parentWidth, contentHeight)
+		m.columns.Get(topIdx).SetSize(layout.activeWidth, contentHeight)
+		if m.showInspector {
+			m.inspector.SetSize(layout.inspectorWidth, contentHeight)
 		}
 
 	default: // 3+ columns
 		if layout.grandparentWidth > 0 {
-			m.ColumnStack.Get(topIdx-2).SetSize(layout.grandparentWidth, contentHeight)
+			m.columns.Get(topIdx-2).SetSize(layout.grandparentWidth, contentHeight)
 		}
-		m.ColumnStack.Get(topIdx-1).SetSize(layout.parentWidth, contentHeight)
-		m.ColumnStack.Get(topIdx).SetSize(layout.activeWidth, contentHeight)
-		if m.ShowInspector {
-			m.Inspector.SetSize(layout.inspectorWidth, contentHeight)
+		m.columns.Get(topIdx-1).SetSize(layout.parentWidth, contentHeight)
+		m.columns.Get(topIdx).SetSize(layout.activeWidth, contentHeight)
+		if m.showInspector {
+			m.inspector.SetSize(layout.inspectorWidth, contentHeight)
 		}
 	}
 }
