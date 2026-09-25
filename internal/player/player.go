@@ -13,40 +13,42 @@ type URLResolver interface {
 	ResolvePlayableURL(context.Context, string) (string, error)
 }
 
-// Service orchestrates playback operations
-type Service struct {
-	launcher *Launcher
-	playback URLResolver
+// Player resolves an item's stream URL and opens it in an external player.
+type Player struct {
+	launcher *launcher
+	resolver URLResolver
 	logger   *slog.Logger
 }
 
-// NewService creates a new playback service
-func NewService(launcher *Launcher, playback URLResolver, logger *slog.Logger) *Service {
+// New returns a Player that launches command with args, or detects an
+// installed player when command is empty. seekFlag overrides the known
+// resume flag for command (e.g. "--start=%d").
+func New(command string, args []string, seekFlag string, resolver URLResolver, logger *slog.Logger) *Player {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Service{
-		launcher: launcher,
-		playback: playback,
+	return &Player{
+		launcher: newLauncher(command, args, seekFlag, logger),
+		resolver: resolver,
 		logger:   logger,
 	}
 }
 
 // Play starts playback of a media item from the beginning
-func (s *Service) Play(ctx context.Context, item domain.MediaItem) error {
+func (s *Player) Play(ctx context.Context, item domain.MediaItem) error {
 	return s.playItem(ctx, item, 0)
 }
 
 // Resume starts playback from the saved position
-func (s *Service) Resume(ctx context.Context, item domain.MediaItem) error {
+func (s *Player) Resume(ctx context.Context, item domain.MediaItem) error {
 	return s.playItem(ctx, item, item.ViewOffset)
 }
 
 // playItem resolves URL and launches player
-func (s *Service) playItem(ctx context.Context, item domain.MediaItem, offset time.Duration) error {
+func (s *Player) playItem(ctx context.Context, item domain.MediaItem, offset time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	url, err := s.playback.ResolvePlayableURL(ctx, item.ID)
+	url, err := s.resolver.ResolvePlayableURL(ctx, item.ID)
 	if err != nil {
 		s.logger.Error("failed to resolve playable URL", "error", err, "itemID", item.ID)
 		return err

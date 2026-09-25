@@ -13,14 +13,14 @@ import (
 	"time"
 )
 
-// Launcher launches media URLs in an external player
-type Launcher struct {
+// launcher launches media URLs in an external player
+type launcher struct {
 	command       string   // configured player command, empty for system default
 	args          []string // additional arguments for the player
 	seekFlag      string   // user-configured seek flag (e.g., "--start=%d"), overrides table lookup
 	logger        *slog.Logger
 	detectMu      sync.Mutex
-	detected      ResolvedPlayer
+	detected      resolvedPlayer
 	detectedFound bool
 	detectedAt    time.Time
 }
@@ -43,14 +43,14 @@ func redactTokens(args []string) []string {
 	return out
 }
 
-// NewLauncher creates a new Launcher
+// newLauncher returns a launcher for command, or for the system default.
 // seekFlag is optional - if empty, we look up the flag from our known players table
-func NewLauncher(command string, args []string, seekFlag string, logger *slog.Logger) *Launcher {
+func newLauncher(command string, args []string, seekFlag string, logger *slog.Logger) *launcher {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
-	return &Launcher{
+	return &launcher{
 		command:  command,
 		args:     args,
 		seekFlag: seekFlag,
@@ -59,7 +59,7 @@ func NewLauncher(command string, args []string, seekFlag string, logger *slog.Lo
 }
 
 // Launch opens a media URL in the configured player or auto-detected player
-func (l *Launcher) Launch(ctx context.Context, url string, startOffset time.Duration) error {
+func (l *launcher) Launch(ctx context.Context, url string, startOffset time.Duration) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -98,7 +98,7 @@ func (l *Launcher) Launch(ctx context.Context, url string, startOffset time.Dura
 }
 
 // execPlayer launches the detected player with optional seek offset
-func (l *Launcher) execPlayer(player ResolvedPlayer, url string, offsetSecs int) error {
+func (l *launcher) execPlayer(player resolvedPlayer, url string, offsetSecs int) error {
 	args := playerArgs(player.Definition, url, offsetSecs)
 
 	l.logger.Debug("executing player", "binary", player.Definition.Binary,
@@ -106,7 +106,7 @@ func (l *Launcher) execPlayer(player ResolvedPlayer, url string, offsetSecs int)
 	return startCommand(exec.Command(player.Executable, args...))
 }
 
-func playerArgs(player PlayerDef, url string, offsetSecs int) []string {
+func playerArgs(player playerDef, url string, offsetSecs int) []string {
 	seekArgs := formatSeekArgs(player.SeekFlag, offsetSecs)
 	var defaultArgs []string
 	if offsetSecs > 0 {
@@ -141,7 +141,7 @@ func formatSeekArgs(flag string, offsetSecs int) []string {
 }
 
 // launchConfigured launches the media using the user-configured player
-func (l *Launcher) launchConfigured(url string, offsetSecs int) error {
+func (l *launcher) launchConfigured(url string, offsetSecs int) error {
 	args := append([]string{}, l.args...)
 	definition, knownPlayer := l.lookupPlayerDef(l.command)
 	var seekArgs []string
@@ -176,7 +176,7 @@ func (l *Launcher) launchConfigured(url string, offsetSecs int) error {
 	return startCommand(exec.Command(l.command, args...))
 }
 
-func configuredPlayerArgs(configuredArgs []string, definition PlayerDef, knownPlayer bool, url string, seekArgs []string) []string {
+func configuredPlayerArgs(configuredArgs []string, definition playerDef, knownPlayer bool, url string, seekArgs []string) []string {
 	if knownPlayer && definition.URLBeforeSeek {
 		args := append([]string{url}, configuredArgs...)
 		return append(args, seekArgs...)
@@ -186,16 +186,16 @@ func configuredPlayerArgs(configuredArgs []string, definition PlayerDef, knownPl
 	return append(args, url)
 }
 
-func (l *Launcher) lookupPlayerDef(binary string) (PlayerDef, bool) {
+func (l *launcher) lookupPlayerDef(binary string) (playerDef, bool) {
 	wanted := executableName(binary)
-	for _, table := range [][]PlayerDef{linuxPlayers, darwinPlayers, windowsPlayers} {
+	for _, table := range [][]playerDef{linuxPlayers, darwinPlayers, windowsPlayers} {
 		for _, p := range table {
 			if strings.EqualFold(executableName(p.Binary), wanted) {
 				return p, true
 			}
 		}
 	}
-	return PlayerDef{}, false
+	return playerDef{}, false
 }
 
 func executableName(command string) string {
@@ -208,7 +208,7 @@ func executableName(command string) string {
 }
 
 // launchMacOSApp launches a macOS GUI app using 'open -a'
-func (l *Launcher) launchMacOSApp(appName string, playerArgs []string) error {
+func (l *launcher) launchMacOSApp(appName string, playerArgs []string) error {
 	cmdArgs := []string{"-a", appName}
 	if len(playerArgs) > 0 {
 		cmdArgs = append(cmdArgs, "--args")
@@ -220,7 +220,7 @@ func (l *Launcher) launchMacOSApp(appName string, playerArgs []string) error {
 }
 
 // launchDefault opens the URL using the system default handler
-func (l *Launcher) launchDefault(url string) error {
+func (l *launcher) launchDefault(url string) error {
 	var cmd *exec.Cmd
 
 	switch runtime.GOOS {

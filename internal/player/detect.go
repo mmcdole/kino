@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-// PlayerDef defines a platform-specific player command and playback arguments.
-type PlayerDef struct {
+// playerDef defines a platform-specific player command and playback arguments.
+type playerDef struct {
 	Binary        string
 	SeekFlag      string   // Use %d for seconds placeholder, e.g., "--start=%d" or "-ss %d"
 	ResumeArgs    []string // Additional auto-detection arguments used only when resuming
@@ -19,18 +19,18 @@ type PlayerDef struct {
 	ProgramPaths  []string // Conventional paths relative to Windows Program Files roots
 }
 
-// ResolvedPlayer keeps the player identity separate from the executable path.
+// resolvedPlayer keeps the player identity separate from the executable path.
 // This matters in WSL, where an App Paths lookup returns an absolute Windows
 // install path rather than the short binary name used to select seek behavior.
-type ResolvedPlayer struct {
-	Definition PlayerDef
+type resolvedPlayer struct {
+	Definition playerDef
 	Executable string
 }
 
 // Platform-specific player lists, ordered by priority (first match wins).
 // Linux and Windows VLC need a separate instance to honor resume offsets.
 // macOS VLC does not support the one-instance option.
-var linuxPlayers = []PlayerDef{
+var linuxPlayers = []playerDef{
 	{Binary: "mpv", SeekFlag: "--start=%d"},
 	{Binary: "vlc", SeekFlag: "--start-time=%d", ResumeArgs: []string{"--no-one-instance"}},
 	{Binary: "celluloid", SeekFlag: "--mpv-start=%d"},
@@ -39,7 +39,7 @@ var linuxPlayers = []PlayerDef{
 	{Binary: "mplayer", SeekFlag: "-ss %d"},
 }
 
-var darwinPlayers = []PlayerDef{
+var darwinPlayers = []playerDef{
 	{Binary: "iina", SeekFlag: "--mpv-start=%d"},
 	{Binary: "mpv", SeekFlag: "--start=%d"},
 	{Binary: "vlc", SeekFlag: "--start-time=%d"},
@@ -47,7 +47,7 @@ var darwinPlayers = []PlayerDef{
 
 // Windows players, used both by native Windows and WSL interop. Under WSL they
 // are probed after the native Linux list so an intentional WSLg install wins.
-var windowsPlayers = []PlayerDef{
+var windowsPlayers = []playerDef{
 	{
 		Binary:        "PotPlayerMini64.exe",
 		SeekFlag:      "/seek=%d",
@@ -63,9 +63,6 @@ var windowsPlayers = []PlayerDef{
 	{Binary: "mpv.exe", SeekFlag: "--start=%d", ProgramPaths: []string{`mpv\mpv.exe`}},
 	{Binary: "vlc.exe", SeekFlag: "--start-time=%d", ResumeArgs: []string{"--no-one-instance"}, ProgramPaths: []string{`VideoLAN\VLC\vlc.exe`}},
 }
-
-// Kept as an alias because WSL uses the same Windows-side player definitions.
-var wslPlayers = windowsPlayers
 
 var windowsAppPathRoots = []string{
 	`HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths`,
@@ -88,7 +85,7 @@ func isWSL() bool {
 }
 
 // detectPlayer returns the first available player from the platform-specific list
-func (l *Launcher) detectPlayer(ctx context.Context) (ResolvedPlayer, bool) {
+func (l *launcher) detectPlayer(ctx context.Context) (resolvedPlayer, bool) {
 	l.detectMu.Lock()
 	defer l.detectMu.Unlock()
 
@@ -96,30 +93,30 @@ func (l *Launcher) detectPlayer(ctx context.Context) (ResolvedPlayer, bool) {
 		return l.detected, true
 	}
 	if !l.detectedAt.IsZero() && time.Since(l.detectedAt) < negativeDetectionTTL {
-		return ResolvedPlayer{}, false
+		return resolvedPlayer{}, false
 	}
 
 	l.detected, l.detectedFound = detectPlayerUncached(ctx)
 	if ctx.Err() != nil {
-		return ResolvedPlayer{}, false
+		return resolvedPlayer{}, false
 	}
 	l.detectedAt = time.Now()
 	return l.detected, l.detectedFound
 }
 
-func (l *Launcher) invalidateDetectedPlayer() {
+func (l *launcher) invalidateDetectedPlayer() {
 	l.detectMu.Lock()
 	defer l.detectMu.Unlock()
-	l.detected = ResolvedPlayer{}
+	l.detected = resolvedPlayer{}
 	l.detectedFound = false
 	l.detectedAt = time.Time{}
 }
 
-func detectPlayerUncached(parent context.Context) (ResolvedPlayer, bool) {
+func detectPlayerUncached(parent context.Context) (resolvedPlayer, bool) {
 	ctx, cancel := context.WithTimeout(parent, windowsDiscoveryTimeout)
 	defer cancel()
 
-	var candidates []PlayerDef
+	var candidates []playerDef
 	underWSL := runtime.GOOS == "linux" && isWSL()
 	searchWindowsInstalls := false
 
@@ -131,21 +128,21 @@ func detectPlayerUncached(parent context.Context) (ResolvedPlayer, bool) {
 		if underWSL {
 			// WSL can execute Windows binaries via interop; a Windows-side
 			// player on PATH is a perfectly good player.
-			candidates = append(append([]PlayerDef{}, linuxPlayers...), wslPlayers...)
+			candidates = append(append([]playerDef{}, linuxPlayers...), windowsPlayers...)
 			searchWindowsInstalls = true
 		}
 	case "windows":
 		candidates = windowsPlayers
 		searchWindowsInstalls = true
 	default:
-		return ResolvedPlayer{}, false
+		return resolvedPlayer{}, false
 	}
 
 	// Honor PATH first. In WSL this also ensures an explicitly exposed
 	// Windows player wins over a different player merely found in the registry.
 	for _, p := range candidates {
 		if path, err := exec.LookPath(p.Binary); err == nil && path != "" {
-			return ResolvedPlayer{Definition: p, Executable: path}, true
+			return resolvedPlayer{Definition: p, Executable: path}, true
 		}
 	}
 
@@ -155,7 +152,7 @@ func detectPlayerUncached(parent context.Context) (ResolvedPlayer, bool) {
 	if searchWindowsInstalls {
 		for _, p := range windowsPlayers {
 			if executable, found := resolveWindowsAppPath(ctx, p, underWSL); found {
-				return ResolvedPlayer{Definition: p, Executable: executable}, true
+				return resolvedPlayer{Definition: p, Executable: executable}, true
 			}
 		}
 
@@ -164,15 +161,15 @@ func detectPlayerUncached(parent context.Context) (ResolvedPlayer, bool) {
 		programFilesRoots := windowsProgramFilesRoots(ctx, underWSL)
 		for _, p := range windowsPlayers {
 			if executable, found := resolveWindowsProgramPath(ctx, p, programFilesRoots, underWSL); found {
-				return ResolvedPlayer{Definition: p, Executable: executable}, true
+				return resolvedPlayer{Definition: p, Executable: executable}, true
 			}
 		}
 	}
 
-	return ResolvedPlayer{}, false
+	return resolvedPlayer{}, false
 }
 
-func resolveWindowsAppPath(ctx context.Context, player PlayerDef, underWSL bool) (string, bool) {
+func resolveWindowsAppPath(ctx context.Context, player playerDef, underWSL bool) (string, bool) {
 	for _, root := range windowsAppPathRoots {
 		key := root + `\` + player.Binary
 		if windowsPath, found := queryRegistryValue(ctx, key, "/ve"); found {
@@ -186,7 +183,7 @@ func resolveWindowsAppPath(ctx context.Context, player PlayerDef, underWSL bool)
 
 // resolveWindowsProgramPath checks a short list of conventional locations. It
 // deliberately avoids recursively scanning a mounted Windows drive.
-func resolveWindowsProgramPath(ctx context.Context, player PlayerDef, roots []string, underWSL bool) (string, bool) {
+func resolveWindowsProgramPath(ctx context.Context, player playerDef, roots []string, underWSL bool) (string, bool) {
 	for _, root := range roots {
 		for _, relative := range player.ProgramPaths {
 			windowsPath := strings.TrimRight(root, `\/`) + `\` + strings.TrimLeft(relative, `\/`)

@@ -36,7 +36,7 @@ func TestDetectPlayerWSLFindsExe(t *testing.T) {
 	t.Setenv("PATH", dir)
 	forceWSL(t)
 
-	l := NewLauncher("", nil, "", nil)
+	l := newLauncher("", nil, "", nil)
 	p, found := l.detectPlayer(context.Background())
 	if !found {
 		t.Fatal("mpv.exe not detected under WSL")
@@ -60,7 +60,7 @@ func TestDetectPlayerWSLPotPlayerFirst(t *testing.T) {
 	t.Setenv("PATH", dir)
 	forceWSL(t)
 
-	l := NewLauncher("", nil, "", nil)
+	l := newLauncher("", nil, "", nil)
 	p, found := l.detectPlayer(context.Background())
 	if !found || p.Definition.Binary != "PotPlayerMini64.exe" {
 		t.Fatalf("expected PotPlayer to win, got %q (found=%v)", p.Definition.Binary, found)
@@ -81,7 +81,7 @@ func TestDetectPlayerWSLPrefersLinuxPlayer(t *testing.T) {
 	t.Setenv("PATH", dir)
 	forceWSL(t)
 
-	l := NewLauncher("", nil, "", nil)
+	l := newLauncher("", nil, "", nil)
 	p, found := l.detectPlayer(context.Background())
 	if !found || p.Definition.Binary != "mpv" {
 		t.Fatalf("expected native mpv to win, got %q (found=%v)", p.Definition.Binary, found)
@@ -119,7 +119,7 @@ printf '%s\n' "$FAKE_WSL_EXECUTABLE"
 	t.Setenv("FAKE_WSL_EXECUTABLE", installed)
 	forceWSL(t)
 
-	l := NewLauncher("", nil, "", nil)
+	l := newLauncher("", nil, "", nil)
 	p, found := l.detectPlayer(context.Background())
 	if !found {
 		t.Fatal("VLC App Paths entry was not detected under WSL")
@@ -163,7 +163,7 @@ func TestPlayerArgs(t *testing.T) {
 
 	for _, platform := range []struct {
 		name             string
-		players          []PlayerDef
+		players          []playerDef
 		separateInstance bool
 	}{
 		{"macOS", darwinPlayers, false},
@@ -212,7 +212,7 @@ func TestFormatSeekArgs(t *testing.T) {
 }
 
 func TestLookupSeekFlagForAbsoluteWindowsPath(t *testing.T) {
-	l := NewLauncher("", nil, "", nil)
+	l := newLauncher("", nil, "", nil)
 	player, _ := l.lookupPlayerDef(`/mnt/c/Program Files/VideoLAN/VLC/vlc.exe`)
 	if got := player.SeekFlag; got != "--start-time=%d" {
 		t.Fatalf("seek flag = %q, want --start-time=%%d", got)
@@ -264,7 +264,7 @@ func TestLaunchDefaultWSLPrefersRundll32(t *testing.T) {
 	t.Setenv("PATH", dir)
 	forceWSL(t)
 
-	l := NewLauncher("", nil, "", nil)
+	l := newLauncher("", nil, "", nil)
 	url := "http://server:8096/stream.mkv?Static=true&api_key=x"
 	if err := l.launchDefault(url); err != nil {
 		t.Fatalf("launchDefault failed: %v", err)
@@ -294,7 +294,7 @@ func TestLaunchDefaultWSLExplorerLastResort(t *testing.T) {
 	t.Setenv("PATH", dir)
 	forceWSL(t)
 
-	l := NewLauncher("", nil, "", nil)
+	l := newLauncher("", nil, "", nil)
 	if err := l.launchDefault("http://example.invalid/stream"); err != nil {
 		t.Fatalf("launchDefault failed: %v", err)
 	}
@@ -332,7 +332,7 @@ func TestLaunchDefaultNoOpenerActionableError(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	forceWSL(t)
 
-	l := NewLauncher("", nil, "", nil)
+	l := newLauncher("", nil, "", nil)
 	err := l.launchDefault("http://example.invalid/stream")
 	if err == nil {
 		t.Fatal("expected error with no opener available")
@@ -346,7 +346,7 @@ func TestLaunchDefaultNoOpenerActionableError(t *testing.T) {
 func TestCanceledLaunchDoesNotStartPlayer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	l := NewLauncher("nonexistent-player", nil, "", nil)
+	l := newLauncher("nonexistent-player", nil, "", nil)
 	if err := l.Launch(ctx, "http://media", 0); err != context.Canceled {
 		t.Fatalf("canceled launch attempted to start a player: %v", err)
 	}

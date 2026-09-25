@@ -92,16 +92,13 @@ func run() error {
 	}
 	defer cache.Close()
 
-	// Create launcher (uses configured player or auto-detects)
-	launcher := player.NewLauncher(cfg.Player.Command, cfg.Player.Args, cfg.Player.StartFlag, logger)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	catalogSvc := catalog.NewService(ctx, client, cache)
 	defer catalogSvc.Close()
-	playbackSvc := player.NewService(launcher, client, logger)
+	playback := player.New(cfg.Player.Command, cfg.Player.Args, cfg.Player.StartFlag, client, logger)
 	opts := tui.Options{ShowWatchStatus: cfg.UI.ShowWatchStatus, ShowLibraryCounts: cfg.UI.ShowLibraryCounts}
-	model := tui.NewModel(ctx, catalogSvc, playbackSvc, session{cfg}, search.NewIndex(), opts)
+	model := tui.NewModel(ctx, catalogSvc, playback, session{cfg}, search.NewIndex(), opts)
 
 	// Run the TUI
 	p := tea.NewProgram(
