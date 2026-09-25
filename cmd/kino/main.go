@@ -11,7 +11,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
 	"github.com/mmcdole/kino/internal/config"
-	"github.com/mmcdole/kino/internal/log"
 	"github.com/mmcdole/kino/internal/mediaserver"
 	"github.com/mmcdole/kino/internal/player"
 	"github.com/mmcdole/kino/internal/search"
@@ -59,10 +58,10 @@ func run() error {
 	}
 
 	// Setup logger
-	logger, err := log.SetupLogger(&cfg.Logging)
+	logger, err := openLogger(&cfg.Logging)
 	if err != nil {
 		// Fall back to null logger if file logging fails
-		logger = log.NullLogger()
+		logger = slog.New(slog.DiscardHandler)
 	}
 	slog.SetDefault(logger)
 

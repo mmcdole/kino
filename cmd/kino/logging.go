@@ -1,8 +1,7 @@
-package log
+package main
 
 import (
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -11,8 +10,8 @@ import (
 	"github.com/mmcdole/kino/internal/config"
 )
 
-// SetupLogger initializes the slog logger with file output
-func SetupLogger(cfg *config.LoggingConfig) (*slog.Logger, error) {
+// openLogger returns a JSON logger writing to the configured file.
+func openLogger(cfg *config.LoggingConfig) (*slog.Logger, error) {
 	// Expand ~ in path
 	logPath := cfg.File
 	if strings.HasPrefix(logPath, "~") {
@@ -64,9 +63,4 @@ func parseLogLevel(level string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
-}
-
-// NullLogger returns a logger that discards all output
-func NullLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
