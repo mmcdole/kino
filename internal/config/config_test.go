@@ -107,7 +107,11 @@ func TestClearServerKeepsOtherSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := ClearServerConfig(); err != nil {
+	loaded, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loaded.ClearServer(); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := Load()

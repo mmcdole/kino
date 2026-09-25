@@ -39,7 +39,7 @@ func columnOptions(kind catalog.Kind) components.ColumnOptions {
 func (m *Model) pushColumn(r catalog.Resource, title string) tea.Cmd {
 	col := components.NewListColumn(title, columnOptions(r.Kind))
 	col.SetContentID(r.Key())
-	col.SetShowWatchStatus(m.UIConfig.ShowWatchStatus)
+	col.SetShowWatchStatus(m.Options.ShowWatchStatus)
 	m.ColumnStack.Push(col)
 	m.track(r)
 	if st := m.collection(r); st.Known {

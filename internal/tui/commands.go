@@ -6,7 +6,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
-	"github.com/mmcdole/kino/internal/config"
 	"github.com/mmcdole/kino/internal/domain"
 )
 
@@ -57,6 +56,6 @@ func LoadPlaylistModalDataCmd(svc Catalog, req request, item domain.MediaItem) t
 func TickCmd(delay time.Duration) tea.Cmd {
 	return tea.Tick(delay, func(time.Time) tea.Msg { return TickMsg{} })
 }
-func LogoutCmd() tea.Cmd {
-	return func() tea.Msg { return LogoutCompleteMsg{Error: config.ClearServerConfig()} }
+func LogoutCmd(session Session) tea.Cmd {
+	return func() tea.Msg { return LogoutCompleteMsg{Error: session.Logout()} }
 }

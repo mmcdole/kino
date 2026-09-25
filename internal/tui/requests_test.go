@@ -8,7 +8,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
-	"github.com/mmcdole/kino/internal/config"
 	"github.com/mmcdole/kino/internal/domain"
 	"github.com/mmcdole/kino/internal/search"
 	"github.com/mmcdole/kino/internal/tui/components"
@@ -16,7 +15,7 @@ import (
 
 func testModel(t *testing.T) *Model {
 	t.Helper()
-	m := NewModel(context.Background(), nil, nil, search.NewIndex(), config.UIConfig{})
+	m := NewModel(context.Background(), nil, nil, nil, search.NewIndex(), Options{})
 	t.Cleanup(m.requests.cancel)
 	m.Libraries = []domain.Library{{ID: "a", Name: "A", Type: "movie"}, {ID: "b", Name: "B", Type: "movie"}}
 	m.libraryColumn().SetItems(components.WrapLibraries(m.allLibraryEntries()))
@@ -153,7 +152,7 @@ func TestUnrelatedActionErrorLeavesColumnLoading(t *testing.T) {
 }
 
 func TestColdStartupFailureKeepsRetryableRoot(t *testing.T) {
-	m := NewModel(context.Background(), nil, nil, search.NewIndex(), config.UIConfig{})
+	m := NewModel(context.Background(), nil, nil, nil, search.NewIndex(), Options{})
 	t.Cleanup(m.requests.cancel)
 	m.loadResource(catalog.Resource{Kind: catalog.Libraries}, catalog.Revalidate, false)
 	r := catalog.Resource{Kind: catalog.Libraries}
@@ -227,5 +226,28 @@ func TestOverlayReceivesKeysBeforeColumnsAndGlobalKeys(t *testing.T) {
 	m = updateModel(m, tea.KeyMsg{Type: tea.KeyEsc})
 	if m.overlay != overlayNone || m.confirmDelete != nil || m.ColumnStack.Len() != 1 {
 		t.Fatal("esc on a confirmation did more than cancel it")
+	}
+}
+
+type fakeSession struct{ err error }
+
+func (s fakeSession) Logout() error { return s.err }
+
+func TestLogoutUsesSessionAndReportsFailure(t *testing.T) {
+	m := testModel(t)
+	m.Session = fakeSession{err: errors.New("read-only config")}
+	m.handleLogout()
+	cmd := m.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = updateModel(m, cmd())
+	if m.LoggedOut || m.loggingOut || m.notice.Kind != NoticeError {
+		t.Fatalf("failed logout was not reported: %+v", m.notice)
+	}
+
+	m.Session = fakeSession{}
+	m.handleLogout()
+	cmd = m.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = updateModel(m, cmd())
+	if !m.LoggedOut {
+		t.Fatal("successful logout did not end the session")
 	}
 }
