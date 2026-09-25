@@ -7,6 +7,10 @@ import (
 	"github.com/mmcdole/kino/internal/domain"
 )
 
+// pageSize is how many library items each paginated request asks for.
+const pageSize = 50
+
+// fetch downloads r's complete item list from the server.
 func (s *Service) fetch(ctx context.Context, r Resource, progress progressFunc) ([]domain.ListItem, error) {
 	switch r.Kind {
 	case Libraries:
@@ -15,17 +19,17 @@ func (s *Service) fetch(ctx context.Context, r Resource, progress progressFunc) 
 	case Movies:
 		items, err := fetchAll(ctx, func(ctx context.Context, offset, limit int) ([]*domain.MediaItem, int, error) {
 			return s.backend.GetMovies(ctx, r.LibraryID, offset, limit)
-		}, 50, progress)
+		}, pageSize, progress)
 		return domain.ListItems(items), err
 	case Shows:
 		items, err := fetchAll(ctx, func(ctx context.Context, offset, limit int) ([]*domain.Show, int, error) {
 			return s.backend.GetShows(ctx, r.LibraryID, offset, limit)
-		}, 50, progress)
+		}, pageSize, progress)
 		return domain.ListItems(items), err
 	case Mixed:
 		return fetchAll(ctx, func(ctx context.Context, offset, limit int) ([]domain.ListItem, int, error) {
 			return s.backend.GetMixedContent(ctx, r.LibraryID, offset, limit)
-		}, 50, progress)
+		}, pageSize, progress)
 	case Seasons:
 		items, err := s.backend.GetSeasons(ctx, r.ShowID)
 		return domain.ListItems(items), err

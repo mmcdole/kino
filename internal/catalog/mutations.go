@@ -9,6 +9,7 @@ import (
 	"github.com/mmcdole/kino/internal/domain"
 )
 
+// MutationKind is the kind of write a Mutation makes.
 type MutationKind uint8
 
 const (
@@ -19,6 +20,8 @@ const (
 	DeletePlaylist
 )
 
+// Mutation is one write to the server. Each kind uses only the fields it
+// needs; Title is also echoed back for the caller's messages.
 type Mutation struct {
 	Kind       MutationKind
 	ItemID     string
@@ -52,7 +55,7 @@ type Change struct {
 // success. The change remains explicit when a server may have partly applied a
 // multi-item request: affected views revalidate even when an error is returned.
 func (s *Service) Mutate(ctx context.Context, m Mutation) (Change, error) {
-	ctx, finish, startErr := s.operation(ctx, 30*time.Second)
+	ctx, finish, startErr := s.operation(ctx, requestTimeout)
 	if startErr != nil {
 		return Change{}, startErr
 	}
@@ -183,7 +186,7 @@ func (s *Service) reconcileWatch(m Mutation, change Change, err error) (Change, 
 			continue
 		}
 		s.cacheRevisions[key] = revised[key]
-		s.accept(Snapshot{Resource: r, CachedList: entry, Revision: revised[key], FromCache: true, Stale: !s.fresh(r, entry)})
+		s.accept(Snapshot{Resource: r, CachedList: entry, Revision: revised[key], fromCache: true, Stale: !s.fresh(r, entry)})
 	}
 	for _, key := range interrupted {
 		if _, done := revised[key]; !done {
@@ -229,7 +232,7 @@ func (s *Service) reconcilePlaylists(m Mutation, change Change, err error) (Chan
 		switch {
 		case ok && saveErr == nil:
 			s.cacheRevisions[key] = revised[key]
-			s.accept(Snapshot{Resource: r, CachedList: entries[key], Revision: revised[key], FromCache: true, Stale: true})
+			s.accept(Snapshot{Resource: r, CachedList: entries[key], Revision: revised[key], fromCache: true, Stale: true})
 		case ok:
 			s.invalid[key] = true
 			s.expire(key)

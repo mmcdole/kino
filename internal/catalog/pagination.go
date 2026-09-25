@@ -20,19 +20,13 @@ func fetchAll[T domain.ListItem](
 	chunkSize int,
 	onProgress progressFunc,
 ) ([]T, error) {
-	if chunkSize <= 0 {
-		chunkSize = 50
-	}
-
 	var all []T
 	seen := make(map[string]bool)
 	offset := 0
 
 	for {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
 
 		items, total, err := fetch(ctx, offset, chunkSize)

@@ -59,7 +59,7 @@ func TestBackgroundCompletionUpdatesOpenCachedView(t *testing.T) {
 	m.pushColumn(r, "A")
 	view := m.requests.active[viewOwner(r)]
 	cached := state(r, 0, "old")
-	cached.Snapshot.FromCache, cached.Snapshot.Validated, cached.Fetching, cached.Attempt = true, false, true, 1
+	cached.Snapshot.Validated, cached.Fetching, cached.Attempt = false, true, 1
 	m = publish(m, cached)
 	col := m.ColumnStack.Top()
 	if col.IsLoading() || !col.IsRefreshing() || col.ItemCount() != 1 {

@@ -45,6 +45,7 @@ type Cache interface {
 	Update(ids []string, fn func(map[string]domain.CachedList) map[string]domain.CachedList) ([]string, error)
 }
 
+// flight is one server fetch, shared by every Load waiting on it.
 type flight struct {
 	resource    Resource
 	ctx         context.Context
@@ -55,6 +56,8 @@ type flight struct {
 	err         error
 }
 
+// Service owns every collection's cached snapshot, server fetch and
+// published state, and applies writes to the server and the cache.
 type Service struct {
 	backend        Backend
 	cache          Cache
@@ -75,6 +78,8 @@ type Service struct {
 	now            func() time.Time
 }
 
+// NewService starts a catalog whose work ends when ctx is done or Close is
+// called.
 func NewService(ctx context.Context, backend Backend, cache Cache) *Service {
 	ctx, cancel := context.WithCancel(ctx)
 	return &Service{
@@ -130,17 +135,10 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy) (Snapshot
 	}
 	defer finish()
 
-	if err := ctx.Err(); err != nil {
-		return Snapshot{}, err
-	}
 	key := r.Key()
 	for {
 		s.mu.Lock()
-		if err := s.ctx.Err(); err != nil {
-			s.mu.Unlock()
-			return Snapshot{}, err
-		}
-		if err := ctx.Err(); err != nil {
+		if err := s.stopped(ctx); err != nil {
 			s.mu.Unlock()
 			return Snapshot{}, err
 		}
@@ -158,15 +156,11 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy) (Snapshot
 			s.mu.Unlock()
 			continue
 		}
-		if err := ctx.Err(); err != nil {
+		if err := s.stopped(ctx); err != nil {
 			s.mu.Unlock()
 			return Snapshot{}, err
 		}
-		if err := s.ctx.Err(); err != nil {
-			s.mu.Unlock()
-			return Snapshot{}, err
-		}
-		cached := Snapshot{Resource: r, CachedList: entry, Revision: s.cacheRevisions[key], FromCache: true, Stale: s.invalid[key] || !s.fresh(r, entry)}
+		cached := Snapshot{Resource: r, CachedList: entry, Revision: s.cacheRevisions[key], fromCache: true, Stale: s.invalid[key] || !s.fresh(r, entry)}
 		if old := s.active[key]; old != nil && (policy == Refresh || old.resource.Version != r.Version) {
 			s.cancelFlight(key)
 		}
@@ -212,6 +206,16 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy) (Snapshot
 	}
 }
 
+// stopped reports why work under ctx must end: the service closed or the
+// caller gave up. The service context is checked first because ctx learns of
+// Close asynchronously.
+func (s *Service) stopped(ctx context.Context) error {
+	if err := s.ctx.Err(); err != nil {
+		return err
+	}
+	return ctx.Err()
+}
+
 // release drops one subscriber. The last one leaving cancels the fetch.
 func (s *Service) release(key string, f *flight) {
 	s.mu.Lock()
@@ -255,7 +259,7 @@ func (s *Service) run(r Resource, f *flight, cached Snapshot, canCheckCount bool
 		var count int
 		count, err = s.backend.GetLibraryItemCount(f.ctx, r.LibraryID, libraryType(r.Kind))
 		if err == nil && count == len(entry.Items) {
-			result = Snapshot{Resource: r, CachedList: entry, FromCache: true}
+			result = Snapshot{Resource: r, CachedList: entry, fromCache: true}
 			ok = true
 		}
 	}
@@ -273,7 +277,7 @@ func (s *Service) run(r Resource, f *flight, cached Snapshot, canCheckCount bool
 	owned := s.active[r.Key()] == f && f.ctx.Err() == nil
 	s.mu.Unlock()
 	var saveErr error
-	if owned && err == nil && !result.FromCache {
+	if owned && err == nil && !result.fromCache {
 		saveErr = s.cache.Save(r.Key(), result.CachedList)
 	}
 

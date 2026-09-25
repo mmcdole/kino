@@ -30,7 +30,7 @@ func TestCachedNavigationIsQuietAndHonorsCountPreference(t *testing.T) {
 		m.pushColumn(r, "A")
 		req := m.requests.active[viewOwner(r)]
 		cached := state(r, 1, "one", "two")
-		cached.Snapshot.FromCache, cached.Snapshot.Validated = true, false
+		cached.Snapshot.Validated = false
 		m = publish(m, cached)
 		m = updateModel(m, LoadDoneMsg{Request: req})
 		row := m.libraryColumn().View()

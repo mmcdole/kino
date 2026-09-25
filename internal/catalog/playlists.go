@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"slices"
 	"sync"
-	"time"
 
 	"github.com/mmcdole/kino/internal/domain"
 )
@@ -23,7 +22,7 @@ const membershipFetches = 4
 // PlaylistMembership fetches the same playlist snapshot that the modal will
 // display. Every membership is verified; unknown never means absent.
 func (s *Service) PlaylistMembership(ctx context.Context, itemID string) (Membership, error) {
-	ctx, finish, startErr := s.operation(ctx, 30*time.Second)
+	ctx, finish, startErr := s.operation(ctx, requestTimeout)
 	if startErr != nil {
 		return Membership{}, startErr
 	}

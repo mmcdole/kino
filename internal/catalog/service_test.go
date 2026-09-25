@@ -192,7 +192,7 @@ func TestCountValidationDoesNotExtendFreshness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.FromCache || !result.FetchedAt.Equal(fetched) {
+	if !result.fromCache || !result.FetchedAt.Equal(fetched) {
 		t.Fatal("count check renewed stale user data")
 	}
 }
@@ -275,7 +275,7 @@ func TestLoadReportsNetworkWorkSeparatelyFromPayloadSource(t *testing.T) {
 			if attempts := svc.state(r).Attempt; result.Validated != wantNetwork || (attempts == 1) != wantNetwork {
 				t.Fatalf("policy %v: attempts=%d validated=%v", policy, attempts, result.Validated)
 			}
-			if result.FromCache != (policy != Refresh) {
+			if result.fromCache != (policy != Refresh) {
 				t.Fatal("payload source conflated with validation")
 			}
 		})
