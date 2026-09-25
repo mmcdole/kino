@@ -132,3 +132,30 @@ func TestWatchPatchDoesNotPromoteInvalidCachedPayload(t *testing.T) {
 		t.Fatal("watch patch promoted invalid cache data instead of requiring revalidation")
 	}
 }
+
+func TestWatchPublishesOnlyCollectionsContainingTheItem(t *testing.T) {
+	svc, cache := testService(t, watchBackend{watch: func(context.Context) error { return nil }})
+	holds := Resource{Kind: Movies, ID: "a", LibraryID: "a"}
+	other := Resource{Kind: Episodes, ID: "season", LibraryID: "a", ShowID: "show"}
+	for r, id := range map[Resource]string{holds: "movie", other: "episode"} {
+		if err := cache.Save(r.Key(), domain.CachedList{FetchedAt: time.Now(), Items: []domain.ListItem{&domain.MediaItem{ID: id}}}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.Load(context.Background(), r, Browse, Observer{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	change, err := svc.Mutate(context.Background(), Mutation{Kind: Watch, ItemID: "movie", LibraryID: "a", Played: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(change.Snapshots) != 1 || change.Snapshots[0].Resource != holds || len(change.Resources) != 0 {
+		t.Fatalf("published %d snapshots and %d revalidations, want only %v", len(change.Snapshots), len(change.Resources), holds.Key())
+	}
+	if _, bumped := change.Revisions[other.Key()]; bumped {
+		t.Fatal("an unrelated collection was revised")
+	}
+	if !change.Snapshots[0].Items[0].(*domain.MediaItem).IsPlayed {
+		t.Fatal("published snapshot is not patched")
+	}
+}
