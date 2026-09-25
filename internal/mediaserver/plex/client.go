@@ -85,7 +85,7 @@ func (c *Client) serverIdentity(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve Plex identity: %w", err)
 	}
-	id, err := ParseIdentity(body)
+	id, err := parseIdentity(body)
 	if err != nil {
 		return "", err
 	}
@@ -93,9 +93,9 @@ func (c *Client) serverIdentity(ctx context.Context) (string, error) {
 	return id, nil
 }
 
-// ParseIdentity returns the machine identifier from a /identity response,
+// parseIdentity returns the machine identifier from a /identity response,
 // which Plex sends as XML or JSON depending on the Accept header.
-func ParseIdentity(body []byte) (string, error) {
+func parseIdentity(body []byte) (string, error) {
 	var identity struct {
 		MachineIdentifier string `xml:"machineIdentifier,attr" json:"machineIdentifier"`
 	}

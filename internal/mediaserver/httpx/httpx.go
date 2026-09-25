@@ -129,3 +129,26 @@ func truncate(body []byte) string {
 	}
 	return string(body)
 }
+
+// Fetch GETs an unauthenticated URL, such as a server's public identity
+// endpoint, and returns the body of a 200 response. It is for probing a
+// server before any client exists, so it neither retries nor maps errors.
+func Fetch(ctx context.Context, hc *http.Client, url string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	resp, err := hc.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	return body, nil
+}
