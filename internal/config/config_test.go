@@ -15,7 +15,7 @@ func TestEnvVarOverrides(t *testing.T) {
 	t.Setenv("KINO_SERVER_TOKEN", "env-token")
 	t.Setenv("KINO_LOGGING_LEVEL", "DEBUG")
 
-	cfg, err := LoadConfig()
+	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,9 +51,9 @@ func TestLoadConfigGeneratesDeviceID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := LoadConfig()
+	cfg, err := Load()
 	if err != nil {
-		t.Fatalf("LoadConfig: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
 
 	if cfg.Server.DeviceID == "" {
@@ -88,5 +88,36 @@ func TestLoadConfigGeneratesDeviceID(t *testing.T) {
 	}
 	if perm := info.Mode().Perm(); perm != 0o600 {
 		t.Fatalf("config file mode = %o, want 600", perm)
+	}
+}
+
+// Signing out clears credentials in the file that was loaded, and keeps the
+// device ID and unrelated settings.
+func TestClearServerKeepsOtherSettings(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("APPDATA", home)
+	dir := filepath.Join(home, ".config", "kino")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dir, "config.yaml")
+	existing := "server:\n  url: http://x\n  token: secret\n  device_id: kino-1\nplayer:\n  command: mpv\n"
+	if err := os.WriteFile(file, []byte(existing), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ClearServerConfig(); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Server.Token != "" || cfg.Server.URL != "" {
+		t.Fatalf("credentials survived sign-out: %+v", cfg.Server)
+	}
+	if cfg.Server.DeviceID != "kino-1" || cfg.Player.Command != "mpv" {
+		t.Fatalf("sign-out lost settings: %+v", cfg)
 	}
 }
