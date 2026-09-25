@@ -40,7 +40,10 @@ func testService(t *testing.T, backend Backend) (*Service, *store.Memory) {
 func (s *Service) state(r Resource) State {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.states[r.Key()]
+	if c := s.collections[r.Key()]; c != nil {
+		return c.state
+	}
+	return State{}
 }
 
 // waitSubscribers blocks until n callers share r's in-flight fetch.
@@ -49,8 +52,8 @@ func waitSubscribers(t *testing.T, s *Service, r Resource, n int) {
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		s.mu.Lock()
-		f := s.active[r.Key()]
-		ok := f != nil && f.subscribers == n
+		c := s.collections[r.Key()]
+		ok := c != nil && c.flight != nil && c.flight.subscribers == n
 		s.mu.Unlock()
 		if ok {
 			return

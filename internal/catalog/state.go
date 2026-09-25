@@ -28,17 +28,18 @@ func (s *Service) Updates(ctx context.Context) ([]State, error) {
 	defer s.mu.Unlock()
 	out := make([]State, 0, len(s.changed))
 	for key := range s.changed {
-		out = append(out, s.states[key])
+		out = append(out, s.collections[key].state)
 	}
 	clear(s.changed)
 	return out, nil
 }
 
-// publish marks key changed and wakes Updates. It never blocks. Callers hold s.mu.
-func (s *Service) publish(key string, st State) {
-	st.Fetching = s.active[key] != nil
-	s.states[key] = st
-	s.changed[key] = struct{}{}
+// publish records st as c's state, marks it changed and wakes Updates. It
+// never blocks. Callers hold s.mu.
+func (s *Service) publish(c *collection, st State) {
+	st.Fetching = c.flight != nil
+	c.state, c.published = st, true
+	s.changed[c.key] = struct{}{}
 	select {
 	case s.signal <- struct{}{}:
 	default:
@@ -48,8 +49,8 @@ func (s *Service) publish(key string, st State) {
 // accept records snapshot if it is newer than the published one. A validated
 // snapshot clears the collection's error. Callers hold s.mu.
 func (s *Service) accept(snapshot Snapshot) {
-	key := snapshot.Resource.Key()
-	st := s.states[key]
+	c := s.track(snapshot.Resource.Key())
+	st := c.state
 	if st.Known && (snapshot.Revision < st.Snapshot.Revision ||
 		snapshot.Revision == st.Snapshot.Revision && snapshot.Stale == st.Snapshot.Stale && !snapshot.Validated) {
 		return
@@ -58,31 +59,30 @@ func (s *Service) accept(snapshot Snapshot) {
 	if snapshot.Validated {
 		st.Err = nil
 	}
-	s.publish(key, st)
+	s.publish(c, st)
 }
 
-// startAttempt records a new server request for r. Callers hold s.mu.
-func (s *Service) startAttempt(r Resource) {
-	st := s.states[r.Key()]
-	st.Resource = r
+// startAttempt records a new server request for c. Callers hold s.mu.
+func (s *Service) startAttempt(c *collection) {
+	st := c.state
+	st.Resource = c.resource
 	st.Attempt++
 	st.Progress = Progress{}
-	s.publish(r.Key(), st)
+	s.publish(c, st)
 }
 
-// refreshState republishes key after its flight or freshness changed.
+// refreshState republishes c after its flight or freshness changed.
 // Callers hold s.mu.
-func (s *Service) refreshState(key string, update func(*State)) {
-	st, ok := s.states[key]
-	if !ok {
-		r, known := s.known[key]
-		if !known {
+func (s *Service) refreshState(c *collection, update func(*State)) {
+	st := c.state
+	if !c.published {
+		if !c.requested {
 			return // nothing has asked for this collection
 		}
-		st.Resource = r
+		st.Resource = c.resource
 	}
 	if update != nil {
 		update(&st)
 	}
-	s.publish(key, st)
+	s.publish(c, st)
 }

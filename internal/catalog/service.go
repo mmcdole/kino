@@ -59,23 +59,62 @@ type flight struct {
 // Service owns every collection's cached snapshot, server fetch and
 // published state, and applies writes to the server and the cache.
 type Service struct {
-	backend        Backend
-	cache          Cache
-	ctx            context.Context
-	cancel         context.CancelFunc
-	wg             sync.WaitGroup
-	mu             sync.Mutex // request ownership and revisions; never held across I/O
-	commit         sync.Mutex // orders cache writes: fetch commits and mutation reconciliation
-	mutations      chan struct{}
-	active         map[string]*flight
-	revisions      map[string]uint64
-	known          map[string]Resource
-	cacheRevisions map[string]uint64
-	invalid        map[string]bool
-	states         map[string]State
-	changed        map[string]struct{}
-	signal         chan struct{}
-	now            func() time.Time
+	backend     Backend
+	cache       Cache
+	ctx         context.Context
+	cancel      context.CancelFunc
+	wg          sync.WaitGroup
+	mu          sync.Mutex // request ownership and revisions; never held across I/O
+	commit      sync.Mutex // orders cache writes: fetch commits and mutation reconciliation
+	mutations   chan struct{}
+	collections map[string]*collection
+	changed     map[string]struct{} // keys published since the last Updates
+	signal      chan struct{}
+	now         func() time.Time
+}
+
+// collection is everything the catalog tracks about one collection key.
+// Entries are never removed, so a pointer stays valid; fields are guarded by
+// s.mu.
+type collection struct {
+	key           string
+	resource      Resource // as last requested, with the newest known version
+	requested     bool     // Load has asked for it in this session
+	flight        *flight  // the in-flight server fetch, if any
+	revision      uint64   // advanced by every fetch commit and write fence
+	cacheRevision uint64   // the revision the persisted payload matches
+	invalid       bool     // the persisted payload cannot be trusted
+	state         State    // last published
+	published     bool
+}
+
+// track returns key's collection, creating it on first use. Callers hold s.mu.
+func (s *Service) track(key string) *collection {
+	c := s.collections[key]
+	if c == nil {
+		c = &collection{key: key}
+		s.collections[key] = c
+	}
+	return c
+}
+
+// cancelFlight stops the in-flight fetch, if any, and reports whether there
+// was one.
+func (c *collection) cancelFlight() bool {
+	if c.flight == nil {
+		return false
+	}
+	c.flight.cancel()
+	c.flight = nil
+	return true
+}
+
+// fence cancels the in-flight fetch and advances the revision, so a response
+// fetched before a write cannot undo it. It returns the new revision.
+func (c *collection) fence() uint64 {
+	c.cancelFlight()
+	c.revision++
+	return c.revision
 }
 
 // NewService starts a catalog whose work ends when ctx is done or Close is
@@ -84,16 +123,11 @@ func NewService(ctx context.Context, backend Backend, cache Cache) *Service {
 	ctx, cancel := context.WithCancel(ctx)
 	return &Service{
 		backend: backend, cache: cache, ctx: ctx, cancel: cancel,
-		active:         make(map[string]*flight),
-		revisions:      make(map[string]uint64),
-		known:          make(map[string]Resource),
-		cacheRevisions: make(map[string]uint64),
-		invalid:        make(map[string]bool),
-		mutations:      make(chan struct{}, 1),
-		states:         make(map[string]State),
-		changed:        make(map[string]struct{}),
-		signal:         make(chan struct{}, 1),
-		now:            time.Now,
+		mutations:   make(chan struct{}, 1),
+		collections: make(map[string]*collection),
+		changed:     make(map[string]struct{}),
+		signal:      make(chan struct{}, 1),
+		now:         time.Now,
 	}
 }
 
@@ -142,17 +176,18 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy) (Snapshot
 			s.mu.Unlock()
 			return Snapshot{}, err
 		}
-		if known, ok := s.known[key]; ok && known.Version > r.Version {
-			r.Version = known.Version
+		c := s.track(key)
+		if c.requested && c.resource.Version > r.Version {
+			r.Version = c.resource.Version
 		}
-		s.known[key] = r
+		c.resource, c.requested = r, true
 		// Register before decoding so a concurrent mutation fences this read.
 		// Only detached cache data crosses the unlocked section.
-		revision := s.revisions[key]
+		revision := c.revision
 		s.mu.Unlock()
 		entry, ok := s.cache.Load(key)
 		s.mu.Lock()
-		if revision != s.revisions[key] {
+		if revision != c.revision {
 			s.mu.Unlock()
 			continue
 		}
@@ -160,14 +195,14 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy) (Snapshot
 			s.mu.Unlock()
 			return Snapshot{}, err
 		}
-		cached := Snapshot{Resource: r, CachedList: entry, Revision: s.cacheRevisions[key], fromCache: true, Stale: s.invalid[key] || !s.fresh(r, entry)}
-		if old := s.active[key]; old != nil && (policy == Refresh || old.resource.Version != r.Version) {
-			s.cancelFlight(key)
+		cached := Snapshot{Resource: r, CachedList: entry, Revision: c.cacheRevision, fromCache: true, Stale: c.invalid || !s.fresh(r, entry)}
+		if old := c.flight; old != nil && (policy == Refresh || old.resource.Version != r.Version) {
+			c.cancelFlight()
 		}
 		if ok {
 			s.accept(cached)
 		}
-		current := s.active[key]
+		current := c.flight
 		if current == nil && policy == Browse && ok && !cached.Stale {
 			s.mu.Unlock()
 			return cached, nil
@@ -175,19 +210,19 @@ func (s *Service) Load(ctx context.Context, r Resource, policy Policy) (Snapshot
 		if current == nil {
 			workCtx, cancel := context.WithTimeout(s.ctx, r.Timeout())
 			current = &flight{resource: r, ctx: workCtx, cancel: cancel, done: make(chan struct{})}
-			s.active[key] = current
-			s.startAttempt(r)
+			c.flight = current
+			s.startAttempt(c)
 			s.wg.Add(1)
-			go s.run(r, current, cached, policy == Revalidate && ok && !s.invalid[key] && s.countCheckable(r, entry))
+			go s.run(c, r, current, cached, policy == Revalidate && ok && !c.invalid && s.countCheckable(r, entry))
 		}
 		current.subscribers++
 		s.mu.Unlock()
 		select {
 		case <-ctx.Done():
-			s.release(key, current)
+			s.release(c, current)
 			return Snapshot{}, ctx.Err()
 		case <-current.done:
-			s.release(key, current)
+			s.release(c, current)
 			if ctx.Err() != nil {
 				return Snapshot{}, ctx.Err()
 			}
@@ -217,36 +252,25 @@ func (s *Service) stopped(ctx context.Context) error {
 }
 
 // release drops one subscriber. The last one leaving cancels the fetch.
-func (s *Service) release(key string, f *flight) {
+func (s *Service) release(c *collection, f *flight) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	f.subscribers--
-	if f.subscribers == 0 && s.active[key] == f {
-		s.cancelFlight(key)
-		s.refreshState(key, nil)
+	if f.subscribers == 0 && c.flight == f {
+		c.cancelFlight()
+		s.refreshState(c, nil)
 	}
 }
 
-// cancelFlight stops key's in-flight fetch, if any, and reports whether there
-// was one. Callers hold s.mu.
-func (s *Service) cancelFlight(key string) bool {
-	f := s.active[key]
-	if f == nil {
-		return false
-	}
-	f.cancel()
-	delete(s.active, key)
-	return true
-}
-
-func (s *Service) run(r Resource, f *flight, cached Snapshot, canCheckCount bool) {
+// run performs flight f for collection c and commits its result.
+func (s *Service) run(c *collection, r Resource, f *flight, cached Snapshot, canCheckCount bool) {
 	defer s.wg.Done()
 	defer f.cancel()
 	progress := func(loaded, total int) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if s.active[r.Key()] == f {
-			s.refreshState(r.Key(), func(st *State) { st.Progress = Progress{loaded, total} })
+		if c.flight == f {
+			s.refreshState(c, func(st *State) { st.Progress = Progress{loaded, total} })
 		}
 	}
 	// Counts are only an optimization while a complete snapshot is young.
@@ -274,7 +298,7 @@ func (s *Service) run(r Resource, f *flight, cached Snapshot, canCheckCount bool
 	s.commit.Lock()
 	defer s.commit.Unlock()
 	s.mu.Lock()
-	owned := s.active[r.Key()] == f && f.ctx.Err() == nil
+	owned := c.flight == f && f.ctx.Err() == nil
 	s.mu.Unlock()
 	var saveErr error
 	if owned && err == nil && !result.fromCache {
@@ -283,30 +307,29 @@ func (s *Service) run(r Resource, f *flight, cached Snapshot, canCheckCount bool
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.active[r.Key()] != f {
+	if c.flight != f {
 		err = context.Canceled
 	} else if f.ctx.Err() != nil {
 		err = f.ctx.Err()
 	} else if err == nil {
 		result.Validated = true
-		s.revisions[r.Key()]++
-		result.Revision = s.revisions[r.Key()]
+		c.revision++
+		result.Revision = c.revision
 		if saveErr != nil {
 			result.Warning = fmt.Errorf("cache write failed: %w", saveErr)
-			s.invalid[r.Key()] = true
-		}
-		if result.Warning == nil {
-			s.cacheRevisions[r.Key()] = result.Revision
-			delete(s.invalid, r.Key())
+			c.invalid = true
+		} else {
+			c.cacheRevision = result.Revision
+			c.invalid = false
 		}
 	}
 	f.result, f.err = result, err
-	if s.active[r.Key()] == f {
-		delete(s.active, r.Key())
+	if c.flight == f {
+		c.flight = nil
 		if err == nil {
 			s.accept(result)
 		}
-		s.refreshState(r.Key(), func(st *State) {
+		s.refreshState(c, func(st *State) {
 			if err != nil && !errors.Is(err, context.Canceled) {
 				st.Err = err
 			}

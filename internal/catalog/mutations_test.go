@@ -113,7 +113,7 @@ func TestWatchPublishesOnlyCollectionsContainingTheItem(t *testing.T) {
 	if !svc.state(holds).Snapshot.Items[0].(*domain.MediaItem).IsPlayed {
 		t.Fatal("published snapshot is not patched")
 	}
-	if after := svc.state(other); after.Snapshot.Revision != before.Snapshot.Revision || svc.revisions[other.Key()] != 0 {
+	if after := svc.state(other); after.Snapshot.Revision != before.Snapshot.Revision || svc.collections[other.Key()].revision != 0 {
 		t.Fatal("an unrelated collection was revised")
 	}
 }

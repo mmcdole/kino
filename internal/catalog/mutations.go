@@ -98,34 +98,26 @@ func (s *Service) Mutate(ctx context.Context, m Mutation) (Change, error) {
 	return s.reconcilePlaylists(m, change, err)
 }
 
-// fence cancels in-flight fetches for key and advances its revision, so a
-// response fetched before a write cannot undo it. It returns the new
-// revision. Callers hold s.mu.
-func (s *Service) fence(key string) uint64 {
-	s.cancelFlight(key)
-	s.revisions[key]++
-	return s.revisions[key]
-}
-
-// expire republishes key as needing revalidation. Callers hold s.mu.
-func (s *Service) expire(key string) {
-	s.refreshState(key, func(st *State) { st.Snapshot.Stale = true })
+// expire republishes c as needing revalidation. Callers hold s.mu.
+func (s *Service) expire(c *collection) {
+	s.refreshState(c, func(st *State) { st.Snapshot.Stale = true })
 }
 
 // watchScope returns the collections an item's watch state can appear in:
 // its library's collections and every playlist. Callers hold s.mu.
-func (s *Service) watchScope(m Mutation) []string {
-	var keys []string
-	for key, r := range s.known {
-		if r.Kind == Libraries || r.Kind == Playlists {
+func (s *Service) watchScope(m Mutation) []*collection {
+	var scope []*collection
+	for _, c := range s.collections {
+		r := c.resource
+		if !c.requested || r.Kind == Libraries || r.Kind == Playlists {
 			continue
 		}
 		if m.LibraryID != "" && r.Kind != PlaylistItems && r.LibraryID != m.LibraryID {
 			continue
 		}
-		keys = append(keys, key)
+		scope = append(scope, c)
 	}
-	return keys
+	return scope
 }
 
 // reconcileWatch patches the cached projections that contain the item and
@@ -134,13 +126,12 @@ func (s *Service) watchScope(m Mutation) []string {
 // patched, everything in scope revalidates. Callers hold s.commit; s.mu is
 // only taken for bookkeeping around the cache I/O.
 func (s *Service) reconcileWatch(m Mutation, change Change, err error) (Change, error) {
-	revised := make(map[string]uint64)
 	s.mu.Lock()
 	scope := s.watchScope(m)
-	var interrupted []string
-	for _, key := range scope {
-		if s.cancelFlight(key) {
-			interrupted = append(interrupted, key)
+	var interrupted []*collection
+	for _, c := range scope {
+		if c.cancelFlight() {
+			interrupted = append(interrupted, c)
 		}
 	}
 	s.mu.Unlock()
@@ -155,11 +146,11 @@ func (s *Service) reconcileWatch(m Mutation, change Change, err error) (Change, 
 	if err != nil || change.Warning != nil {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		for _, key := range scope {
-			s.fence(key)
-			s.invalid[key] = true
-			s.expire(key)
-			change.Resources = append(change.Resources, s.known[key])
+		for _, c := range scope {
+			c.fence()
+			c.invalid = true
+			s.expire(c)
+			change.Resources = append(change.Resources, c.resource)
 		}
 		return change, err
 	}
@@ -173,26 +164,28 @@ func (s *Service) reconcileWatch(m Mutation, change Change, err error) (Change, 
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	fenced := make(map[*collection]bool)
 	for _, key := range saved {
-		r, known := s.known[key]
-		if !known {
+		c := s.collections[key]
+		if c == nil || !c.requested {
 			continue // patched on disk; nothing in this session shows it
 		}
-		revised[key] = s.fence(key)
+		revision := c.fence()
+		fenced[c] = true
 		entry, ok := entries[key]
-		if s.invalid[key] || !ok {
-			s.expire(key)
-			change.Resources = append(change.Resources, r)
+		if c.invalid || !ok {
+			s.expire(c)
+			change.Resources = append(change.Resources, c.resource)
 			continue
 		}
-		s.cacheRevisions[key] = revised[key]
-		s.accept(Snapshot{Resource: r, CachedList: entry, Revision: revised[key], fromCache: true, Stale: !s.fresh(r, entry)})
+		c.cacheRevision = revision
+		s.accept(Snapshot{Resource: c.resource, CachedList: entry, Revision: revision, fromCache: true, Stale: !s.fresh(c.resource, entry)})
 	}
-	for _, key := range interrupted {
-		if _, done := revised[key]; !done {
-			s.fence(key)
-			s.expire(key)
-			change.Resources = append(change.Resources, s.known[key])
+	for _, c := range interrupted {
+		if !fenced[c] {
+			c.fence()
+			s.expire(c)
+			change.Resources = append(change.Resources, c.resource)
 		}
 	}
 	return change, nil
@@ -202,14 +195,14 @@ func (s *Service) reconcileWatch(m Mutation, change Change, err error) (Change, 
 // kept for offline browsing, but a known or uncertain remote change forces
 // revalidation. A local change never renews a snapshot's age.
 func (s *Service) reconcilePlaylists(m Mutation, change Change, err error) (Change, error) {
-	revised := make(map[string]uint64)
 	change.Resources = []Resource{{Kind: Playlists}}
 	if m.PlaylistID != "" {
 		change.Resources = append(change.Resources, Resource{Kind: PlaylistItems, ID: m.PlaylistID})
 	}
+	revised := make(map[string]uint64)
 	s.mu.Lock()
 	for _, r := range change.Resources {
-		revised[r.Key()] = s.fence(r.Key())
+		revised[r.Key()] = s.track(r.Key()).fence()
 	}
 	s.mu.Unlock()
 
@@ -228,16 +221,17 @@ func (s *Service) reconcilePlaylists(m Mutation, change Change, err error) (Chan
 	defer s.mu.Unlock()
 	for _, r := range change.Resources {
 		key := r.Key()
+		c := s.track(key)
 		saveErr, ok := saved[key]
 		switch {
 		case ok && saveErr == nil:
-			s.cacheRevisions[key] = revised[key]
+			c.cacheRevision = revised[key]
 			s.accept(Snapshot{Resource: r, CachedList: entries[key], Revision: revised[key], fromCache: true, Stale: true})
 		case ok:
-			s.invalid[key] = true
-			s.expire(key)
+			c.invalid = true
+			s.expire(c)
 		default:
-			s.expire(key)
+			s.expire(c)
 		}
 	}
 	return change, err
