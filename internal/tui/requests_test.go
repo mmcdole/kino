@@ -250,3 +250,17 @@ func TestLogoutUsesSessionAndReportsFailure(t *testing.T) {
 		t.Fatal("successful logout did not end the session")
 	}
 }
+
+func TestAllLibraryEntriesDoesNotAliasLibraries(t *testing.T) {
+	m := &Model{Libraries: make([]domain.Library, 1, 2)}
+	m.Libraries[0] = domain.Library{ID: "movies"}
+
+	entries := m.allLibraryEntries()
+	entries[0].Name = "changed"
+	if m.Libraries[0].Name != "" {
+		t.Fatal("allLibraryEntries shares its backing array with m.Libraries")
+	}
+	if got := m.Libraries[:2][1].ID; got != "" {
+		t.Fatalf("Playlists entry written into m.Libraries spare capacity: %q", got)
+	}
+}

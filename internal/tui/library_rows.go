@@ -18,9 +18,13 @@ func playlistsLibraryEntry() domain.Library {
 	}
 }
 
-// allLibraryEntries returns libraries plus the synthetic Playlists entry
+// allLibraryEntries returns libraries plus the synthetic Playlists entry in a
+// new slice. Appending to m.Libraries directly could write into its spare
+// capacity, and the library column keeps pointers into the returned slice.
 func (m *Model) allLibraryEntries() []domain.Library {
-	return append(m.Libraries, playlistsLibraryEntry())
+	entries := make([]domain.Library, 0, len(m.Libraries)+1)
+	entries = append(entries, m.Libraries...)
+	return append(entries, playlistsLibraryEntry())
 }
 
 // libraryStateID returns the library row that shows a resource's load state,
