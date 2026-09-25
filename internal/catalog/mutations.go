@@ -101,11 +101,10 @@ func (s *Service) fence(key string, change *Change) {
 	change.Revisions[key] = s.revisions[key]
 }
 
-// reconcileWatch patches every cached projection of the item. Callers hold
-// s.commit; s.mu is only taken for bookkeeping around the cache I/O.
-func (s *Service) reconcileWatch(m Mutation, change Change, err error) (Change, error) {
-	s.mu.Lock()
-	// Watch data can appear in several projections of the same library.
+// watchScope returns the collections an item's watch state can appear in:
+// its library's collections and every playlist. Callers hold s.mu.
+func (s *Service) watchScope(m Mutation) []string {
+	var keys []string
 	for key, r := range s.known {
 		if r.Kind == Libraries || r.Kind == Playlists {
 			continue
@@ -113,42 +112,77 @@ func (s *Service) reconcileWatch(m Mutation, change Change, err error) (Change, 
 		if m.LibraryID != "" && r.Kind != PlaylistItems && r.LibraryID != m.LibraryID {
 			continue
 		}
-		s.fence(key, &change)
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+// reconcileWatch patches the cached projections that contain the item and
+// publishes only those. In-flight fetches in scope restart, since they may
+// carry the old state. If the write failed or the cache could not be
+// patched, everything in scope revalidates. Callers hold s.commit; s.mu is
+// only taken for bookkeeping around the cache I/O.
+func (s *Service) reconcileWatch(m Mutation, change Change, err error) (Change, error) {
+	s.mu.Lock()
+	scope := s.watchScope(m)
+	var interrupted []string
+	for _, key := range scope {
+		if f := s.active[key]; f != nil {
+			f.cancel()
+			delete(s.active, key)
+			interrupted = append(interrupted, key)
+		}
 	}
 	s.mu.Unlock()
 
-	entries := make(map[string]domain.CachedList)
+	var saved []string
 	if err == nil {
 		watch := domain.WatchChange{ItemID: m.ItemID, ShowID: m.ShowID, SeasonID: m.SeasonID, Played: m.Played}
-		_, change.Warning = s.cache.Update(watch.IDs(), func(lists map[string]domain.CachedList) map[string]domain.CachedList {
+		saved, change.Warning = s.cache.Update(watch.IDs(), func(lists map[string]domain.CachedList) map[string]domain.CachedList {
 			return patchLists(lists, watch.Apply)
 		})
 	}
-	if err == nil && change.Warning == nil {
-		for key := range change.Revisions {
-			if entry, ok := s.cache.Load(key); ok {
-				entries[key] = entry
-			}
+	if err != nil || change.Warning != nil {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for _, key := range scope {
+			s.fence(key, &change)
+			s.invalid[key] = true
+			change.Resources = append(change.Resources, s.known[key])
+		}
+		return change, err
+	}
+
+	entries := make(map[string]domain.CachedList, len(saved))
+	for _, key := range saved {
+		if entry, ok := s.cache.Load(key); ok {
+			entries[key] = entry
 		}
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for key, revision := range change.Revisions {
-		r := s.known[key]
-		if err != nil || change.Warning != nil || s.invalid[key] {
-			s.invalid[key] = true
+	for _, key := range saved {
+		r, known := s.known[key]
+		if !known {
+			continue // patched on disk; nothing in this session shows it
+		}
+		s.fence(key, &change)
+		entry, ok := entries[key]
+		if s.invalid[key] || !ok {
 			change.Resources = append(change.Resources, r)
 			continue
 		}
-		s.cacheRevisions[key] = revision
-		if entry, ok := entries[key]; ok {
-			change.Snapshots = append(change.Snapshots, Snapshot{Resource: r, CachedList: entry, Revision: revision, FromCache: true, Stale: !s.fresh(r, entry)})
-		} else {
-			change.Resources = append(change.Resources, r)
+		s.cacheRevisions[key] = change.Revisions[key]
+		change.Snapshots = append(change.Snapshots, Snapshot{Resource: r, CachedList: entry, Revision: change.Revisions[key], FromCache: true, Stale: !s.fresh(r, entry)})
+	}
+	for _, key := range interrupted {
+		if _, done := change.Revisions[key]; !done {
+			s.fence(key, &change)
+			change.Resources = append(change.Resources, s.known[key])
 		}
 	}
-	return change, err
+	return change, nil
 }
 
 // reconcilePlaylists expires the affected playlist snapshots. Usable data is
