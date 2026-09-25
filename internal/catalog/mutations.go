@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/mmcdole/kino/internal/domain"
@@ -232,74 +231,6 @@ func (s *Service) reconcilePlaylists(m Mutation, change Change, err error) (Chan
 		}
 	}
 	return change, err
-}
-
-type Membership struct {
-	Playlists []*domain.Playlist
-	Present   map[string]bool
-}
-
-// PlaylistMembership fetches the same playlist snapshot that the modal will
-// display. Every membership is verified; unknown never means absent.
-func (s *Service) PlaylistMembership(ctx context.Context, itemID string) (Membership, error) {
-	ctx, finish, startErr := s.operation(ctx, 30*time.Second)
-	if startErr != nil {
-		return Membership{}, startErr
-	}
-	defer finish()
-
-	snapshot, err := s.Load(ctx, Resource{Kind: Playlists}, Revalidate)
-	if err != nil {
-		return Membership{}, err
-	}
-	result := Membership{Present: make(map[string]bool)}
-	for _, item := range snapshot.Items {
-		if p, ok := item.(*domain.Playlist); ok {
-			result.Playlists = append(result.Playlists, p)
-		}
-	}
-	var mu sync.Mutex
-	var failures []error
-	jobs := make(chan *domain.Playlist)
-	var workers sync.WaitGroup
-	for range min(4, len(result.Playlists)) {
-		workers.Go(func() {
-			for playlist := range jobs {
-				if ctx.Err() != nil {
-					continue
-				}
-				items, err := s.Load(ctx, Resource{Kind: PlaylistItems, ID: playlist.ID}, Revalidate)
-				mu.Lock()
-				if err != nil {
-					failures = append(failures, fmt.Errorf("playlist %q: %w", playlist.Title, err))
-				} else {
-					result.Present[playlist.ID] = false
-					for _, item := range items.Items {
-						if item.GetID() == itemID {
-							result.Present[playlist.ID] = true
-							break
-						}
-					}
-				}
-				mu.Unlock()
-			}
-		})
-	}
-	for _, playlist := range result.Playlists {
-		select {
-		case jobs <- playlist:
-		case <-ctx.Done():
-		}
-	}
-	close(jobs)
-	workers.Wait()
-	if ctx.Err() != nil {
-		failures = append(failures, ctx.Err())
-	}
-	if len(failures) > 0 {
-		return Membership{}, errors.Join(failures...)
-	}
-	return result, nil
 }
 
 // patchLists adapts a domain rule over item lists to cached snapshots,
