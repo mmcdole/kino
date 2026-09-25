@@ -96,3 +96,43 @@ func TestCachedObserverCannotMutateValidatedPayload(t *testing.T) {
 		t.Fatal("cached observation shared mutable entities with the validated result")
 	}
 }
+
+type slowSaveCache struct {
+	Cache
+	started, release chan struct{}
+}
+
+func (c *slowSaveCache) Save(key string, l domain.CachedList) error {
+	close(c.started)
+	<-c.release
+	return c.Cache.Save(key, l)
+}
+
+func TestSlowCacheWriteDoesNotBlockCacheHits(t *testing.T) {
+	cache := store.NewMemory()
+	a := Resource{Kind: Movies, ID: "a", LibraryID: "a"}
+	b := Resource{Kind: Movies, ID: "b", LibraryID: "b"}
+	if err := cache.Save(b.Key(), domain.CachedList{FetchedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	slow := &slowSaveCache{Cache: cache, started: make(chan struct{}), release: make(chan struct{})}
+	backend := fakeBackend{movies: func(context.Context) ([]*domain.MediaItem, int, error) {
+		return []*domain.MediaItem{{ID: "m"}}, 1, nil
+	}}
+	svc := NewService(context.Background(), backend, slow)
+	defer svc.Close()
+	defer close(slow.release)
+	go func() { _, _ = svc.Load(context.Background(), a, Refresh, Observer{}) }()
+	<-slow.started
+
+	done := make(chan error, 1)
+	go func() { _, err := svc.Load(context.Background(), b, Browse, Observer{}); done <- err }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("a cache hit waited on another collection's disk write")
+	}
+}

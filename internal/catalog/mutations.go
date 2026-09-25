@@ -82,71 +82,105 @@ func (s *Service) Mutate(ctx context.Context, m Mutation) (Change, error) {
 		return change, fmt.Errorf("unknown mutation %d", m.Kind)
 	}
 	change.Applied = err == nil
+	s.commit.Lock()
+	defer s.commit.Unlock()
+	if m.Kind == Watch {
+		return s.reconcileWatch(m, change, err)
+	}
+	return s.reconcilePlaylists(m, change, err)
+}
+
+// fence cancels in-flight fetches for key and advances its revision, so a
+// response fetched before a write cannot undo it. Callers hold s.mu.
+func (s *Service) fence(key string, change *Change) {
+	if f := s.active[key]; f != nil {
+		f.cancel()
+		delete(s.active, key)
+	}
+	s.revisions[key]++
+	change.Revisions[key] = s.revisions[key]
+}
+
+// reconcileWatch patches every cached projection of the item. Callers hold
+// s.commit; s.mu is only taken for bookkeeping around the cache I/O.
+func (s *Service) reconcileWatch(m Mutation, change Change, err error) (Change, error) {
+	s.mu.Lock()
+	// Watch data can appear in several projections of the same library.
+	for key, r := range s.known {
+		if r.Kind == Libraries || r.Kind == Playlists {
+			continue
+		}
+		if m.LibraryID != "" && r.Kind != PlaylistItems && r.LibraryID != m.LibraryID {
+			continue
+		}
+		s.fence(key, &change)
+	}
+	s.mu.Unlock()
+
+	entries := make(map[string]domain.CachedList)
+	if err == nil {
+		watch := domain.WatchChange{ItemID: m.ItemID, ShowID: m.ShowID, SeasonID: m.SeasonID, Played: m.Played}
+		_, change.Warning = s.cache.Update(watch.IDs(), func(lists map[string]domain.CachedList) map[string]domain.CachedList {
+			return patchLists(lists, watch.Apply)
+		})
+	}
+	if err == nil && change.Warning == nil {
+		for key := range change.Revisions {
+			if entry, ok := s.cache.Load(key); ok {
+				entries[key] = entry
+			}
+		}
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if m.Kind == Watch {
-		watch := domain.WatchChange{ItemID: m.ItemID, ShowID: m.ShowID, SeasonID: m.SeasonID, Played: m.Played}
-		// Watch data can appear in several projections. Fence active reads before
-		// patching, so a response fetched before this write cannot undo it.
-		for key, r := range s.known {
-			if r.Kind == Libraries || r.Kind == Playlists {
-				continue
-			}
-			if m.LibraryID != "" && r.Kind != PlaylistItems && r.LibraryID != m.LibraryID {
-				continue
-			}
-			if f := s.active[key]; f != nil {
-				f.cancel()
-				delete(s.active, key)
-			}
-			s.revisions[key]++
-			change.Revisions[key] = s.revisions[key]
+	for key, revision := range change.Revisions {
+		r := s.known[key]
+		if err != nil || change.Warning != nil || s.invalid[key] {
+			s.invalid[key] = true
+			change.Resources = append(change.Resources, r)
+			continue
 		}
-
-		if err == nil {
-			_, change.Warning = s.cache.Update(watch.IDs(), func(lists map[string]domain.CachedList) map[string]domain.CachedList {
-				return patchLists(lists, watch.Apply)
-			})
+		s.cacheRevisions[key] = revision
+		if entry, ok := entries[key]; ok {
+			change.Snapshots = append(change.Snapshots, Snapshot{Resource: r, CachedList: entry, Revision: revision, FromCache: true, Stale: !s.fresh(r, entry)})
+		} else {
+			change.Resources = append(change.Resources, r)
 		}
-		for key, revision := range change.Revisions {
-			if err == nil && change.Warning == nil && !s.invalid[key] {
-				s.cacheRevisions[key] = revision
-				r := s.known[key]
-				if entry, ok := s.cache.Load(key); ok {
-					change.Snapshots = append(change.Snapshots, Snapshot{Resource: r, CachedList: entry, Revision: revision, FromCache: true, Stale: !s.fresh(r, entry)})
-				} else {
-					change.Resources = append(change.Resources, r)
-				}
-			} else {
-				s.invalid[key] = true
-				change.Resources = append(change.Resources, s.known[key])
-			}
-		}
-		return change, err
 	}
+	return change, err
+}
+
+// reconcilePlaylists expires the affected playlist snapshots. Usable data is
+// kept for offline browsing, but a known or uncertain remote change forces
+// revalidation. A local change never renews a snapshot's age.
+func (s *Service) reconcilePlaylists(m Mutation, change Change, err error) (Change, error) {
 	change.Resources = []Resource{{Kind: Playlists}}
 	if m.PlaylistID != "" {
 		change.Resources = append(change.Resources, Resource{Kind: PlaylistItems, ID: m.PlaylistID})
 	}
+	s.mu.Lock()
 	for _, r := range change.Resources {
-		key := r.Key()
-		if f := s.active[key]; f != nil {
-			f.cancel()
-			delete(s.active, key)
-		}
-		s.revisions[key]++
-		change.Revisions[key] = s.revisions[key]
-		// Retain usable data, but force revalidation after a known or uncertain
-		// remote change. Never renew its age just because we changed it locally.
-		if entry, ok := s.cache.Load(key); ok {
+		s.fence(r.Key(), &change)
+	}
+	s.mu.Unlock()
+
+	saved := make(map[string]error)
+	for _, r := range change.Resources {
+		if entry, ok := s.cache.Load(r.Key()); ok {
 			entry.FetchedAt = time.Time{}
-			saveErr := s.cache.Save(key, entry)
-			change.Warning = errors.Join(change.Warning, saveErr)
-			if saveErr != nil {
-				s.invalid[key] = true
-			} else {
-				s.cacheRevisions[key] = s.revisions[key]
-			}
+			saved[r.Key()] = s.cache.Save(r.Key(), entry)
+			change.Warning = errors.Join(change.Warning, saved[r.Key()])
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for key, saveErr := range saved {
+		if saveErr != nil {
+			s.invalid[key] = true
+		} else {
+			s.cacheRevisions[key] = change.Revisions[key]
 		}
 	}
 	return change, err
