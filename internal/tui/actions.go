@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -8,18 +9,27 @@ import (
 	"github.com/mmcdole/kino/internal/domain"
 )
 
+// mutationOwner identifies what a write changes. Writes to different items in
+// the same playlist are independent; the catalog serializes them.
+func mutationOwner(change catalog.Mutation) string {
+	switch change.Kind {
+	case catalog.Watch:
+		return "mutation:watch:" + change.ItemID
+	case catalog.CreatePlaylist:
+		return "mutation:create:" + change.Title
+	case catalog.DeletePlaylist:
+		return "mutation:playlist:" + change.PlaylistID
+	default:
+		return "mutation:playlist:" + change.PlaylistID + ":" + change.ItemID + strings.Join(change.ItemIDs, ",")
+	}
+}
+
 func (m *Model) beginMutation(change catalog.Mutation) tea.Cmd {
-	owner := "mutation:playlist:" + change.PlaylistID
-	if change.Kind == catalog.Watch {
-		owner = "mutation:watch:" + change.ItemID
-	}
-	if change.Kind == catalog.CreatePlaylist {
-		owner = "mutation:create:" + change.Title
-	}
+	owner := mutationOwner(change)
 	// A second keypress cannot reorder two writes to the same item. Keep the
 	// first operation pending until its result, rather than launching duplicates.
 	if _, pending := m.requests.active[owner]; pending {
-		return nil
+		return m.notify(NoticeInfo, "Already updating — waiting for the server")
 	}
 	req := m.requests.begin(owner, catalog.Resource{}, catalog.Browse)
 	return MutationCmd(m.Catalog, req, change)
