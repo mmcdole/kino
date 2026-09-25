@@ -1,6 +1,10 @@
 package catalog
 
-import "context"
+import (
+	"context"
+
+	"github.com/mmcdole/kino/internal/domain"
+)
 
 // State is the catalog's current view of one collection. Published snapshots
 // are never modified afterwards, so consumers may keep them without copying.
@@ -13,6 +17,27 @@ type State struct {
 	Progress Progress
 	Err      error // the last attempt's failure; only a validated result clears it
 }
+
+// Snapshot is one complete item list for a collection, with where it came
+// from and how far it can be trusted.
+type Snapshot struct {
+	Resource Resource
+	domain.CachedList
+	Revision  uint64
+	fromCache bool
+	// Validated is true only when this result was checked against the server.
+	// A count check can validate a payload that still comes from cache.
+	Validated bool
+	Stale     bool
+	// Warning means usable data was fetched but could not be persisted.
+	Warning error
+}
+
+// Clone copies the items so the caller can keep or change them.
+func (s Snapshot) Clone() Snapshot { s.Items = domain.CloneItems(s.Items); return s }
+
+// Progress reports pagination of a large collection.
+type Progress struct{ Loaded, Total int }
 
 // Updates blocks until at least one collection has changed since the previous
 // call, then returns the latest state of each changed collection. States are
