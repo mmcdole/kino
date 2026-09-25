@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
 )
 
@@ -29,6 +28,7 @@ func newRequests(ctx context.Context) *requests {
 	ctx, cancel := context.WithCancel(ctx)
 	return &requests{ctx: ctx, cancel: cancel, active: make(map[string]request)}
 }
+
 func (rs *requests) begin(owner string, r catalog.Resource, policy catalog.Policy) request {
 	rs.stop(owner)
 	rs.next++
@@ -37,16 +37,19 @@ func (rs *requests) begin(owner string, r catalog.Resource, policy catalog.Polic
 	rs.active[owner] = req
 	return req
 }
+
 func (rs *requests) owns(req request) bool {
 	current, ok := rs.active[req.Owner]
 	return ok && current.ID == req.ID
 }
+
 func (rs *requests) stop(owner string) {
 	if req, ok := rs.active[owner]; ok {
 		req.cancel()
 		delete(rs.active, owner)
 	}
 }
+
 func (rs *requests) finish(req request) {
 	if rs.owns(req) {
 		rs.stop(req.Owner)
@@ -54,26 +57,5 @@ func (rs *requests) finish(req request) {
 }
 
 func viewOwner(r catalog.Resource) string { return "view:" + r.Key() }
+
 func syncOwner(r catalog.Resource) string { return "sync:" + r.Key() }
-
-func (m *Model) loadResource(r catalog.Resource, policy catalog.Policy, background bool) tea.Cmd {
-	owner := viewOwner(r)
-	if background {
-		owner = syncOwner(r)
-	}
-	if old, ok := m.requests.active[owner]; ok && policy != catalog.Refresh && old.Resource.Version == r.Version {
-		return nil
-	}
-	req := m.requests.begin(owner, r, policy)
-	m.track(r)
-	m.updateResourceFeedback(r)
-	return loadCmd(m.catalog, req)
-}
-
-func (m *Model) topResource() (catalog.Resource, bool) {
-	if col := m.columns.Top(); col != nil {
-		r, ok := m.resource(col.ContentID())
-		return r, ok
-	}
-	return catalog.Resource{}, false
-}

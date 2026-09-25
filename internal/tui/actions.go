@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"time"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
 	"github.com/mmcdole/kino/internal/domain"
@@ -44,24 +42,63 @@ func (m *Model) beginPlayback(item domain.MediaItem, resume bool) tea.Cmd {
 	return playCmd(m.playback, req, item, resume)
 }
 
-func (m *Model) cancelPendingModal() {
-	if m.overlay == overlayPlaylists && m.playlistModal.IsLoading() {
-		m.overlay = overlayNone
-	}
-	m.requests.stop("playlist-modal")
-}
-
-func (m *Model) scheduleSearch() tea.Cmd {
-	m.requests.stop("search")
-	m.searchSeq++
-	seq, query := m.searchSeq, m.globalSearch.Query()
-	if query == "" {
-		m.globalSearch.SetResults(nil)
+func (m *Model) handleAction(msg actionMsg) tea.Cmd {
+	if !m.requests.owns(msg.Request) {
 		return nil
 	}
-	m.globalSearch.SetLoading(true)
-	return tea.Batch(
-		tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return searchDebounceMsg{Seq: seq, Query: query} }),
-		tea.Tick(loadingIndicatorDelay, func(time.Time) tea.Msg { return showSearchLoadingMsg{Seq: seq} }),
-	)
+	m.requests.finish(msg.Request)
+	if msg.Playback {
+		if msg.Err != nil {
+			return m.notifyError("Starting playback", msg.Err)
+		}
+		return m.notify(noticeSuccess, "Launched: "+msg.Item.Title)
+	}
+	change := msg.Change
+	var cmds []tea.Cmd
+	for _, r := range change.Resources {
+		if _, tracked := m.collections[r.Key()]; !tracked && r.Kind != catalog.Playlists {
+			continue
+		}
+		if r.LibraryID != "" && m.findLibrary(r.LibraryID) == nil {
+			continue
+		}
+		// Reconciled snapshots arrive as published state. Collections the write
+		// may have changed on the server revalidate if anything shows them.
+		background := libraryStateID(r) != ""
+		visible := false
+		for i := 0; i < m.columns.Len(); i++ {
+			visible = visible || m.columns.Get(i).ContentID() == r.Key()
+		}
+		if background || visible {
+			cmds = append(cmds, m.loadResource(r, catalog.Revalidate, background))
+		}
+	}
+
+	if change.Applied && change.Mutation.Kind == catalog.MutationDeletePlaylist {
+		if r, ok := m.topResource(); ok && r.Kind == catalog.PlaylistItems && r.ID == change.Mutation.PlaylistID {
+			cmds = append(cmds, m.handleBack())
+		}
+	}
+	if msg.Err != nil {
+		cmds = append(cmds, m.notifyError("Update failed", msg.Err))
+	} else {
+		text := "Playlist updated"
+		if change.Mutation.Kind == catalog.MutationWatch {
+			text = "Marked unwatched: " + change.Mutation.Title
+			if change.Mutation.Played {
+				text = "Marked watched: " + change.Mutation.Title
+			}
+		}
+		if change.Mutation.Kind == catalog.MutationCreatePlaylist {
+			text = "Created playlist: " + change.Mutation.Title
+		}
+		if change.Mutation.Kind == catalog.MutationDeletePlaylist {
+			text = "Playlist deleted"
+		}
+		cmds = append(cmds, m.notify(noticeSuccess, text))
+	}
+	if change.Warning != nil {
+		cmds = append(cmds, m.notifyError("Server updated; local cache needs refresh", change.Warning))
+	}
+	return tea.Batch(cmds...)
 }

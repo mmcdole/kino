@@ -383,13 +383,6 @@ func (m *Model) handleGlobalSearchInput(msg tea.KeyMsg) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// closeSearch closes global search and abandons any pending query.
-func (m *Model) closeSearch() {
-	m.overlay = overlayNone
-	m.requests.stop("search")
-	m.searchSeq++
-}
-
 // handleSortModalInput handles input while the sort modal is open
 func (m *Model) handleSortModalInput(msg tea.KeyMsg) tea.Cmd {
 	outcome, selection := m.sortModal.HandleKeyMsg(msg)

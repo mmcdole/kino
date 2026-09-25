@@ -1,5 +1,24 @@
 package tui
 
+// Layout proportions for Miller Columns
+const (
+	// 3-Column Smart Ratios (Inspector visible)
+	parentColumnPercent3   = 25 // Parent context
+	inspectorColumnPercent = 30 // Inspector (summary)
+
+	// 3-Column Focus Mode (Inspector hidden) - show more navigation context
+	grandparentColumnPercent = 25 // Grandparent context
+	parentColumnPercent2     = 30 // Parent context
+
+	// Root level (single column + inspector)
+	rootColumnPercent = 40
+
+	minColumnWidth = 15
+
+	// Vertical layout: single footer line
+	chromeHeight = 1
+)
+
 // columnLayout holds calculated column widths for the View
 type columnLayout struct {
 	grandparentWidth int // 0 if not shown

@@ -1,10 +1,28 @@
 package tui
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mmcdole/kino/internal/domain"
 )
+
+// authFailedStatusMsg tells the user how to recover from a revoked/expired
+// token. Shown persistently (not auto-cleared) since action is required.
+const authFailedStatusMsg = "Session expired or revoked — press L to log out, then run kino to sign in again"
+
+func (m *Model) notifyError(scope string, err error) tea.Cmd {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return nil
+	}
+	if errors.Is(err, domain.ErrAuthFailed) {
+		return m.notify(noticeAlert, authFailedStatusMsg)
+	}
+	return m.notify(noticeError, fmt.Sprintf("%s: %v", scope, err))
+}
 
 // noticeKind classifies footer notifications. The kind decides styling and
 // lifetime — call sites never pick durations.

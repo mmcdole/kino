@@ -32,6 +32,46 @@ func (m *Model) librariesKnown() bool {
 	return m.collection(catalog.Resource{Kind: catalog.Libraries}).Known
 }
 
+func (m *Model) loadResource(r catalog.Resource, policy catalog.Policy, background bool) tea.Cmd {
+	owner := viewOwner(r)
+	if background {
+		owner = syncOwner(r)
+	}
+	if old, ok := m.requests.active[owner]; ok && policy != catalog.Refresh && old.Resource.Version == r.Version {
+		return nil
+	}
+	req := m.requests.begin(owner, r, policy)
+	m.track(r)
+	m.updateResourceFeedback(r)
+	return loadCmd(m.catalog, req)
+}
+
+// handleLoadDone reports the outcome of this model's own request. Content
+// and loading state come from the catalog's published state instead.
+func (m *Model) handleLoadDone(msg loadDoneMsg) tea.Cmd {
+	if !m.requests.owns(msg.Request) {
+		return nil
+	}
+	m.requests.finish(msg.Request)
+	r := msg.Request.Resource
+	var cmds []tea.Cmd
+	if msg.Err != nil {
+		if p := m.pendingSelect; p != nil && p.key == r.Key() {
+			m.pendingSelect = nil
+		}
+		cmds = append(cmds, m.notifyError("Loading "+m.resourceName(r), msg.Err))
+	} else {
+		// The load has settled, including from a fresh cache that publishes
+		// no new state, so a pending selection is decided now.
+		cmds = append(cmds, m.trySelect(r.Key(), true))
+	}
+	if msg.Warning != nil {
+		cmds = append(cmds, m.notifyError("Loaded "+m.resourceName(r), msg.Warning))
+	}
+	m.updateResourceFeedback(r)
+	return tea.Batch(cmds...)
+}
+
 // applyState records a published state and projects content that changed.
 func (m *Model) applyState(st catalog.State) tea.Cmd {
 	r := st.Resource
@@ -103,4 +143,30 @@ func (m *Model) syncLibraries(policy catalog.Policy) tea.Cmd {
 	}
 	cmds = append(cmds, m.loadResource(catalog.Resource{Kind: catalog.Playlists}, policy, true))
 	return tea.Batch(cmds...)
+}
+
+func (m *Model) topResource() (catalog.Resource, bool) {
+	if col := m.columns.Top(); col != nil {
+		r, ok := m.resource(col.ContentID())
+		return r, ok
+	}
+	return catalog.Resource{}, false
+}
+
+func (m *Model) resourceName(r catalog.Resource) string {
+	if r.Kind == catalog.Libraries {
+		return "libraries"
+	}
+	if r.Kind == catalog.Playlists {
+		return "playlists"
+	}
+	for i := 0; i < m.columns.Len(); i++ {
+		if col := m.columns.Get(i); col.ContentID() == r.Key() {
+			return col.Title()
+		}
+	}
+	if lib := m.findLibrary(r.LibraryID); lib != nil {
+		return lib.Name
+	}
+	return "items"
 }

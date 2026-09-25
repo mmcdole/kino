@@ -6,9 +6,15 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
 	"github.com/mmcdole/kino/internal/domain"
-	"github.com/mmcdole/kino/internal/search"
 	"github.com/mmcdole/kino/internal/tui/components"
 )
+
+func (m *Model) cancelPendingModal() {
+	if m.overlay == overlayPlaylists && m.playlistModal.IsLoading() {
+		m.overlay = overlayNone
+	}
+	m.requests.stop("playlist-modal")
+}
 
 // pendingSelect selects id in the column showing key once that column has
 // content, then opens the item if open is set. Search results use it to reach
@@ -118,20 +124,6 @@ func (m *Model) trySelect(key string, final bool) tea.Cmd {
 		return cmd
 	}
 	return m.notify(noticeError, "Navigation failed")
-}
-
-func (m *Model) navigateToSearchResult(item search.Entry) tea.Cmd {
-	m.pendingSelect = nil
-	m.cancelPendingModal()
-	m.popTo(1)
-	lib := m.findLibrary(item.LibraryID)
-	if lib == nil {
-		return m.notify(noticeError, "Library no longer available")
-	}
-	m.libraryColumn().SetSelectedByID(lib.ID)
-	r := catalog.LibraryResource(*lib)
-	m.pendingSelect = &pendingSelect{key: r.Key(), id: item.Item.GetID(), open: item.Type == domain.MediaTypeShow}
-	return tea.Batch(m.pushColumn(r, lib.Name), m.trySelect(r.Key(), false))
 }
 
 // Revalidate the navigation ancestry when an authoritative parent snapshot

@@ -1,14 +1,18 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/mmcdole/kino/internal/catalog"
 	"github.com/mmcdole/kino/internal/domain"
 	"github.com/mmcdole/kino/internal/search"
+	"github.com/mmcdole/kino/internal/store"
 )
 
 func TestGlobalSearchRapidTypingKeepsModalAndResultsStable(t *testing.T) {
@@ -78,5 +82,56 @@ func TestGlobalSearchRapidTypingKeepsModalAndResultsStable(t *testing.T) {
 	m = updateModel(m, searchResultsMsg{Request: current, Results: results("Late", 10)})
 	if m.overlay == overlaySearch || m.globalSearch.ResultCount() != 0 {
 		t.Fatal("late messages changed a closed search")
+	}
+}
+
+// A search result in a library whose snapshot is cached and fresh must still
+// be selected: the catalog answers from cache without publishing a new state.
+func TestSearchNavigationCompletesFromFreshCache(t *testing.T) {
+	m := testModel(t)
+	cache := store.NewMemory()
+	backend := &browsingBackend{gate: make(chan struct{})} // any fetch would block
+	svc := catalog.NewService(context.Background(), backend, cache)
+	defer svc.Close()
+	m.catalog = svc
+	r := catalog.LibraryResource(m.libraries[0])
+	if err := cache.Save(r.Key(), domain.CachedList{
+		Items: []domain.ListItem{
+			&domain.MediaItem{ID: "first", Title: "First"},
+			&domain.MediaItem{ID: "target", Title: "Prince of Darkness"},
+		},
+		FetchedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Background sync has already published the library's snapshot.
+	m = await(t, m, svc, start(m.loadResource(r, catalog.Browse, true)))
+
+	entry := search.Entry{Item: &domain.MediaItem{ID: "target", Title: "Prince of Darkness"}, LibraryID: r.LibraryID, Type: domain.MediaTypeMovie}
+	m = await(t, m, svc, start(m.navigateToSearchResult(entry)))
+	if m.pendingSelect != nil {
+		t.Fatal("navigation still waiting for a state the catalog never publishes")
+	}
+	if got := m.columns.Top().SelectedMediaItem(); got == nil || got.ID != "target" {
+		t.Fatalf("search result not selected: %+v", got)
+	}
+}
+
+// A show search result is selected in its library and then opened.
+func TestSearchNavigationOpensShow(t *testing.T) {
+	m := testModel(t)
+	r := catalog.LibraryResource(m.libraries[0])
+	entry := search.Entry{Item: &domain.Show{ID: "show", Title: "Show"}, LibraryID: r.LibraryID, Type: domain.MediaTypeShow}
+	m.navigateToSearchResult(entry)
+
+	st := state(r, 1)
+	st.Snapshot.Items = []domain.ListItem{&domain.Show{ID: "other", Title: "Other"}, &domain.Show{ID: "show", Title: "Show"}}
+	m = publish(m, st)
+	if m.pendingSelect != nil {
+		t.Fatal("selection still pending after its content arrived")
+	}
+	seasons, ok := m.resource(m.columns.Top().ContentID())
+	if !ok || seasons.Kind != catalog.Seasons || seasons.ShowID != "show" {
+		t.Fatalf("show not opened: %+v", seasons)
 	}
 }
