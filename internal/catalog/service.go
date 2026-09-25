@@ -43,7 +43,8 @@ type Service struct {
 	ctx            context.Context
 	cancel         context.CancelFunc
 	wg             sync.WaitGroup
-	mu             sync.Mutex // request ownership and commit fences; never acquired by the UI
+	mu             sync.Mutex // request ownership and revisions; never held across I/O
+	commit         sync.Mutex // orders cache writes: fetch commits and mutation reconciliation
 	mutations      chan struct{}
 	active         map[string]*flight
 	revisions      map[string]uint64
@@ -234,6 +235,18 @@ func (s *Service) run(r Resource, f *flight, cached Snapshot, canCheckCount bool
 		result.FetchedAt = s.now()
 		result.Version = r.Version
 	}
+	// Writes are ordered by the commit lock, so the disk write happens without
+	// holding s.mu and cache hits for other collections never wait on it.
+	s.commit.Lock()
+	defer s.commit.Unlock()
+	s.mu.Lock()
+	owned := s.active[r.Key()] == f && f.ctx.Err() == nil
+	s.mu.Unlock()
+	var saveErr error
+	if owned && err == nil && !result.FromCache {
+		saveErr = s.cache.Save(r.Key(), result.CachedList)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.active[r.Key()] != f {
@@ -244,11 +257,9 @@ func (s *Service) run(r Resource, f *flight, cached Snapshot, canCheckCount bool
 		result.Validated = true
 		s.revisions[r.Key()]++
 		result.Revision = s.revisions[r.Key()]
-		if !result.FromCache {
-			if saveErr := s.cache.Save(r.Key(), result.CachedList); saveErr != nil {
-				result.Warning = fmt.Errorf("cache write failed: %w", saveErr)
-				s.invalid[r.Key()] = true
-			}
+		if saveErr != nil {
+			result.Warning = fmt.Errorf("cache write failed: %w", saveErr)
+			s.invalid[r.Key()] = true
 		}
 		if result.Warning == nil {
 			s.cacheRevisions[r.Key()] = result.Revision
