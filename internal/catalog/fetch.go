@@ -11,11 +11,7 @@ func (s *Service) fetch(ctx context.Context, r Resource, progress progressFunc) 
 	switch r.Kind {
 	case Libraries:
 		libs, err := s.backend.GetLibraries(ctx)
-		items := make([]domain.ListItem, len(libs))
-		for i := range libs {
-			items[i] = &libs[i]
-		}
-		return items, err
+		return domain.LibraryItems(libs), err
 	case Movies:
 		items, err := fetchAll(ctx, func(ctx context.Context, offset, limit int) ([]*domain.MediaItem, int, error) {
 			return s.backend.GetMovies(ctx, r.LibraryID, offset, limit)

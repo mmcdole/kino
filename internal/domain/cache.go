@@ -45,3 +45,12 @@ func ListItems[T ListItem](items []T) []ListItem {
 	}
 	return out
 }
+
+// LibraryItems widens a slice of libraries, pointing into the original slice.
+func LibraryItems(libs []Library) []ListItem {
+	items := make([]ListItem, len(libs))
+	for i := range libs {
+		items[i] = &libs[i]
+	}
+	return items
+}

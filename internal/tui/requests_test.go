@@ -10,7 +10,6 @@ import (
 	"github.com/mmcdole/kino/internal/catalog"
 	"github.com/mmcdole/kino/internal/domain"
 	"github.com/mmcdole/kino/internal/search"
-	"github.com/mmcdole/kino/internal/tui/components"
 )
 
 func testModel(t *testing.T) *Model {
@@ -18,7 +17,7 @@ func testModel(t *testing.T) *Model {
 	m := NewModel(context.Background(), nil, nil, nil, search.NewIndex(), Options{})
 	t.Cleanup(m.requests.cancel)
 	m.Libraries = []domain.Library{{ID: "a", Name: "A", Type: "movie"}, {ID: "b", Name: "B", Type: "movie"}}
-	m.libraryColumn().SetItems(components.WrapLibraries(m.allLibraryEntries()))
+	m.libraryColumn().SetItems(domain.LibraryItems(m.allLibraryEntries()))
 	return m
 }
 func snapshot(r catalog.Resource, revision uint64, ids ...string) catalog.Snapshot {

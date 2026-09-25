@@ -4,7 +4,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
 	"github.com/mmcdole/kino/internal/domain"
-	"github.com/mmcdole/kino/internal/tui/components"
 )
 
 // Collections hold the catalog's latest published state. The catalog decides
@@ -81,7 +80,7 @@ func (m *Model) project(snapshot catalog.Snapshot) tea.Cmd {
 				m.Libraries = append(m.Libraries, *lib)
 			}
 		}
-		m.libraryColumn().ReplaceItems(components.WrapLibraries(m.allLibraryEntries()))
+		m.libraryColumn().ReplaceItems(domain.LibraryItems(m.allLibraryEntries()))
 	} else {
 		for i := 0; i < m.ColumnStack.Len(); i++ {
 			if col := m.ColumnStack.Get(i); col.ContentID() == r.Key() {
