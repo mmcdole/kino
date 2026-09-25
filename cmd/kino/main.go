@@ -33,6 +33,11 @@ type snapshotCache interface {
 	io.Closer
 }
 
+// session signs out by clearing the credentials in the loaded config file.
+type session struct{ cfg *config.Config }
+
+func (s session) Logout() error { return s.cfg.ClearServer() }
+
 // clearSpinnerLine clears the spinner line from the terminal
 const clearSpinnerLine = "\r                                    \r"
 
@@ -104,7 +109,8 @@ func run() error {
 	catalogSvc := catalog.NewService(ctx, client, cache)
 	defer catalogSvc.Close()
 	playbackSvc := player.NewService(launcher, client, logger)
-	model := tui.NewModel(ctx, catalogSvc, playbackSvc, search.NewIndex(), cfg.UI)
+	opts := tui.Options{ShowWatchStatus: cfg.UI.ShowWatchStatus, ShowLibraryCounts: cfg.UI.ShowLibraryCounts}
+	model := tui.NewModel(ctx, catalogSvc, playbackSvc, session{cfg}, search.NewIndex(), opts)
 
 	// Run the TUI
 	p := tea.NewProgram(

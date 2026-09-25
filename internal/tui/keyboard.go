@@ -26,7 +26,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		switch {
 		case key.Matches(msg, Keys.Confirm):
 			m.loggingOut = true
-			return LogoutCmd()
+			return LogoutCmd(m.Session)
 		case key.Matches(msg, Keys.Deny):
 			m.overlay = overlayNone
 		}

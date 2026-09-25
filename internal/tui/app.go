@@ -8,7 +8,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
-	"github.com/mmcdole/kino/internal/config"
 	"github.com/mmcdole/kino/internal/domain"
 	"github.com/mmcdole/kino/internal/search"
 	"github.com/mmcdole/kino/internal/tui/components"
@@ -69,7 +68,8 @@ type Model struct {
 	Catalog     Catalog
 	PlaybackSvc Playback
 	SearchIndex *search.Index
-	UIConfig    config.UIConfig
+	Session     Session
+	Options     Options
 
 	ColumnStack   *ColumnStack
 	Inspector     components.Inspector
@@ -84,16 +84,16 @@ type Model struct {
 	indicators    map[string]uint64 // key → server attempt whose spinner is due
 	requests      *requests
 
-	notice                    Notice
-	noticeSeq                 int
-	searchSeq                 uint64
+	notice        Notice
+	noticeSeq     int
+	searchSeq     uint64
 	navPlan       *NavPlan
 	confirmDelete *domain.Playlist // the playlist overlayConfirmDelete asks about
 }
 
-func NewModel(ctx context.Context, svc Catalog, playback Playback, index *search.Index, ui config.UIConfig) *Model {
+func NewModel(ctx context.Context, svc Catalog, playback Playback, session Session, index *search.Index, opts Options) *Model {
 	m := &Model{
-		Catalog: svc, PlaybackSvc: playback, SearchIndex: index, UIConfig: ui,
+		Catalog: svc, PlaybackSvc: playback, Session: session, SearchIndex: index, Options: opts,
 		ColumnStack:   NewColumnStack(),
 		Inspector:     components.NewInspector(),
 		GlobalSearch:  components.NewGlobalSearch(),
@@ -108,8 +108,8 @@ func NewModel(ctx context.Context, svc Catalog, playback Playback, index *search
 	col := components.NewListColumn("Libraries", components.ColumnOptions{})
 	col.SetContentID(root.Key())
 	col.SetFeedback(components.CollectionFeedback{Pending: true})
-	col.SetShowWatchStatus(ui.ShowWatchStatus)
-	col.SetShowLibraryCounts(ui.ShowLibraryCounts)
+	col.SetShowWatchStatus(opts.ShowWatchStatus)
+	col.SetShowLibraryCounts(opts.ShowLibraryCounts)
 	m.ColumnStack.Reset(col)
 	m.track(root)
 	return m

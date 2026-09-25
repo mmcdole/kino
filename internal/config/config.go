@@ -242,16 +242,6 @@ func CacheDir(serverURL, userID string) string {
 	return filepath.Join(DefaultCachePath(), hex.EncodeToString(hash[:6]))
 }
 
-// ClearServerConfig signs out by clearing the server and credentials in the
-// config file on disk.
-func ClearServerConfig() error {
-	cfg, err := Load()
-	if err != nil {
-		return err
-	}
-	return cfg.ClearServer()
-}
-
 // ClearCache removes all cached data
 func ClearCache() error {
 	cachePath := DefaultCachePath()

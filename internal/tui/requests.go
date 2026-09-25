@@ -16,6 +16,19 @@ type Catalog interface {
 	Mutate(context.Context, catalog.Mutation) (catalog.Change, error)
 	PlaylistMembership(context.Context, string) (catalog.Membership, error)
 }
+
+// Session ends the signed-in session. The cache is cleared by the caller
+// after catalog work has drained.
+type Session interface {
+	Logout() error
+}
+
+// Options are the user's display preferences.
+type Options struct {
+	ShowWatchStatus   bool
+	ShowLibraryCounts bool
+}
+
 type Playback interface {
 	Play(context.Context, domain.MediaItem) error
 	Resume(context.Context, domain.MediaItem) error

@@ -344,4 +344,3 @@ func appendSortTag(parts []styles.RowPart, tag string, width int) []styles.RowPa
 func formatMonthYear(ts int64) string {
 	return time.Unix(ts, 0).Format("Jan 2006")
 }
-
