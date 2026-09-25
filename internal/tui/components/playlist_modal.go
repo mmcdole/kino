@@ -20,7 +20,6 @@ type PlaylistChange struct {
 // PlaylistModal is a modal for managing playlist membership
 type PlaylistModal struct {
 	loading    bool
-	visible    bool
 	item       *domain.MediaItem
 	playlists  []*domain.Playlist
 	membership map[string]bool // Current membership: playlist ID -> is member
@@ -51,7 +50,6 @@ func NewPlaylistModal() PlaylistModal {
 // Show displays the modal with the given playlists and item
 func (m *PlaylistModal) Show(playlists []*domain.Playlist, membership map[string]bool, item *domain.MediaItem) {
 	m.loading = false
-	m.visible = true
 	m.playlists = playlists
 	m.item = item
 	m.membership = membership
@@ -72,19 +70,6 @@ func (m *PlaylistModal) BeginLoading(item *domain.MediaItem) {
 	m.loading = true
 }
 func (m PlaylistModal) IsLoading() bool { return m.loading }
-
-// Hide dismisses the modal
-func (m *PlaylistModal) Hide() {
-	m.loading = false
-	m.visible = false
-	m.createMode = false
-	m.newTitle.Blur()
-}
-
-// IsVisible returns whether the modal is shown
-func (m *PlaylistModal) IsVisible() bool {
-	return m.visible
-}
 
 // IsCreateMode returns whether we're creating a new playlist
 func (m *PlaylistModal) IsCreateMode() bool {
@@ -122,12 +107,9 @@ func (m *PlaylistModal) GetChanges() []PlaylistChange {
 	return changes
 }
 
-// HandleKeyMsg processes a key message, returns (handled, shouldClose, shouldCreate)
-func (m *PlaylistModal) HandleKeyMsg(msg tea.KeyMsg) (handled bool, shouldClose bool, shouldCreate bool) {
-	if !m.visible {
-		return false, false, false
-	}
-
+// HandleKeyMsg processes a key message. Submit applies the checkbox changes;
+// create reports that a new playlist was named.
+func (m *PlaylistModal) HandleKeyMsg(msg tea.KeyMsg) (outcome Outcome, create bool) {
 	// Handle create mode (text input active)
 	if m.createMode {
 		switch {
@@ -135,18 +117,18 @@ func (m *PlaylistModal) HandleKeyMsg(msg tea.KeyMsg) (handled bool, shouldClose 
 			m.createMode = false
 			m.newTitle.Blur()
 			m.newTitle.SetValue("")
-			return true, false, false
+			return Continue, false
 		case key.Matches(msg, PlaylistModalKeys.Enter):
 			if m.newTitle.Value() != "" {
 				m.createMode = false
 				m.newTitle.Blur()
-				return true, false, true // Signal to create playlist
+				return Submit, true
 			}
-			return true, false, false
+			return Continue, false
 		default:
 			// Route to textinput
 			m.newTitle, _ = m.newTitle.Update(msg)
-			return true, false, false
+			return Continue, false
 		}
 	}
 
@@ -158,12 +140,12 @@ func (m *PlaylistModal) HandleKeyMsg(msg tea.KeyMsg) (handled bool, shouldClose 
 		if m.cursor < maxIdx {
 			m.cursor++
 		}
-		return true, false, false
+		return Continue, false
 	case key.Matches(msg, PlaylistModalKeys.Up):
 		if m.cursor > 0 {
 			m.cursor--
 		}
-		return true, false, false
+		return Continue, false
 	case key.Matches(msg, PlaylistModalKeys.Toggle):
 		// Toggle playlist membership or enter create mode
 		if m.cursor < len(m.playlists) {
@@ -175,12 +157,12 @@ func (m *PlaylistModal) HandleKeyMsg(msg tea.KeyMsg) (handled bool, shouldClose 
 			m.createMode = true
 			m.newTitle.Focus()
 		}
-		return true, false, false
+		return Continue, false
 	case key.Matches(msg, PlaylistModalKeys.Create):
 		// Quick shortcut to create new
 		m.createMode = true
 		m.newTitle.Focus()
-		return true, false, false
+		return Continue, false
 	case key.Matches(msg, PlaylistModalKeys.Enter):
 		// Select/toggle or confirm
 		if m.cursor < len(m.playlists) {
@@ -191,20 +173,15 @@ func (m *PlaylistModal) HandleKeyMsg(msg tea.KeyMsg) (handled bool, shouldClose 
 			m.createMode = true
 			m.newTitle.Focus()
 		}
-		return true, false, false
+		return Continue, false
 	case key.Matches(msg, PlaylistModalKeys.Escape) || msg.String() == "q":
-		return true, true, false
+		return Submit, false
 	}
-
-	return true, false, false // Consume all keys when visible
+	return Continue, false
 }
 
 // View renders the playlist modal
 func (m *PlaylistModal) View() string {
-	if !m.visible {
-		return ""
-	}
-
 	if m.loading {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, styles.ModalStyle.Render("Loading playlists…\n\nEsc: Cancel"))
 	}

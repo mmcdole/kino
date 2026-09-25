@@ -13,7 +13,7 @@ import (
 
 func TestGlobalSearchRapidTypingKeepsModalAndResultsStable(t *testing.T) {
 	m := updateModel(testModel(t), tea.WindowSizeMsg{Width: 120, Height: 40})
-	m.GlobalSearch.Show()
+	m.handleGlobalSearch()
 	position := func() int { return strings.Index(ansi.Strip(m.View()), "Global Search") }
 	anchor := position()
 	assertStable := func() {
@@ -53,7 +53,7 @@ func TestGlobalSearchRapidTypingKeepsModalAndResultsStable(t *testing.T) {
 		t.Fatal("stale search messages flashed or replaced retained results")
 	}
 	m = updateModel(m, tea.KeyMsg{Type: tea.KeyEnter})
-	if !m.GlobalSearch.IsVisible() {
+	if m.overlay != overlaySearch {
 		t.Fatal("Enter activated a result while the query was pending")
 	}
 	current := startQuery()
@@ -76,7 +76,7 @@ func TestGlobalSearchRapidTypingKeepsModalAndResultsStable(t *testing.T) {
 	m = updateModel(m, tea.KeyMsg{Type: tea.KeyEsc})
 	m = updateModel(m, ShowSearchLoadingMsg{Seq: m.searchSeq - 1})
 	m = updateModel(m, SearchResultsMsg{Request: current, Results: results("Late", 10)})
-	if m.GlobalSearch.IsVisible() || m.GlobalSearch.ResultCount() != 0 {
+	if m.overlay == overlaySearch || m.GlobalSearch.ResultCount() != 0 {
 		t.Fatal("late messages changed a closed search")
 	}
 }

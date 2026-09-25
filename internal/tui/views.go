@@ -20,16 +20,13 @@ func (m *Model) View() string {
 		return "Loading..."
 	}
 
-	// Handle modal states
-	if m.State == StateHelp {
+	// Full-screen overlays replace the columns entirely
+	switch m.overlay {
+	case overlayHelp:
 		return m.renderHelp()
-	}
-
-	if m.State == StateConfirmLogout {
+	case overlayConfirmLogout:
 		return m.renderLogoutConfirmation()
-	}
-
-	if m.State == StateConfirmDeletePlaylist {
+	case overlayConfirmDelete:
 		return m.renderDeletePlaylistConfirmation()
 	}
 
@@ -84,32 +81,20 @@ func (m *Model) View() string {
 		footer,
 	)
 
-	// Overlay omnibar if visible
-	if m.GlobalSearch.IsVisible() {
-		view = lipgloss.Place(m.Width, m.Height,
-			lipgloss.Center, lipgloss.Center,
-			m.GlobalSearch.View())
+	// Modal overlays are centered over the columns
+	var modal string
+	switch m.overlay {
+	case overlaySearch:
+		modal = m.GlobalSearch.View()
+	case overlaySort:
+		modal = m.SortModal.View()
+	case overlayPlaylists:
+		modal = m.PlaylistModal.View()
+	case overlayInput:
+		modal = m.InputModal.View()
 	}
-
-	// Overlay sort modal if visible
-	if m.SortModal.IsVisible() {
-		view = lipgloss.Place(m.Width, m.Height,
-			lipgloss.Center, lipgloss.Center,
-			m.SortModal.View())
-	}
-
-	// Overlay playlist modal if visible
-	if m.PlaylistModal.IsVisible() {
-		view = lipgloss.Place(m.Width, m.Height,
-			lipgloss.Center, lipgloss.Center,
-			m.PlaylistModal.View())
-	}
-
-	// Overlay input modal if visible
-	if m.InputModal.IsVisible() {
-		view = lipgloss.Place(m.Width, m.Height,
-			lipgloss.Center, lipgloss.Center,
-			m.InputModal.View())
+	if modal != "" {
+		view = lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, modal)
 	}
 
 	return view
@@ -232,7 +217,7 @@ func (m *Model) renderLogoutConfirmation() string {
 
 // renderDeletePlaylistConfirmation renders the playlist delete confirmation
 func (m *Model) renderDeletePlaylistConfirmation() string {
-	name := styles.Truncate(m.pendingDeletePlaylistName, 30)
+	name := styles.Truncate(m.confirmDelete.Title, 30)
 	modal := fmt.Sprintf(`
         Delete Playlist?
 

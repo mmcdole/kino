@@ -34,7 +34,7 @@ func searchTitlePosition(t *testing.T, view string) (int, int) {
 
 func TestSearchModalStaysAnchoredAcrossResultStates(t *testing.T) {
 	m := NewGlobalSearch()
-	m.Show()
+	m.Reset()
 	m.SetSize(120, 40)
 	row, col := searchTitlePosition(t, lipgloss.Place(120, 40, lipgloss.Center, lipgloss.Center, m.View()))
 	for _, count := range []int{1, 10, 15, 0} {
@@ -52,15 +52,15 @@ func TestSearchModalStaysAnchoredAcrossResultStates(t *testing.T) {
 
 func TestSearchRetainsResultsWhilePendingWithoutActivatingThem(t *testing.T) {
 	m := NewGlobalSearch()
-	m.Show()
+	m.Reset()
 	m.SetSize(80, 24)
 	m.SetResults(searchResults(3))
 	m.SetLoading(true)
 	if !strings.Contains(ansi.Strip(m.View()), "Movie 00") {
 		t.Fatal("typing erased the previous results")
 	}
-	_, _, selected := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if selected || m.Selected() != nil {
+	_, _, outcome := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if outcome == Submit || m.Selected() != nil {
 		t.Fatal("pending results can be activated for a different query")
 	}
 }
@@ -68,7 +68,7 @@ func TestSearchRetainsResultsWhilePendingWithoutActivatingThem(t *testing.T) {
 func TestSearchFitsTerminalWithLongInput(t *testing.T) {
 	for _, size := range [][2]int{{180, 50}, {80, 24}, {40, 16}, {24, 10}} {
 		m := NewGlobalSearch()
-		m.Show()
+		m.Reset()
 		m.SetSize(size[0], size[1])
 		m.input.SetValue(strings.Repeat("界", 80))
 		m.SetResults(searchResults(20))
@@ -81,7 +81,7 @@ func TestSearchFitsTerminalWithLongInput(t *testing.T) {
 
 func TestSearchScrollingSurvivesResizeAndReindex(t *testing.T) {
 	m := NewGlobalSearch()
-	m.Show()
+	m.Reset()
 	m.SetSize(120, 40)
 	m.input.SetValue("movie")
 	results := searchResults(20)
@@ -108,7 +108,7 @@ func TestSearchScrollingSurvivesResizeAndReindex(t *testing.T) {
 
 func TestSearchActivityDoesNotFlashForCompletedQueries(t *testing.T) {
 	m := NewGlobalSearch()
-	m.Show()
+	m.Reset()
 	m.SetSize(80, 24)
 	m.input.SetValue("movie")
 	m.SetLoading(true)

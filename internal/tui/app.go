@@ -18,16 +18,6 @@ import (
 // token. Shown persistently (not auto-cleared) since action is required.
 const authFailedStatusMsg = "Session expired or revoked — press L to log out, then run kino to sign in again"
 
-// ApplicationState represents the current state of the application
-type ApplicationState int
-
-const (
-	StateBrowsing ApplicationState = iota
-	StateHelp
-	StateConfirmLogout
-	StateConfirmDeletePlaylist
-)
-
 // Layout proportions for Miller Columns
 const (
 	// 3-Column Smart Ratios (Inspector visible)
@@ -68,7 +58,7 @@ func (m *Model) allLibraryEntries() []domain.Library {
 }
 
 type Model struct {
-	State         ApplicationState
+	overlay       overlay
 	Ready         bool
 	Width, Height int
 	SpinnerFrame  int
@@ -97,9 +87,8 @@ type Model struct {
 	notice                    Notice
 	noticeSeq                 int
 	searchSeq                 uint64
-	navPlan                   *NavPlan
-	pendingDeletePlaylistID   string
-	pendingDeletePlaylistName string
+	navPlan       *NavPlan
+	confirmDelete *domain.Playlist // the playlist overlayConfirmDelete asks about
 }
 
 func NewModel(ctx context.Context, svc Catalog, playback Playback, index *search.Index, ui config.UIConfig) *Model {
@@ -144,7 +133,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		if result, ok := msg.(LogoutCompleteMsg); ok {
 			if result.Error != nil {
 				m.loggingOut = false
-				m.State = StateBrowsing
+				m.overlay = overlayNone
 				return m.notifyError("Logout failed", result.Error)
 			}
 			m.LoggedOut = true
@@ -180,7 +169,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		}
 		m.requests.finish(msg.Request)
 		if msg.Err != nil {
-			m.PlaylistModal.Hide()
+			m.overlay = overlayNone
 			return m.notifyError("Loading playlists", msg.Err)
 		}
 		m.PlaylistModal.Show(msg.Membership.Playlists, msg.Membership.Present, &msg.Item)
@@ -196,7 +185,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		}
 		return nil
 	case SearchDebounceMsg:
-		if !m.GlobalSearch.IsVisible() || msg.Seq != m.searchSeq {
+		if m.overlay != overlaySearch || msg.Seq != m.searchSeq {
 			return nil
 		}
 		req := m.requests.begin("search", catalog.Resource{}, catalog.Browse)
@@ -205,35 +194,32 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			return SearchResultsMsg{Request: req, Results: m.SearchIndex.Search(req.ctx, msg.Query, libraries)}
 		}
 	case ShowSearchLoadingMsg:
-		if m.GlobalSearch.IsVisible() && msg.Seq == m.searchSeq {
+		if m.overlay == overlaySearch && msg.Seq == m.searchSeq {
 			m.GlobalSearch.ShowLoading()
 		}
 		return nil
 	case SearchResultsMsg:
-		if !m.requests.owns(msg.Request) || !m.GlobalSearch.IsVisible() {
+		if !m.requests.owns(msg.Request) || m.overlay != overlaySearch {
 			return nil
 		}
 		m.requests.finish(msg.Request)
 		m.GlobalSearch.SetResults(msg.Results)
 		return nil
 	case SearchIndexChangedMsg:
-		if m.GlobalSearch.IsVisible() {
+		if m.overlay == overlaySearch {
 			return m.scheduleSearch()
 		}
 		return nil
 	}
-	// Bubble Tea text-input cursor messages belong to the active modal too.
-	if m.GlobalSearch.IsVisible() {
-		var cmd tea.Cmd
+	// Bubble Tea text-input cursor messages belong to the open overlay too.
+	var cmd tea.Cmd
+	switch m.overlay {
+	case overlaySearch:
 		m.GlobalSearch, cmd, _ = m.GlobalSearch.Update(msg)
-		return cmd
-	}
-	if m.InputModal.IsVisible() {
-		var cmd tea.Cmd
+	case overlayInput:
 		m.InputModal, cmd, _ = m.InputModal.Update(msg)
-		return cmd
 	}
-	return nil
+	return cmd
 }
 
 // handleLoadDone reports the outcome of this model's own request. Content

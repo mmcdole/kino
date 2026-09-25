@@ -127,9 +127,10 @@ func TestModalDismissalAndReplacementRejectLateResponses(t *testing.T) {
 	m := testModel(t)
 	old := m.requests.begin("playlist-modal", catalog.Resource{}, catalog.Browse)
 	m.PlaylistModal.BeginLoading(&domain.MediaItem{ID: "old"})
+	m.overlay = overlayPlaylists
 	m.cancelPendingModal()
 	m = updateModel(m, PlaylistModalDataMsg{Request: old, Item: domain.MediaItem{ID: "old"}})
-	if m.PlaylistModal.IsVisible() {
+	if m.overlay == overlayPlaylists {
 		t.Fatal("dismissed modal reopened")
 	}
 	newer := m.requests.begin("playlist-modal", catalog.Resource{}, catalog.Browse)
@@ -207,5 +208,24 @@ func TestPlaylistRemovalsForDifferentItemsAreIndependent(t *testing.T) {
 	m.beginMutation(catalog.Mutation{Kind: catalog.RemoveFromPlaylist, PlaylistID: "p", ItemID: "a"})
 	if m.notice.Text == "" {
 		t.Fatal("duplicate removal was ignored silently")
+	}
+}
+
+func TestOverlayReceivesKeysBeforeColumnsAndGlobalKeys(t *testing.T) {
+	m := testModel(t)
+	m.handleGlobalSearch()
+	m = updateModel(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	if m.overlay != overlaySearch || m.GlobalSearch.Query() != "q" {
+		t.Fatal("q quit or left search instead of typing into it")
+	}
+	m = updateModel(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.overlay != overlayNone {
+		t.Fatal("esc did not close search")
+	}
+
+	m.overlay, m.confirmDelete = overlayConfirmDelete, &domain.Playlist{ID: "p", Title: "P"}
+	m = updateModel(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.overlay != overlayNone || m.confirmDelete != nil || m.ColumnStack.Len() != 1 {
+		t.Fatal("esc on a confirmation did more than cancel it")
 	}
 }

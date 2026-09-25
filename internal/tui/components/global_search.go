@@ -23,7 +23,6 @@ type GlobalSearch struct {
 	results        []search.FilterResult
 	cursor         int
 	offset         int
-	visible        bool
 	width          int
 	height         int
 	prevQuery      string
@@ -45,12 +44,11 @@ func NewGlobalSearch() GlobalSearch {
 	}
 }
 
-// Show makes the global search visible and focuses the input
-func (o *GlobalSearch) Show() {
+// Reset clears the query and results and focuses the input.
+func (o *GlobalSearch) Reset() {
 	o.loading = false
 	o.loadingVisible = false
 	o.resultsQuery = ""
-	o.visible = true
 	o.input.Focus()
 	o.input.SetValue("")
 	o.input.Placeholder = "Type to search..."
@@ -60,17 +58,6 @@ func (o *GlobalSearch) Show() {
 	o.cursor = 0
 	o.offset = 0
 	o.prevQuery = ""
-}
-
-// Hide hides the global search
-func (o *GlobalSearch) Hide() {
-	o.visible = false
-	o.input.Blur()
-}
-
-// IsVisible returns true if the global search is visible
-func (o GlobalSearch) IsVisible() bool {
-	return o.visible
 }
 
 // SetResults replaces the results, preserving selection when the same query is reindexed.
@@ -151,12 +138,8 @@ func (o GlobalSearch) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-// Update handles messages
-func (o GlobalSearch) Update(msg tea.Msg) (GlobalSearch, tea.Cmd, bool) {
-	if !o.visible {
-		return o, nil, false
-	}
-
+// Update handles messages. Submit means a result was chosen.
+func (o GlobalSearch) Update(msg tea.Msg) (GlobalSearch, tea.Cmd, Outcome) {
 	var cmd tea.Cmd
 	resultCount := o.ResultCount()
 
@@ -164,39 +147,39 @@ func (o GlobalSearch) Update(msg tea.Msg) (GlobalSearch, tea.Cmd, bool) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, GlobalSearchKeys.Escape):
-			o.Hide()
-			return o, nil, false
+			o.input.Blur()
+			return o, nil, Cancel
 
 		case key.Matches(msg, GlobalSearchKeys.Enter):
 			if o.Selected() != nil {
-				return o, nil, true
+				return o, nil, Submit
 			}
-			return o, nil, false
+			return o, nil, Continue
 
 		case key.Matches(msg, GlobalSearchKeys.Down):
 			if o.cursor < resultCount-1 {
 				o.cursor++
 				o.ensureVisible(o.layout().rows)
 			}
-			return o, nil, false
+			return o, nil, Continue
 
 		case key.Matches(msg, GlobalSearchKeys.Up):
 			if o.cursor > 0 {
 				o.cursor--
 				o.ensureVisible(o.layout().rows)
 			}
-			return o, nil, false
+			return o, nil, Continue
 
 		default:
 			// Pass to text input
 			o.input, cmd = o.input.Update(msg)
-			return o, cmd, false
+			return o, cmd, Continue
 		}
 	}
 
 	// Handle other messages
 	o.input, cmd = o.input.Update(msg)
-	return o, cmd, false
+	return o, cmd, Continue
 }
 
 func (o *GlobalSearch) ensureVisible(maxVisible int) {
@@ -230,7 +213,7 @@ func (o GlobalSearch) layout() searchLayout {
 
 // View renders the modal; its parent owns placement on the screen.
 func (o GlobalSearch) View() string {
-	if !o.visible || o.width == 0 || o.height == 0 {
+	if o.width == 0 || o.height == 0 {
 		return ""
 	}
 	if o.width < 12 || o.height < 9 {
