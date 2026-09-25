@@ -9,6 +9,13 @@ type ListItem interface {
 	GetTitle() string
 }
 
+// Credentials are what a successful sign-in returns.
+type Credentials struct {
+	Token    string // Access token for API calls
+	UserID   string // User identifier (required for Jellyfin)
+	Username string // Display username
+}
+
 // MediaType distinguishes content types
 type MediaType int
 

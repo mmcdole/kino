@@ -19,13 +19,6 @@ import (
 	"github.com/mmcdole/kino/internal/domain"
 )
 
-// AuthResult contains the result of a successful Jellyfin authentication
-type AuthResult struct {
-	Token    string
-	UserID   string
-	Username string
-}
-
 const (
 	authTimeout = 30 * time.Second
 )
@@ -53,7 +46,7 @@ func NewAuthFlow(deviceID string, logger *slog.Logger) *AuthFlow {
 
 // Run executes the Jellyfin username/password authentication flow.
 // It prompts the user for credentials and authenticates against the server.
-func (f *AuthFlow) Run(ctx context.Context, serverURL string) (*AuthResult, error) {
+func (f *AuthFlow) Run(ctx context.Context, serverURL string) (*domain.Credentials, error) {
 	serverURL = strings.TrimRight(serverURL, "/")
 
 	fmt.Println()
@@ -94,7 +87,7 @@ func (f *AuthFlow) Run(ctx context.Context, serverURL string) (*AuthResult, erro
 }
 
 // authenticate performs the actual authentication against the Jellyfin server
-func (f *AuthFlow) authenticate(ctx context.Context, serverURL, username, password string) (*AuthResult, error) {
+func (f *AuthFlow) authenticate(ctx context.Context, serverURL, username, password string) (*domain.Credentials, error) {
 	url := serverURL + "/Users/AuthenticateByName"
 
 	// Build request body
@@ -142,7 +135,7 @@ func (f *AuthFlow) authenticate(ctx context.Context, serverURL, username, passwo
 		return nil, fmt.Errorf("failed to parse auth response: %w", err)
 	}
 
-	return &AuthResult{
+	return &domain.Credentials{
 		Token:    authResp.AccessToken,
 		UserID:   authResp.User.ID,
 		Username: authResp.User.Name,

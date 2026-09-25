@@ -14,13 +14,6 @@ import (
 	"github.com/mmcdole/kino/internal/domain"
 )
 
-// AuthResult contains the result of a successful Plex authentication
-type AuthResult struct {
-	Token    string
-	UserID   string
-	Username string
-}
-
 // Plex-specific errors
 var (
 	// ErrPINExpired indicates the authentication PIN has expired
@@ -199,7 +192,7 @@ func NewAuthFlow(clientID string, logger *slog.Logger) *AuthFlow {
 
 // Run executes the Plex PIN-based authentication flow.
 // It prompts the user to visit plex.tv/link and enter the displayed PIN.
-func (f *AuthFlow) Run(ctx context.Context, serverURL string) (*AuthResult, error) {
+func (f *AuthFlow) Run(ctx context.Context, serverURL string) (*domain.Credentials, error) {
 	// Note: serverURL is not used for Plex auth since authentication
 	// happens via plex.tv, not the local server
 
@@ -228,7 +221,7 @@ func (f *AuthFlow) Run(ctx context.Context, serverURL string) (*AuthResult, erro
 	fmt.Println()
 	fmt.Println("Authentication successful!")
 
-	return &AuthResult{
+	return &domain.Credentials{
 		Token: token,
 		// Plex doesn't require UserID for API calls
 		UserID:   "",
