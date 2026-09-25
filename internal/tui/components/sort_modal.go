@@ -93,7 +93,6 @@ type SortSelection struct {
 
 // SortModal is a small popup for choosing sort order
 type SortModal struct {
-	visible     bool
 	options     []SortField
 	cursor      int
 	activeField SortField
@@ -102,7 +101,6 @@ type SortModal struct {
 
 // Show displays the modal with the given options and current sort state
 func (m *SortModal) Show(options []SortField, activeField SortField, activeDir SortDirection) {
-	m.visible = true
 	m.options = options
 	m.activeField = activeField
 	m.activeDir = activeDir
@@ -116,42 +114,23 @@ func (m *SortModal) Show(options []SortField, activeField SortField, activeDir S
 	}
 }
 
-// Hide dismisses the modal
-func (m *SortModal) Hide() {
-	m.visible = false
-}
-
-// IsVisible returns whether the modal is shown
-func (m SortModal) IsVisible() bool {
-	return m.visible
-}
-
-// HandleKeyMsg processes a key press, returns (handled, selection).
-// If selection is non-nil, the user confirmed a choice.
-func (m *SortModal) HandleKeyMsg(msg tea.KeyMsg) (handled bool, selection *SortSelection) {
-	if !m.visible {
-		return false, nil
-	}
-
+// HandleKeyMsg processes a key press. Submit carries the chosen sort.
+func (m *SortModal) HandleKeyMsg(msg tea.KeyMsg) (Outcome, SortSelection) {
 	switch {
 	case key.Matches(msg, SortModalKeys.Down):
 		if m.cursor < len(m.options)-1 {
 			m.cursor++
 		}
-		return true, nil
+		return Continue, SortSelection{}
 	case key.Matches(msg, SortModalKeys.Up):
 		if m.cursor > 0 {
 			m.cursor--
 		}
-		return true, nil
+		return Continue, SortSelection{}
 	case key.Matches(msg, SortModalKeys.Left):
-		chosen := m.options[m.cursor]
-		m.visible = false
-		return true, &SortSelection{Field: chosen, Direction: SortAsc}
+		return Submit, SortSelection{Field: m.options[m.cursor], Direction: SortAsc}
 	case key.Matches(msg, SortModalKeys.Right):
-		chosen := m.options[m.cursor]
-		m.visible = false
-		return true, &SortSelection{Field: chosen, Direction: SortDesc}
+		return Submit, SortSelection{Field: m.options[m.cursor], Direction: SortDesc}
 	case key.Matches(msg, SortModalKeys.Enter):
 		chosen := m.options[m.cursor]
 		dir := DefaultDirection(chosen)
@@ -162,19 +141,16 @@ func (m *SortModal) HandleKeyMsg(msg tea.KeyMsg) (handled bool, selection *SortS
 				dir = SortAsc
 			}
 		}
-		m.visible = false
-		return true, &SortSelection{Field: chosen, Direction: dir}
+		return Submit, SortSelection{Field: chosen, Direction: dir}
 	case key.Matches(msg, SortModalKeys.Escape), key.Matches(msg, SortModalKeys.Close):
-		m.visible = false
-		return true, nil
+		return Cancel, SortSelection{}
 	}
-
-	return true, nil // consume all keys when visible
+	return Continue, SortSelection{}
 }
 
 // View renders the sort modal
 func (m SortModal) View() string {
-	if !m.visible || len(m.options) == 0 {
+	if len(m.options) == 0 {
 		return ""
 	}
 

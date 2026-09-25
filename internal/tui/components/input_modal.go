@@ -9,9 +9,8 @@ import (
 
 // InputModal is a simple text input modal
 type InputModal struct {
-	visible bool
-	title   string
-	input   textinput.Model
+	title string
+	input textinput.Model
 }
 
 // NewInputModal creates a new input modal
@@ -31,21 +30,9 @@ func NewInputModal() InputModal {
 
 // Show displays the modal with a title
 func (m *InputModal) Show(title string) {
-	m.visible = true
 	m.title = title
 	m.input.SetValue("")
 	m.input.Focus()
-}
-
-// Hide dismisses the modal
-func (m *InputModal) Hide() {
-	m.visible = false
-	m.input.Blur()
-}
-
-// IsVisible returns whether the modal is shown
-func (m InputModal) IsVisible() bool {
-	return m.visible
 }
 
 // Value returns the current input value
@@ -53,33 +40,26 @@ func (m InputModal) Value() string {
 	return m.input.Value()
 }
 
-// Update handles input events, returns (modal, cmd, submitted)
-func (m InputModal) Update(msg tea.Msg) (InputModal, tea.Cmd, bool) {
-	if !m.visible {
-		return m, nil, false
-	}
-
+// Update handles input events. Submit means the value was entered.
+func (m InputModal) Update(msg tea.Msg) (InputModal, tea.Cmd, Outcome) {
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		switch keyMsg.String() {
 		case "enter":
-			return m, nil, true
+			m.input.Blur()
+			return m, nil, Submit
 		case "esc":
-			m.Hide()
-			return m, nil, false
+			m.input.Blur()
+			return m, nil, Cancel
 		}
 	}
 
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
-	return m, cmd, false
+	return m, cmd, Continue
 }
 
 // View renders the input modal
 func (m InputModal) View() string {
-	if !m.visible {
-		return ""
-	}
-
 	const modalWidth = 36
 
 	titleStyle := lipgloss.NewStyle().

@@ -45,8 +45,8 @@ func (m *Model) beginPlayback(item domain.MediaItem, resume bool) tea.Cmd {
 }
 
 func (m *Model) cancelPendingModal() {
-	if m.PlaylistModal.IsLoading() {
-		m.PlaylistModal.Hide()
+	if m.overlay == overlayPlaylists && m.PlaylistModal.IsLoading() {
+		m.overlay = overlayNone
 	}
 	m.requests.stop("playlist-modal")
 }
