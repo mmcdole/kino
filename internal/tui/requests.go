@@ -70,17 +70,6 @@ func (m *Model) loadResource(r catalog.Resource, policy catalog.Policy, backgrou
 	return loadCmd(m.Catalog, req)
 }
 
-func libraryStateID(r catalog.Resource) string {
-	switch r.Kind {
-	case catalog.Movies, catalog.Shows, catalog.Mixed:
-		return r.LibraryID
-	case catalog.Playlists:
-		return playlistsLibraryID
-	default:
-		return ""
-	}
-}
-
 func (m *Model) topResource() (catalog.Resource, bool) {
 	if col := m.ColumnStack.Top(); col != nil {
 		r, ok := m.resource(col.ContentID())

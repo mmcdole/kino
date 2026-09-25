@@ -37,24 +37,7 @@ const (
 
 	// Vertical layout: single footer line
 	ChromeHeight = 1
-
-	// Synthetic library entry for playlists
-	playlistsLibraryID = "__playlists__"
 )
-
-// playlistsLibraryEntry returns the synthetic library entry for playlists
-func playlistsLibraryEntry() domain.Library {
-	return domain.Library{
-		ID:   playlistsLibraryID,
-		Name: "Playlists",
-		Type: "playlist",
-	}
-}
-
-// allLibraryEntries returns libraries plus the synthetic Playlists entry
-func (m *Model) allLibraryEntries() []domain.Library {
-	return append(m.Libraries, playlistsLibraryEntry())
-}
 
 type Model struct {
 	overlay       overlay
