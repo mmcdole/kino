@@ -34,6 +34,9 @@ func (b *browsingBackend) GetMovies(ctx context.Context, _ string, _, _ int) ([]
 	}
 	return []*domain.MediaItem{{ID: "movie", Title: "Fresh title", IsPlayed: b.played}}, 1, nil
 }
+func (b *browsingBackend) GetLibraryItemCount(context.Context, string, string) (int, error) {
+	return 1, nil
+}
 func (b *browsingBackend) MarkPlayed(context.Context, string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -49,7 +52,7 @@ func start(cmd tea.Cmd) <-chan tea.Msg {
 }
 
 // pumpOnce applies the states the catalog publishes within a short wait.
-func pumpOnce(m Model, svc *catalog.Service) (Model, bool) {
+func pumpOnce(m *Model, svc *catalog.Service) (*Model, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 	states, err := svc.Updates(ctx)
@@ -60,7 +63,7 @@ func pumpOnce(m Model, svc *catalog.Service) (Model, bool) {
 }
 
 // pumpUntil applies published states until cond holds.
-func pumpUntil(t *testing.T, m Model, svc *catalog.Service, cond func(Model) bool) Model {
+func pumpUntil(t *testing.T, m *Model, svc *catalog.Service, cond func(*Model) bool) *Model {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for !cond(m) {
@@ -74,7 +77,7 @@ func pumpUntil(t *testing.T, m Model, svc *catalog.Service, cond func(Model) boo
 
 // await applies published states until the command's result arrives, then
 // applies its result and any states that follow.
-func await(t *testing.T, m Model, svc *catalog.Service, done <-chan tea.Msg) Model {
+func await(t *testing.T, m *Model, svc *catalog.Service, done <-chan tea.Msg) *Model {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for {
@@ -116,7 +119,7 @@ func TestCatalogDiskCacheAndTUIRequestLifecycle(t *testing.T) {
 
 	view := start(m.pushColumn(r, "A"))
 	col := m.ColumnStack.Top()
-	m = pumpUntil(t, m, svc, func(Model) bool { return col.HasContent() })
+	m = pumpUntil(t, m, svc, func(*Model) bool { return col.HasContent() })
 	if col.SelectedMediaItem().Title != "Cached title" || !col.IsRefreshing() {
 		t.Fatal("cached snapshot not shown during network load")
 	}

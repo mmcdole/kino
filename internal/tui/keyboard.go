@@ -8,13 +8,13 @@ import (
 )
 
 // handleKeyMsg handles keyboard input
-func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 	var cmds []tea.Cmd
 
 	// Ctrl+C always quits, even inside modals and text inputs
 	if msg.String() == "ctrl+c" {
 		m.requests.cancel()
-		return m, tea.Quit
+		return tea.Quit
 	}
 
 	// Handle state-specific keys
@@ -22,19 +22,19 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case StateHelp:
 		// Any key returns to browsing, as the help screen promises
 		m.State = StateBrowsing
-		return m, nil
+		return nil
 
 	case StateConfirmLogout:
 		switch {
 		case key.Matches(msg, Keys.Confirm):
 			// User confirmed logout
 			m.loggingOut = true
-			return m, LogoutCmd()
+			return LogoutCmd()
 		case key.Matches(msg, Keys.Deny):
 			// User cancelled
 			m.State = StateBrowsing
 		}
-		return m, nil
+		return nil
 
 	case StateConfirmDeletePlaylist:
 		switch {
@@ -44,26 +44,26 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				id := m.pendingDeletePlaylistID
 				m.pendingDeletePlaylistID = ""
 				m.pendingDeletePlaylistName = ""
-				return m, m.beginMutation(catalog.Mutation{Kind: catalog.DeletePlaylist, PlaylistID: id})
+				return m.beginMutation(catalog.Mutation{Kind: catalog.DeletePlaylist, PlaylistID: id})
 			}
 		case key.Matches(msg, Keys.Deny), key.Matches(msg, Keys.Escape):
 			m.State = StateBrowsing
 			m.pendingDeletePlaylistID = ""
 			m.pendingDeletePlaylistName = ""
 		}
-		return m, nil
+		return nil
 	}
 
 	// Route to active modal if any
-	if handled, newModel, cmd := m.routeToModal(msg); handled {
-		return newModel, cmd
+	if handled, cmd := m.routeToModal(msg); handled {
+		return cmd
 	}
 
 	// Global keys
 	switch {
 	case key.Matches(msg, Keys.Quit):
 		m.requests.cancel()
-		return m, tea.Quit
+		return tea.Quit
 	case key.Matches(msg, Keys.Help):
 		return m.handleHelp()
 	case key.Matches(msg, Keys.Escape):
@@ -109,15 +109,14 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	return m, tea.Batch(cmds...)
+	return tea.Batch(cmds...)
 }
 
 // routeToModal routes key input to active modals
-// Returns (handled, model, cmd) where handled is true if a modal consumed the input
-func (m Model) routeToModal(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
+// Returns (handled, cmd) where handled is true if a modal consumed the input
+func (m *Model) routeToModal(msg tea.KeyMsg) (bool, tea.Cmd) {
 	if m.GlobalSearch.IsVisible() {
-		newModel, cmd := m.handleGlobalSearchInput(msg)
-		return true, newModel, cmd
+		return true, m.handleGlobalSearchInput(msg)
 	}
 	if m.SortModal.IsVisible() {
 		return m.handleSortModalInput(msg)
@@ -131,7 +130,7 @@ func (m Model) routeToModal(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 	if top := m.ColumnStack.Top(); top != nil && top.IsFilterTyping() {
 		return m.handleFilterTypingInput(msg)
 	}
-	return false, m, nil
+	return false, nil
 }
 
 // ----------------------------------------------------------------------------
@@ -139,89 +138,89 @@ func (m Model) routeToModal(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 // ----------------------------------------------------------------------------
 
 // handleHelp shows the help screen
-func (m Model) handleHelp() (tea.Model, tea.Cmd) {
+func (m *Model) handleHelp() tea.Cmd {
 	m.State = StateHelp
-	return m, nil
+	return nil
 }
 
 // handleEscape clears active filter or cancels nav plan
-func (m Model) handleEscape() (tea.Model, tea.Cmd) {
+func (m *Model) handleEscape() tea.Cmd {
 	if top := m.ColumnStack.Top(); top != nil && top.IsFiltering() {
 		top.ClearFilter()
-		return m, nil
+		return nil
 	}
 	if m.navPlan != nil {
 		m.clearNavPlan()
-		return m, m.notify(NoticeInfo, "Navigation cancelled")
+		return m.notify(NoticeInfo, "Navigation cancelled")
 	}
 	// Esc dismisses a persistent alert once the user has read it
 	if m.notice.Kind == NoticeAlert && m.notice.Text != "" {
 		m.clearNotice()
-		return m, nil
+		return nil
 	}
-	return m, nil
+	return nil
 }
 
 // handleFilter toggles filter mode in the current column
-func (m Model) handleFilter() (tea.Model, tea.Cmd) {
+func (m *Model) handleFilter() tea.Cmd {
 	if top := m.ColumnStack.Top(); top != nil {
 		top.ToggleFilter()
 	}
-	return m, nil
+	return nil
 }
 
 // handleGlobalSearch opens the global search modal
-func (m Model) handleGlobalSearch() (tea.Model, tea.Cmd) {
+func (m *Model) handleGlobalSearch() tea.Cmd {
 	m.GlobalSearch.Show()
 	m.GlobalSearch.SetSize(m.Width, m.Height)
-	return m, m.GlobalSearch.Init()
+	return m.GlobalSearch.Init()
 }
 
 // handleDrillIn handles drilling into the selected item (l key)
-func (m Model) handleDrillIn() (tea.Model, tea.Cmd) {
+func (m *Model) handleDrillIn() tea.Cmd {
 	// Manual navigation cancels any pending search-navigation plan; a stale
 	// plan resuming on a later load would teleport the user
 	m.clearNavPlan()
 	top := m.ColumnStack.Top()
 	if top == nil {
-		return m, nil
+		return nil
 	}
 	if !top.CanDrillInto() {
 		if item := top.SelectedMediaItem(); item != nil {
-			return m, tea.Batch(
+			return tea.Batch(
 				m.notify(NoticeInfo, "Launching: "+item.Title),
 				m.beginPlayback(*item, item.ShouldResume()),
 			)
 		}
-		return m, nil
+		return nil
 	}
-	return m, m.drillSelected()
+	return m.drillSelected()
 }
 
 // handleEnter handles the enter key press
-func (m Model) handleEnter() (tea.Model, tea.Cmd) {
+func (m *Model) handleEnter() tea.Cmd {
 	m.clearNavPlan()
 	top := m.ColumnStack.Top()
 	if top == nil {
-		return m, nil
+		return nil
 	}
 	if top.CanDrillInto() {
-		return m, m.drillSelected()
+		return m.drillSelected()
 	}
 	if item := top.SelectedMediaItem(); item != nil {
-		return m, tea.Batch(
+		return tea.Batch(
 			m.notify(NoticeInfo, "Launching: "+item.Title),
 			m.beginPlayback(*item, item.ShouldResume()),
 		)
 	}
-	return m, nil
+	return nil
 }
 
 // handleSort opens the sort modal for movies/shows columns
-func (m Model) handleSort() (tea.Model, tea.Cmd) {
+func (m *Model) handleSort() tea.Cmd {
 	top := m.ColumnStack.Top()
 	if top == nil {
-		return m, nil
+		return nil
 	}
 	var opts []components.SortField
 	switch top.ColumnType() {
@@ -239,31 +238,31 @@ func (m Model) handleSort() (tea.Model, tea.Cmd) {
 	}
 	field, dir := top.SortState()
 	m.SortModal.Show(opts, field, dir)
-	return m, nil
+	return nil
 }
 
 // Refresh uses the same resource path as browsing, preserving visible data.
-func (m Model) handleRefresh() (tea.Model, tea.Cmd) {
+func (m *Model) handleRefresh() tea.Cmd {
 	r, ok := m.topResource()
 	if !ok {
-		return m, nil
+		return nil
 	}
 	if r.Kind == catalog.Libraries {
 		lib := m.ColumnStack.Top().SelectedLibrary()
 		if lib == nil {
-			return m, m.loadResource(r, catalog.Refresh, false)
+			return m.loadResource(r, catalog.Refresh, false)
 		}
 		if lib.ID == playlistsLibraryID {
 			r = catalog.Resource{Kind: catalog.Playlists}
 		} else {
 			r = catalog.LibraryResource(*lib)
 		}
-		return m, m.loadResource(r, catalog.Refresh, true)
+		return m.loadResource(r, catalog.Refresh, true)
 	}
-	return m, m.loadResource(r, catalog.Refresh, false)
+	return m.loadResource(r, catalog.Refresh, false)
 }
 
-func (m Model) handleRefreshAll() (tea.Model, tea.Cmd) {
+func (m *Model) handleRefreshAll() tea.Cmd {
 	m.clearNavPlan()
 	cmds := []tea.Cmd{
 		m.loadResource(catalog.Resource{Kind: catalog.Libraries}, catalog.Refresh, false),
@@ -275,48 +274,48 @@ func (m Model) handleRefreshAll() (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.loadResource(r, catalog.Refresh, false))
 		}
 	}
-	return m, tea.Batch(cmds...)
+	return tea.Batch(cmds...)
 }
 
 // handleMarkWatched marks the selected item as watched
-func (m Model) handleMarkWatched() (tea.Model, tea.Cmd) {
+func (m *Model) handleMarkWatched() tea.Cmd {
 	top := m.ColumnStack.Top()
 	if top == nil {
-		return m, nil
+		return nil
 	}
 	item := top.SelectedMediaItem()
 	if item == nil {
 		return m.notAvailableHere("Mark watched (w)")
 	}
 	r, _ := m.topResource()
-	return m, m.beginMutation(catalog.Mutation{Kind: catalog.Watch, ItemID: item.ID, ShowID: item.ShowID, SeasonID: item.ParentID, Title: item.Title, LibraryID: r.LibraryID, Played: true})
+	return m.beginMutation(catalog.Mutation{Kind: catalog.Watch, ItemID: item.ID, ShowID: item.ShowID, SeasonID: item.ParentID, Title: item.Title, LibraryID: r.LibraryID, Played: true})
 }
 
 // handleMarkUnwatched marks the selected item as unwatched
-func (m Model) handleMarkUnwatched() (tea.Model, tea.Cmd) {
+func (m *Model) handleMarkUnwatched() tea.Cmd {
 	top := m.ColumnStack.Top()
 	if top == nil {
-		return m, nil
+		return nil
 	}
 	item := top.SelectedMediaItem()
 	if item == nil {
 		return m.notAvailableHere("Mark unwatched (u)")
 	}
 	r, _ := m.topResource()
-	return m, m.beginMutation(catalog.Mutation{Kind: catalog.Watch, ItemID: item.ID, ShowID: item.ShowID, SeasonID: item.ParentID, Title: item.Title, LibraryID: r.LibraryID})
+	return m.beginMutation(catalog.Mutation{Kind: catalog.Watch, ItemID: item.ID, ShowID: item.ShowID, SeasonID: item.ParentID, Title: item.Title, LibraryID: r.LibraryID})
 }
 
 // handlePlay plays the selected item from the beginning
-func (m Model) handlePlay() (tea.Model, tea.Cmd) {
+func (m *Model) handlePlay() tea.Cmd {
 	top := m.ColumnStack.Top()
 	if top == nil {
-		return m, nil
+		return nil
 	}
 	item := top.SelectedMediaItem()
 	if item == nil {
 		return m.notAvailableHere("Play (p)")
 	}
-	return m, tea.Batch(
+	return tea.Batch(
 		m.notify(NoticeInfo, "Launching: "+item.Title),
 		m.beginPlayback(*item, false),
 	)
@@ -324,28 +323,28 @@ func (m Model) handlePlay() (tea.Model, tea.Cmd) {
 
 // notAvailableHere emits a short status explaining that a key does nothing
 // for the current selection, instead of silently ignoring it
-func (m Model) notAvailableHere(action string) (tea.Model, tea.Cmd) {
-	return m, m.notify(NoticeInfo, action+" is not available for this item")
+func (m *Model) notAvailableHere(action string) tea.Cmd {
+	return m.notify(NoticeInfo, action+" is not available for this item")
 }
 
 // handleToggleInspector toggles the inspector panel visibility
-func (m Model) handleToggleInspector() (tea.Model, tea.Cmd) {
+func (m *Model) handleToggleInspector() tea.Cmd {
 	m.ShowInspector = !m.ShowInspector
 	m.updateLayout()
-	return m, nil
+	return nil
 }
 
 // handleLogout shows the logout confirmation
-func (m Model) handleLogout() (tea.Model, tea.Cmd) {
+func (m *Model) handleLogout() tea.Cmd {
 	m.State = StateConfirmLogout
-	return m, nil
+	return nil
 }
 
 // handlePlaylistModal opens the playlist modal for the selected item
-func (m Model) handlePlaylistModal() (tea.Model, tea.Cmd) {
+func (m *Model) handlePlaylistModal() tea.Cmd {
 	top := m.ColumnStack.Top()
 	if top == nil {
-		return m, nil
+		return nil
 	}
 	item := top.SelectedMediaItem()
 	if item == nil {
@@ -354,20 +353,20 @@ func (m Model) handlePlaylistModal() (tea.Model, tea.Cmd) {
 	m.PlaylistModal.BeginLoading(item)
 	m.PlaylistModal.SetSize(m.Width, m.Height)
 	req := m.requests.begin("playlist-modal", catalog.Resource{}, catalog.Browse)
-	return m, LoadPlaylistModalDataCmd(m.Catalog, req, *item)
+	return LoadPlaylistModalDataCmd(m.Catalog, req, *item)
 }
 
 // handleDelete handles deletion of playlists or playlist items
-func (m Model) handleDelete() (tea.Model, tea.Cmd) {
+func (m *Model) handleDelete() tea.Cmd {
 	top := m.ColumnStack.Top()
 	if top == nil {
-		return m, nil
+		return nil
 	}
 	switch top.ColumnType() {
 	case components.ColumnTypePlaylistItems:
 		item := top.SelectedMediaItem()
 		if r, ok := m.topResource(); item != nil && ok {
-			return m, m.beginMutation(catalog.Mutation{Kind: catalog.RemoveFromPlaylist, PlaylistID: r.ID, ItemID: item.ID})
+			return m.beginMutation(catalog.Mutation{Kind: catalog.RemoveFromPlaylist, PlaylistID: r.ID, ItemID: item.ID})
 		}
 	case components.ColumnTypePlaylists:
 		// Deleting a playlist is irreversible and server-side: confirm first
@@ -375,22 +374,22 @@ func (m Model) handleDelete() (tea.Model, tea.Cmd) {
 			m.State = StateConfirmDeletePlaylist
 			m.pendingDeletePlaylistID = playlist.ID
 			m.pendingDeletePlaylistName = playlist.Title
-			return m, nil
+			return nil
 		}
 	default:
-		return m, m.notify(NoticeInfo, "Remove (x) only works in playlists")
+		return m.notify(NoticeInfo, "Remove (x) only works in playlists")
 	}
-	return m, nil
+	return nil
 }
 
 // handleNewPlaylist opens the new-playlist name input (playlists column only)
-func (m Model) handleNewPlaylist() (tea.Model, tea.Cmd) {
+func (m *Model) handleNewPlaylist() tea.Cmd {
 	top := m.ColumnStack.Top()
 	if top == nil || top.ColumnType() != components.ColumnTypePlaylists {
-		return m, nil
+		return nil
 	}
 	m.InputModal.Show("New Playlist")
-	return m, nil
+	return nil
 }
 
 // ----------------------------------------------------------------------------
@@ -398,7 +397,7 @@ func (m Model) handleNewPlaylist() (tea.Model, tea.Cmd) {
 // ----------------------------------------------------------------------------
 
 // handleGlobalSearchInput handles input when global search is visible
-func (m Model) handleGlobalSearchInput(msg tea.KeyMsg) (Model, tea.Cmd) {
+func (m *Model) handleGlobalSearchInput(msg tea.KeyMsg) tea.Cmd {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 	var selected bool
@@ -426,11 +425,11 @@ func (m Model) handleGlobalSearchInput(msg tea.KeyMsg) (Model, tea.Cmd) {
 			}
 		}
 	}
-	return m, tea.Batch(cmds...)
+	return tea.Batch(cmds...)
 }
 
 // handleSortModalInput handles input when sort modal is visible
-func (m Model) handleSortModalInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
+func (m *Model) handleSortModalInput(msg tea.KeyMsg) (bool, tea.Cmd) {
 	handled, selection := m.SortModal.HandleKeyMsg(msg)
 	if handled {
 		if selection != nil {
@@ -438,45 +437,43 @@ func (m Model) handleSortModalInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 				top.ApplySort(selection.Field, selection.Direction)
 			}
 		}
-		return true, m, nil
+		return true, nil
 	}
-	return true, m, nil
+	return true, nil
 }
 
 // handlePlaylistModalInput handles input when playlist modal is visible
-func (m Model) handlePlaylistModalInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
+func (m *Model) handlePlaylistModalInput(msg tea.KeyMsg) (bool, tea.Cmd) {
 	if m.PlaylistModal.IsLoading() {
 		if msg.String() == "esc" {
 			m.cancelPendingModal()
 		}
-		return true, m, nil
+		return true, nil
 	}
 
 	handled, shouldClose, shouldCreate := m.PlaylistModal.HandleKeyMsg(msg)
 	if !handled {
-		return false, m, nil
+		return false, nil
 	}
 
 	if shouldCreate {
-		newModel, cmd := m.applyPlaylistCreate()
-		return true, newModel, cmd
+		return true, m.applyPlaylistCreate()
 	}
 	if shouldClose {
-		newModel, cmd := m.applyPlaylistChanges()
-		return true, newModel, cmd
+		return true, m.applyPlaylistChanges()
 	}
-	return true, m, nil
+	return true, nil
 }
 
 // applyPlaylistCreate creates a new playlist and applies checkbox changes
-func (m Model) applyPlaylistCreate() (Model, tea.Cmd) {
+func (m *Model) applyPlaylistCreate() tea.Cmd {
 	title := m.PlaylistModal.NewPlaylistTitle()
 	item := m.PlaylistModal.Item()
 	changes := m.PlaylistModal.GetChanges()
 	m.PlaylistModal.Hide()
 
 	if title == "" || item == nil {
-		return m, nil
+		return nil
 	}
 
 	cmds := []tea.Cmd{m.beginMutation(catalog.Mutation{Kind: catalog.CreatePlaylist, Title: title, ItemIDs: []string{item.ID}})}
@@ -487,17 +484,17 @@ func (m Model) applyPlaylistCreate() (Model, tea.Cmd) {
 			cmds = append(cmds, m.beginMutation(catalog.Mutation{Kind: catalog.RemoveFromPlaylist, PlaylistID: change.PlaylistID, ItemID: item.ID}))
 		}
 	}
-	return m, tea.Batch(cmds...)
+	return tea.Batch(cmds...)
 }
 
 // applyPlaylistChanges applies pending playlist checkbox changes
-func (m Model) applyPlaylistChanges() (Model, tea.Cmd) {
+func (m *Model) applyPlaylistChanges() tea.Cmd {
 	changes := m.PlaylistModal.GetChanges()
 	item := m.PlaylistModal.Item()
 	m.PlaylistModal.Hide()
 
 	if len(changes) == 0 || item == nil {
-		return m, nil
+		return nil
 	}
 
 	var cmds []tea.Cmd
@@ -508,11 +505,11 @@ func (m Model) applyPlaylistChanges() (Model, tea.Cmd) {
 			cmds = append(cmds, m.beginMutation(catalog.Mutation{Kind: catalog.RemoveFromPlaylist, PlaylistID: change.PlaylistID, ItemID: item.ID}))
 		}
 	}
-	return m, tea.Batch(cmds...)
+	return tea.Batch(cmds...)
 }
 
 // handleInputModalInput handles input when input modal is visible
-func (m Model) handleInputModalInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
+func (m *Model) handleInputModalInput(msg tea.KeyMsg) (bool, tea.Cmd) {
 	var cmd tea.Cmd
 	var submitted bool
 
@@ -521,22 +518,22 @@ func (m Model) handleInputModalInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 		title := m.InputModal.Value()
 		m.InputModal.Hide()
 		if title != "" {
-			return true, m, m.beginMutation(catalog.Mutation{Kind: catalog.CreatePlaylist, Title: title})
+			return true, m.beginMutation(catalog.Mutation{Kind: catalog.CreatePlaylist, Title: title})
 		}
-		return true, m, nil
+		return true, nil
 	}
 	if cmd != nil {
-		return true, m, cmd
+		return true, cmd
 	}
-	return true, m, nil
+	return true, nil
 }
 
 // handleFilterTypingInput handles input when filter typing mode is active
-func (m Model) handleFilterTypingInput(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
+func (m *Model) handleFilterTypingInput(msg tea.KeyMsg) (bool, tea.Cmd) {
 	top := m.ColumnStack.Top()
 	if top == nil {
-		return false, m, nil
+		return false, nil
 	}
 	top.Update(msg)
-	return true, m, nil
+	return true, nil
 }

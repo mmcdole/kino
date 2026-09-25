@@ -123,7 +123,7 @@ func run() error {
 
 	cancel()
 	catalogSvc.Close()
-	if final, ok := result.(tui.Model); ok && final.LoggedOut {
+	if final, ok := result.(*tui.Model); ok && final.LoggedOut {
 		if err := cache.Close(); err != nil {
 			return err
 		}

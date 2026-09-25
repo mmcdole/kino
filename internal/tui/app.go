@@ -102,8 +102,8 @@ type Model struct {
 	pendingDeletePlaylistName string
 }
 
-func NewModel(ctx context.Context, svc Catalog, playback Playback, index *search.Index, ui config.UIConfig) Model {
-	m := Model{
+func NewModel(ctx context.Context, svc Catalog, playback Playback, index *search.Index, ui config.UIConfig) *Model {
+	m := &Model{
 		Catalog: svc, PlaybackSvc: playback, SearchIndex: index, UIConfig: ui,
 		ColumnStack:   NewColumnStack(),
 		Inspector:     components.NewInspector(),
@@ -125,7 +125,7 @@ func NewModel(ctx context.Context, svc Catalog, playback Playback, index *search
 	m.track(root)
 	return m
 }
-func (m Model) Init() tea.Cmd {
+func (m *Model) Init() tea.Cmd {
 	return tea.Batch(
 		listen(m.Catalog, m.requests.ctx),
 		m.loadResource(catalog.Resource{Kind: catalog.Libraries}, catalog.Revalidate, false),
@@ -133,108 +133,107 @@ func (m Model) Init() tea.Cmd {
 	)
 }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	next, cmd := m.update(msg)
-	model := next.(Model)
-	model.updateInspector()
-	return model, cmd
+func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	cmd := m.update(msg)
+	m.updateInspector()
+	return m, cmd
 }
 
-func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) update(msg tea.Msg) tea.Cmd {
 	if m.loggingOut {
 		if result, ok := msg.(LogoutCompleteMsg); ok {
 			if result.Error != nil {
 				m.loggingOut = false
 				m.State = StateBrowsing
-				return m, m.notifyError("Logout failed", result.Error)
+				return m.notifyError("Logout failed", result.Error)
 			}
 			m.LoggedOut = true
 			m.requests.cancel()
-			return m, tea.Quit
+			return tea.Quit
 		}
-		return m, nil
+		return nil
 	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.Width, m.Height, m.Ready = msg.Width, msg.Height, true
 		m.updateLayout()
-		return m, nil
+		return nil
 	case tea.KeyMsg:
 		return m.handleKeyMsg(msg)
 	case TickMsg:
 		m.SpinnerFrame++
 		m.ColumnStack.UpdateSpinnerFrame(m.SpinnerFrame)
-		return m, TickCmd(100 * time.Millisecond)
+		return TickCmd(100 * time.Millisecond)
 	case StatesMsg:
 		var cmds []tea.Cmd
 		for _, st := range msg {
 			cmds = append(cmds, m.applyState(st))
 		}
-		return m, tea.Batch(append(cmds, listen(m.Catalog, m.requests.ctx))...)
+		return tea.Batch(append(cmds, listen(m.Catalog, m.requests.ctx))...)
 	case LoadDoneMsg:
-		return m, m.handleLoadDone(msg)
+		return m.handleLoadDone(msg)
 	case ActionMsg:
 		return m.handleAction(msg)
 	case PlaylistModalDataMsg:
 		if !m.requests.owns(msg.Request) {
-			return m, nil
+			return nil
 		}
 		m.requests.finish(msg.Request)
 		if msg.Err != nil {
 			m.PlaylistModal.Hide()
-			return m, m.notifyError("Loading playlists", msg.Err)
+			return m.notifyError("Loading playlists", msg.Err)
 		}
 		m.PlaylistModal.Show(msg.Membership.Playlists, msg.Membership.Present, &msg.Item)
 		m.PlaylistModal.SetSize(m.Width, m.Height)
-		return m, nil
+		return nil
 	case ClearNoticeMsg:
 		m.expireNotice(msg.Seq)
-		return m, nil
+		return nil
 	case ShowLoadingMsg:
 		if st := m.collections[msg.Key]; st.Fetching && st.Attempt == msg.Attempt {
 			m.indicators[msg.Key] = msg.Attempt
 			m.updateResourceFeedback(st.Resource)
 		}
-		return m, nil
+		return nil
 	case SearchDebounceMsg:
 		if !m.GlobalSearch.IsVisible() || msg.Seq != m.searchSeq {
-			return m, nil
+			return nil
 		}
 		req := m.requests.begin("search", catalog.Resource{}, catalog.Browse)
 		libraries := append([]domain.Library(nil), m.Libraries...)
-		return m, func() tea.Msg {
+		return func() tea.Msg {
 			return SearchResultsMsg{Request: req, Results: m.SearchIndex.Search(req.ctx, msg.Query, libraries)}
 		}
 	case ShowSearchLoadingMsg:
 		if m.GlobalSearch.IsVisible() && msg.Seq == m.searchSeq {
 			m.GlobalSearch.ShowLoading()
 		}
-		return m, nil
+		return nil
 	case SearchResultsMsg:
 		if !m.requests.owns(msg.Request) || !m.GlobalSearch.IsVisible() {
-			return m, nil
+			return nil
 		}
 		m.requests.finish(msg.Request)
 		m.GlobalSearch.SetResults(msg.Results)
-		return m, nil
+		return nil
 	case SearchIndexChangedMsg:
 		if m.GlobalSearch.IsVisible() {
-			return m, m.scheduleSearch()
+			return m.scheduleSearch()
 		}
-		return m, nil
+		return nil
 	}
 	// Bubble Tea text-input cursor messages belong to the active modal too.
 	if m.GlobalSearch.IsVisible() {
 		var cmd tea.Cmd
 		m.GlobalSearch, cmd, _ = m.GlobalSearch.Update(msg)
-		return m, cmd
+		return cmd
 	}
 	if m.InputModal.IsVisible() {
 		var cmd tea.Cmd
 		m.InputModal, cmd, _ = m.InputModal.Update(msg)
-		return m, cmd
+		return cmd
 	}
-	return m, nil
+	return nil
 }
 
 // handleLoadDone reports the outcome of this model's own request. Content
@@ -259,16 +258,16 @@ func (m *Model) handleLoadDone(msg LoadDoneMsg) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func (m Model) handleAction(msg ActionMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleAction(msg ActionMsg) tea.Cmd {
 	if !m.requests.owns(msg.Request) {
-		return m, nil
+		return nil
 	}
 	m.requests.finish(msg.Request)
 	if msg.Playback {
 		if msg.Err != nil {
-			return m, m.notifyError("Starting playback", msg.Err)
+			return m.notifyError("Starting playback", msg.Err)
 		}
-		return m, m.notify(NoticeSuccess, "Launched: "+msg.Item.Title)
+		return m.notify(NoticeSuccess, "Launched: "+msg.Item.Title)
 	}
 	change := msg.Change
 	var cmds []tea.Cmd
@@ -293,9 +292,7 @@ func (m Model) handleAction(msg ActionMsg) (tea.Model, tea.Cmd) {
 
 	if change.Applied && change.Mutation.Kind == catalog.DeletePlaylist {
 		if r, ok := m.topResource(); ok && r.Kind == catalog.PlaylistItems && r.ID == change.Mutation.PlaylistID {
-			model, cmd := m.handleBack()
-			m = model.(Model)
-			cmds = append(cmds, cmd)
+			cmds = append(cmds, m.handleBack())
 		}
 	}
 	if msg.Err != nil {
@@ -319,7 +316,7 @@ func (m Model) handleAction(msg ActionMsg) (tea.Model, tea.Cmd) {
 	if change.Warning != nil {
 		cmds = append(cmds, m.notifyError("Server updated; local cache needs refresh", change.Warning))
 	}
-	return m, tea.Batch(cmds...)
+	return tea.Batch(cmds...)
 }
 
 func (m *Model) notifyError(scope string, err error) tea.Cmd {
@@ -331,7 +328,7 @@ func (m *Model) notifyError(scope string, err error) tea.Cmd {
 	}
 	return m.notify(NoticeError, fmt.Sprintf("%s: %v", scope, err))
 }
-func (m Model) activeSyncCount() int {
+func (m *Model) activeSyncCount() int {
 	n := 0
 	for _, state := range m.LibraryStates {
 		if state.Activity.Visible {
@@ -347,7 +344,7 @@ func (m *Model) updateLibraryStates() {
 	}
 	m.Inspector.SetLibraryStates(m.LibraryStates)
 }
-func (m Model) findLibrary(id string) *domain.Library {
+func (m *Model) findLibrary(id string) *domain.Library {
 	for _, lib := range m.Libraries {
 		if lib.ID == id {
 			return &lib
@@ -362,7 +359,7 @@ func (m *Model) updateInspector() {
 		m.Inspector.SetItem(nil)
 	}
 }
-func (m Model) resourceName(r catalog.Resource) string {
+func (m *Model) resourceName(r catalog.Resource) string {
 	if r.Kind == catalog.Libraries {
 		return "libraries"
 	}

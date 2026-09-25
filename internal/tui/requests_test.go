@@ -14,7 +14,7 @@ import (
 	"github.com/mmcdole/kino/internal/tui/components"
 )
 
-func testModel(t *testing.T) Model {
+func testModel(t *testing.T) *Model {
 	t.Helper()
 	m := NewModel(context.Background(), nil, nil, search.NewIndex(), config.UIConfig{})
 	t.Cleanup(m.requests.cancel)
@@ -34,8 +34,8 @@ func snapshot(r catalog.Resource, revision uint64, ids ...string) catalog.Snapsh
 func state(r catalog.Resource, revision uint64, ids ...string) catalog.State {
 	return catalog.State{Resource: r, Known: true, Snapshot: snapshot(r, revision, ids...)}
 }
-func updateModel(m Model, msg tea.Msg) Model { next, _ := m.Update(msg); return next.(Model) }
-func publish(m Model, states ...catalog.State) Model {
+func updateModel(m *Model, msg tea.Msg) *Model { m.Update(msg); return m }
+func publish(m *Model, states ...catalog.State) *Model {
 	return updateModel(m, StatesMsg(states))
 }
 
@@ -44,8 +44,7 @@ func TestFailureFromAbandonedViewCannotFailCurrentLoad(t *testing.T) {
 	a, b := catalog.LibraryResource(m.Libraries[0]), catalog.LibraryResource(m.Libraries[1])
 	m.pushColumn(a, "A")
 	old := m.requests.active[viewOwner(a)]
-	next, _ := m.handleBack()
-	m = next.(Model)
+	m.handleBack()
 	m.pushColumn(b, "B")
 	m = updateModel(m, LoadDoneMsg{Request: old, Err: errors.New("A failed")})
 	if !m.ColumnStack.Top().IsLoading() {
@@ -162,7 +161,7 @@ func TestColdStartupFailureKeepsRetryableRoot(t *testing.T) {
 	if m.ColumnStack.Top() == nil || m.ColumnStack.Top().IsLoading() {
 		t.Fatal("failed startup has no retryable root")
 	}
-	_, cmd := m.handleRefresh()
+	cmd := m.handleRefresh()
 	if cmd == nil {
 		t.Fatal("r cannot retry cold startup")
 	}

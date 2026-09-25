@@ -9,7 +9,7 @@ type columnLayout struct {
 }
 
 // calculateColumnLayout computes column widths based on stack depth and inspector visibility
-func (m Model) calculateColumnLayout(availableWidth int) columnLayout {
+func (m *Model) calculateColumnLayout(availableWidth int) columnLayout {
 	stackLen := m.ColumnStack.Len()
 	layout := columnLayout{}
 
