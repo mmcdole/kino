@@ -36,7 +36,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		switch {
 		case key.Matches(msg, keys.Confirm):
 			m.overlay, m.confirmDelete = overlayNone, nil
-			return m.beginMutation(catalog.Mutation{Kind: catalog.DeletePlaylist, PlaylistID: playlist.ID})
+			return m.beginMutation(catalog.Mutation{Kind: catalog.MutationDeletePlaylist, PlaylistID: playlist.ID})
 		case key.Matches(msg, keys.Deny), key.Matches(msg, keys.Escape):
 			m.overlay, m.confirmDelete = overlayNone, nil
 		}
@@ -255,7 +255,7 @@ func (m *Model) handleMarkWatched() tea.Cmd {
 		return m.notAvailableHere("Mark watched (w)")
 	}
 	r, _ := m.topResource()
-	return m.beginMutation(catalog.Mutation{Kind: catalog.Watch, ItemID: item.ID, ShowID: item.ShowID, SeasonID: item.ParentID, Title: item.Title, LibraryID: r.LibraryID, Played: true})
+	return m.beginMutation(catalog.Mutation{Kind: catalog.MutationWatch, ItemID: item.ID, ShowID: item.ShowID, SeasonID: item.ParentID, Title: item.Title, LibraryID: r.LibraryID, Played: true})
 }
 
 // handleMarkUnwatched marks the selected item as unwatched
@@ -269,7 +269,7 @@ func (m *Model) handleMarkUnwatched() tea.Cmd {
 		return m.notAvailableHere("Mark unwatched (u)")
 	}
 	r, _ := m.topResource()
-	return m.beginMutation(catalog.Mutation{Kind: catalog.Watch, ItemID: item.ID, ShowID: item.ShowID, SeasonID: item.ParentID, Title: item.Title, LibraryID: r.LibraryID})
+	return m.beginMutation(catalog.Mutation{Kind: catalog.MutationWatch, ItemID: item.ID, ShowID: item.ShowID, SeasonID: item.ParentID, Title: item.Title, LibraryID: r.LibraryID})
 }
 
 // handlePlay plays the selected item from the beginning
@@ -334,7 +334,7 @@ func (m *Model) handleDelete() tea.Cmd {
 	switch r.Kind {
 	case catalog.PlaylistItems:
 		if item := top.SelectedMediaItem(); item != nil {
-			return m.beginMutation(catalog.Mutation{Kind: catalog.RemoveFromPlaylist, PlaylistID: r.ID, ItemID: item.ID})
+			return m.beginMutation(catalog.Mutation{Kind: catalog.MutationRemoveFromPlaylist, PlaylistID: r.ID, ItemID: item.ID})
 		}
 	case catalog.Playlists:
 		// Deleting a playlist is irreversible and server-side: confirm first
@@ -434,12 +434,12 @@ func (m *Model) applyPlaylistCreate() tea.Cmd {
 		return nil
 	}
 
-	cmds := []tea.Cmd{m.beginMutation(catalog.Mutation{Kind: catalog.CreatePlaylist, Title: title, ItemID: item.ID})}
+	cmds := []tea.Cmd{m.beginMutation(catalog.Mutation{Kind: catalog.MutationCreatePlaylist, Title: title, ItemID: item.ID})}
 	for _, change := range changes {
 		if change.Add {
-			cmds = append(cmds, m.beginMutation(catalog.Mutation{Kind: catalog.AddToPlaylist, PlaylistID: change.PlaylistID, ItemID: item.ID}))
+			cmds = append(cmds, m.beginMutation(catalog.Mutation{Kind: catalog.MutationAddToPlaylist, PlaylistID: change.PlaylistID, ItemID: item.ID}))
 		} else {
-			cmds = append(cmds, m.beginMutation(catalog.Mutation{Kind: catalog.RemoveFromPlaylist, PlaylistID: change.PlaylistID, ItemID: item.ID}))
+			cmds = append(cmds, m.beginMutation(catalog.Mutation{Kind: catalog.MutationRemoveFromPlaylist, PlaylistID: change.PlaylistID, ItemID: item.ID}))
 		}
 	}
 	return tea.Batch(cmds...)
@@ -457,9 +457,9 @@ func (m *Model) applyPlaylistChanges() tea.Cmd {
 	var cmds []tea.Cmd
 	for _, change := range changes {
 		if change.Add {
-			cmds = append(cmds, m.beginMutation(catalog.Mutation{Kind: catalog.AddToPlaylist, PlaylistID: change.PlaylistID, ItemID: item.ID}))
+			cmds = append(cmds, m.beginMutation(catalog.Mutation{Kind: catalog.MutationAddToPlaylist, PlaylistID: change.PlaylistID, ItemID: item.ID}))
 		} else {
-			cmds = append(cmds, m.beginMutation(catalog.Mutation{Kind: catalog.RemoveFromPlaylist, PlaylistID: change.PlaylistID, ItemID: item.ID}))
+			cmds = append(cmds, m.beginMutation(catalog.Mutation{Kind: catalog.MutationRemoveFromPlaylist, PlaylistID: change.PlaylistID, ItemID: item.ID}))
 		}
 	}
 	return tea.Batch(cmds...)
@@ -474,7 +474,7 @@ func (m *Model) handleInputModalInput(msg tea.KeyMsg) tea.Cmd {
 	case components.Submit:
 		m.overlay = overlayNone
 		if title := m.inputModal.Value(); title != "" {
-			return m.beginMutation(catalog.Mutation{Kind: catalog.CreatePlaylist, Title: title})
+			return m.beginMutation(catalog.Mutation{Kind: catalog.MutationCreatePlaylist, Title: title})
 		}
 		return nil
 	case components.Cancel:

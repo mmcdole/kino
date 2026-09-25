@@ -291,7 +291,7 @@ func (m *Model) handleAction(msg actionMsg) tea.Cmd {
 		}
 	}
 
-	if change.Applied && change.Mutation.Kind == catalog.DeletePlaylist {
+	if change.Applied && change.Mutation.Kind == catalog.MutationDeletePlaylist {
 		if r, ok := m.topResource(); ok && r.Kind == catalog.PlaylistItems && r.ID == change.Mutation.PlaylistID {
 			cmds = append(cmds, m.handleBack())
 		}
@@ -300,16 +300,16 @@ func (m *Model) handleAction(msg actionMsg) tea.Cmd {
 		cmds = append(cmds, m.notifyError("Update failed", msg.Err))
 	} else {
 		text := "Playlist updated"
-		if change.Mutation.Kind == catalog.Watch {
+		if change.Mutation.Kind == catalog.MutationWatch {
 			text = "Marked unwatched: " + change.Mutation.Title
 			if change.Mutation.Played {
 				text = "Marked watched: " + change.Mutation.Title
 			}
 		}
-		if change.Mutation.Kind == catalog.CreatePlaylist {
+		if change.Mutation.Kind == catalog.MutationCreatePlaylist {
 			text = "Created playlist: " + change.Mutation.Title
 		}
-		if change.Mutation.Kind == catalog.DeletePlaylist {
+		if change.Mutation.Kind == catalog.MutationDeletePlaylist {
 			text = "Playlist deleted"
 		}
 		cmds = append(cmds, m.notify(noticeSuccess, text))

@@ -133,7 +133,7 @@ func TestCatalogDiskCacheAndTUIRequestLifecycle(t *testing.T) {
 		t.Fatal("shared completion did not update open view and stop loading")
 	}
 
-	mutation := catalog.Mutation{Kind: catalog.Watch, ItemID: "movie", LibraryID: r.LibraryID, Played: true}
+	mutation := catalog.Mutation{Kind: catalog.MutationWatch, ItemID: "movie", LibraryID: r.LibraryID, Played: true}
 	req := m.requests.begin("mutation:watch:movie", catalog.Resource{}, catalog.Browse)
 	m = await(t, m, svc, start(mutateCmd(svc, req, mutation)))
 	persisted, ok := cache.Load(r.Key())

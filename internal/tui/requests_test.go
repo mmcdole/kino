@@ -195,15 +195,15 @@ func TestRemovedLibraryDetachesRequestsAndNavigation(t *testing.T) {
 
 func TestPlaylistRemovalsForDifferentItemsAreIndependent(t *testing.T) {
 	m := testModel(t)
-	first := m.beginMutation(catalog.Mutation{Kind: catalog.RemoveFromPlaylist, PlaylistID: "p", ItemID: "a"})
-	second := m.beginMutation(catalog.Mutation{Kind: catalog.RemoveFromPlaylist, PlaylistID: "p", ItemID: "b"})
+	first := m.beginMutation(catalog.Mutation{Kind: catalog.MutationRemoveFromPlaylist, PlaylistID: "p", ItemID: "a"})
+	second := m.beginMutation(catalog.Mutation{Kind: catalog.MutationRemoveFromPlaylist, PlaylistID: "p", ItemID: "b"})
 	if first == nil || second == nil {
 		t.Fatal("a pending removal blocked a different item")
 	}
-	if m.requests.active[mutationOwner(catalog.Mutation{Kind: catalog.RemoveFromPlaylist, PlaylistID: "p", ItemID: "a"})].ID == 0 {
+	if m.requests.active[mutationOwner(catalog.Mutation{Kind: catalog.MutationRemoveFromPlaylist, PlaylistID: "p", ItemID: "a"})].ID == 0 {
 		t.Fatal("first removal is not pending")
 	}
-	m.beginMutation(catalog.Mutation{Kind: catalog.RemoveFromPlaylist, PlaylistID: "p", ItemID: "a"})
+	m.beginMutation(catalog.Mutation{Kind: catalog.MutationRemoveFromPlaylist, PlaylistID: "p", ItemID: "a"})
 	if m.notice.Text == "" {
 		t.Fatal("duplicate removal was ignored silently")
 	}
@@ -211,8 +211,8 @@ func TestPlaylistRemovalsForDifferentItemsAreIndependent(t *testing.T) {
 
 func TestPlaylistAddAndRemoveOfOneItemCannotReorder(t *testing.T) {
 	m := testModel(t)
-	m.beginMutation(catalog.Mutation{Kind: catalog.AddToPlaylist, PlaylistID: "p", ItemID: "a"})
-	m.beginMutation(catalog.Mutation{Kind: catalog.RemoveFromPlaylist, PlaylistID: "p", ItemID: "a"})
+	m.beginMutation(catalog.Mutation{Kind: catalog.MutationAddToPlaylist, PlaylistID: "p", ItemID: "a"})
+	m.beginMutation(catalog.Mutation{Kind: catalog.MutationRemoveFromPlaylist, PlaylistID: "p", ItemID: "a"})
 	if m.notice.Text == "" {
 		t.Fatal("a removal started while the add of the same item was pending")
 	}

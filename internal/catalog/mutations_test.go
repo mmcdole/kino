@@ -37,7 +37,7 @@ func TestCloseWaitsForMutationReconciliation(t *testing.T) {
 	}})
 	result := make(chan error, 1)
 	go func() {
-		_, err := svc.Mutate(context.Background(), Mutation{Kind: Watch, ItemID: "movie", Played: true})
+		_, err := svc.Mutate(context.Background(), Mutation{Kind: MutationWatch, ItemID: "movie", Played: true})
 		result <- err
 	}()
 	<-started
@@ -65,7 +65,7 @@ func TestUncertainWatchWriteRequiresRevalidation(t *testing.T) {
 	if _, err := svc.Load(context.Background(), r, Browse); err != nil {
 		t.Fatal(err)
 	}
-	change, err := svc.Mutate(context.Background(), Mutation{Kind: Watch, ItemID: "movie", LibraryID: "lib", Played: true})
+	change, err := svc.Mutate(context.Background(), Mutation{Kind: MutationWatch, ItemID: "movie", LibraryID: "lib", Played: true})
 	if !errors.Is(err, domain.ErrServerOffline) || len(change.Resources) != 1 || change.Resources[0] != r || change.Applied {
 		t.Fatalf("uncertain remote write was not scheduled for reconciliation: %+v %v", change, err)
 	}
@@ -87,7 +87,7 @@ func TestWatchPatchDoesNotPromoteInvalidCachedPayload(t *testing.T) {
 	if err != nil || snapshot.Warning == nil {
 		t.Fatal("expected usable content with a persistence warning")
 	}
-	change, err := svc.Mutate(context.Background(), Mutation{Kind: Watch, ItemID: "movie", LibraryID: "a", Played: true})
+	change, err := svc.Mutate(context.Background(), Mutation{Kind: MutationWatch, ItemID: "movie", LibraryID: "a", Played: true})
 	if err != nil || !change.Applied || len(change.Resources) != 1 || svc.state(r).Snapshot.Items[0].(*domain.MediaItem).IsPlayed {
 		t.Fatal("watch patch promoted invalid cache data instead of requiring revalidation")
 	}
@@ -106,7 +106,7 @@ func TestWatchPublishesOnlyCollectionsContainingTheItem(t *testing.T) {
 		}
 	}
 	before := svc.state(other)
-	change, err := svc.Mutate(context.Background(), Mutation{Kind: Watch, ItemID: "movie", LibraryID: "a", Played: true})
+	change, err := svc.Mutate(context.Background(), Mutation{Kind: MutationWatch, ItemID: "movie", LibraryID: "a", Played: true})
 	if err != nil || len(change.Resources) != 0 {
 		t.Fatalf("unexpected revalidation: %+v %v", change, err)
 	}

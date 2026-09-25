@@ -13,11 +13,11 @@ import (
 type MutationKind uint8
 
 const (
-	Watch MutationKind = iota
-	CreatePlaylist
-	AddToPlaylist
-	RemoveFromPlaylist
-	DeletePlaylist
+	MutationWatch MutationKind = iota
+	MutationCreatePlaylist
+	MutationAddToPlaylist
+	MutationRemoveFromPlaylist
+	MutationDeletePlaylist
 )
 
 // Mutation is one write to the server. Each kind uses only the fields it
@@ -72,19 +72,19 @@ func (s *Service) Mutate(ctx context.Context, m Mutation) (Change, error) {
 	change := Change{Mutation: m}
 	var err error
 	switch m.Kind {
-	case Watch:
+	case MutationWatch:
 		if m.Played {
 			err = s.backend.MarkPlayed(ctx, m.ItemID)
 		} else {
 			err = s.backend.MarkUnplayed(ctx, m.ItemID)
 		}
-	case CreatePlaylist:
+	case MutationCreatePlaylist:
 		change.Playlist, err = s.backend.CreatePlaylist(ctx, m.Title, m.itemIDs())
-	case AddToPlaylist:
+	case MutationAddToPlaylist:
 		err = s.backend.AddToPlaylist(ctx, m.PlaylistID, m.itemIDs())
-	case RemoveFromPlaylist:
+	case MutationRemoveFromPlaylist:
 		err = s.backend.RemoveFromPlaylist(ctx, m.PlaylistID, m.ItemID)
-	case DeletePlaylist:
+	case MutationDeletePlaylist:
 		err = s.backend.DeletePlaylist(ctx, m.PlaylistID)
 	default:
 		return change, fmt.Errorf("unknown mutation %d", m.Kind)
@@ -92,7 +92,7 @@ func (s *Service) Mutate(ctx context.Context, m Mutation) (Change, error) {
 	change.Applied = err == nil
 	s.commit.Lock()
 	defer s.commit.Unlock()
-	if m.Kind == Watch {
+	if m.Kind == MutationWatch {
 		return s.reconcileWatch(m, change, err)
 	}
 	return s.reconcilePlaylists(m, change, err)

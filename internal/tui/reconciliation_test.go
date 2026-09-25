@@ -24,7 +24,7 @@ func TestMutationAdvancesPendingNavigation(t *testing.T) {
 	r := catalog.LibraryResource(m.libraries[0])
 	m = await(t, m, svc, start(m.pushColumn(r, "A")))
 	m.pendingSelect = &pendingSelect{key: r.Key(), id: "movie"}
-	m = await(t, m, svc, start(m.beginMutation(catalog.Mutation{Kind: catalog.Watch, ItemID: "movie", LibraryID: r.LibraryID, Played: true})))
+	m = await(t, m, svc, start(m.beginMutation(catalog.Mutation{Kind: catalog.MutationWatch, ItemID: "movie", LibraryID: r.LibraryID, Played: true})))
 	if !m.columns.Top().SelectedMediaItem().IsPlayed {
 		t.Fatal("mutation did not reach the open column")
 	}
@@ -71,7 +71,7 @@ func TestWatchCompletionAfterBackUpdatesParent(t *testing.T) {
 		}
 		m = await(t, m, svc, start(m.pushColumn(entry.r, "Content")))
 	}
-	cmd := m.beginMutation(catalog.Mutation{Kind: catalog.Watch, ItemID: "episode", ShowID: "show", SeasonID: "season", LibraryID: "a", Played: true})
+	cmd := m.beginMutation(catalog.Mutation{Kind: catalog.MutationWatch, ItemID: "episode", ShowID: "show", SeasonID: "season", LibraryID: "a", Played: true})
 	m.handleBack()
 	m = await(t, m, svc, start(cmd))
 	if m.columns.Top().SelectedItem().(*domain.Season).UnwatchedCount != 0 || m.columns.Get(1).SelectedItem().(*domain.Show).UnwatchedCount != 0 {

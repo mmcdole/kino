@@ -13,11 +13,11 @@ import (
 // different items are independent, and the catalog serializes them.
 func mutationOwner(change catalog.Mutation) string {
 	switch change.Kind {
-	case catalog.Watch:
+	case catalog.MutationWatch:
 		return "mutation:watch:" + change.ItemID
-	case catalog.CreatePlaylist:
+	case catalog.MutationCreatePlaylist:
 		return "mutation:create:" + change.Title
-	case catalog.DeletePlaylist:
+	case catalog.MutationDeletePlaylist:
 		return "mutation:playlist:" + change.PlaylistID
 	default:
 		return "mutation:playlist:" + change.PlaylistID + ":" + change.ItemID

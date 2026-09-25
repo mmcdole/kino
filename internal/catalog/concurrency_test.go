@@ -67,7 +67,7 @@ func TestMutationDuringCacheDecodeRejectsOldPayload(t *testing.T) {
 	done := make(chan Snapshot, 1)
 	go func() { snapshot, _ := svc.Load(context.Background(), r, Browse); done <- snapshot }()
 	<-gate.started
-	change, err := svc.Mutate(context.Background(), Mutation{Kind: Watch, ItemID: "movie", LibraryID: "a", Played: true})
+	change, err := svc.Mutate(context.Background(), Mutation{Kind: MutationWatch, ItemID: "movie", LibraryID: "a", Played: true})
 	close(gate.release)
 	if err != nil {
 		t.Fatal(err)

@@ -89,7 +89,7 @@ func TestWatchPublishesPatchedSnapshot(t *testing.T) {
 	if _, err := svc.Load(context.Background(), r, Browse); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.Mutate(context.Background(), Mutation{Kind: Watch, ItemID: "movie", LibraryID: "a", Played: true}); err != nil {
+	if _, err := svc.Mutate(context.Background(), Mutation{Kind: MutationWatch, ItemID: "movie", LibraryID: "a", Played: true}); err != nil {
 		t.Fatal(err)
 	}
 	latest(t, svc, r, func(st State) bool { return st.Snapshot.Items[0].(*domain.MediaItem).IsPlayed })
