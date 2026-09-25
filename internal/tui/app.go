@@ -71,7 +71,7 @@ type Model struct {
 	notice        Notice
 	noticeSeq     int
 	searchSeq     uint64
-	navPlan       *NavPlan
+	pendingSelect *pendingSelect
 	confirmDelete *domain.Playlist // the playlist overlayConfirmDelete asks about
 }
 
@@ -246,14 +246,14 @@ func (m *Model) handleLoadDone(msg LoadDoneMsg) tea.Cmd {
 	r := msg.Request.Resource
 	var cmds []tea.Cmd
 	if msg.Err != nil {
-		if m.navPlan != nil && m.navPlan.AwaitKey == r.Key() {
-			m.clearNavPlan()
+		if p := m.pendingSelect; p != nil && p.key == r.Key() {
+			m.pendingSelect = nil
 		}
 		cmds = append(cmds, m.notifyError("Loading "+m.resourceName(r), msg.Err))
 	} else {
-		// A fresh cached snapshot settles the load without publishing a new
-		// state, so pending navigation must also advance here.
-		cmds = append(cmds, m.advanceNavPlanAfterLoad(r.Key(), true))
+		// The load has settled, including from a fresh cache that publishes
+		// no new state, so a pending selection is decided now.
+		cmds = append(cmds, m.trySelect(r.Key(), true))
 	}
 	if msg.Warning != nil {
 		cmds = append(cmds, m.notifyError("Loaded "+m.resourceName(r), msg.Warning))

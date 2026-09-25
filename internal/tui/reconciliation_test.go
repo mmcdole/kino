@@ -23,12 +23,12 @@ func TestMutationAdvancesPendingNavigation(t *testing.T) {
 	m.Catalog = svc
 	r := catalog.LibraryResource(m.Libraries[0])
 	m = await(t, m, svc, start(m.pushColumn(r, "A")))
-	m.navPlan = &NavPlan{Targets: []string{"movie"}, AwaitKey: r.Key()}
+	m.pendingSelect = &pendingSelect{key: r.Key(), id: "movie"}
 	m = await(t, m, svc, start(m.beginMutation(catalog.Mutation{Kind: catalog.Watch, ItemID: "movie", LibraryID: r.LibraryID, Played: true})))
 	if !m.ColumnStack.Top().SelectedMediaItem().IsPlayed {
 		t.Fatal("mutation did not reach the open column")
 	}
-	if m.navPlan != nil {
+	if m.pendingSelect != nil {
 		t.Fatal("mutation snapshot did not advance pending navigation")
 	}
 }
@@ -140,10 +140,29 @@ func TestSearchNavigationCompletesFromFreshCache(t *testing.T) {
 
 	entry := search.Entry{Item: &domain.MediaItem{ID: "target", Title: "Prince of Darkness"}, LibraryID: r.LibraryID, Type: domain.MediaTypeMovie}
 	m = await(t, m, svc, start(m.navigateToSearchResult(entry)))
-	if m.navPlan != nil {
+	if m.pendingSelect != nil {
 		t.Fatal("navigation still waiting for a state the catalog never publishes")
 	}
 	if got := m.ColumnStack.Top().SelectedMediaItem(); got == nil || got.ID != "target" {
 		t.Fatalf("search result not selected: %+v", got)
+	}
+}
+
+// A show search result is selected in its library and then opened.
+func TestSearchNavigationOpensShow(t *testing.T) {
+	m := testModel(t)
+	r := catalog.LibraryResource(m.Libraries[0])
+	entry := search.Entry{Item: &domain.Show{ID: "show", Title: "Show"}, LibraryID: r.LibraryID, Type: domain.MediaTypeShow}
+	m.navigateToSearchResult(entry)
+
+	st := state(r, 1)
+	st.Snapshot.Items = []domain.ListItem{&domain.Show{ID: "other", Title: "Other"}, &domain.Show{ID: "show", Title: "Show"}}
+	m = publish(m, st)
+	if m.pendingSelect != nil {
+		t.Fatal("selection still pending after its content arrived")
+	}
+	seasons, ok := m.resource(m.ColumnStack.Top().ContentID())
+	if !ok || seasons.Kind != catalog.Seasons || seasons.ShowID != "show" {
+		t.Fatalf("show not opened: %+v", seasons)
 	}
 }

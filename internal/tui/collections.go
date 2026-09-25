@@ -59,11 +59,8 @@ func (m *Model) applyState(st catalog.State) tea.Cmd {
 	if changed && st.Snapshot.Validated {
 		m.pruneNavigation()
 	}
-	switch {
-	case st.Known && st.Err == nil:
-		cmds = append(cmds, m.advanceNavPlanAfterLoad(key, !st.Fetching))
-	case st.Err != nil && !st.Fetching && m.navPlan != nil && m.navPlan.AwaitKey == key:
-		m.clearNavPlan()
+	if st.Known {
+		cmds = append(cmds, m.trySelect(key, false))
 	}
 	m.updateResourceFeedback(r)
 	return tea.Batch(cmds...)

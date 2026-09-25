@@ -118,14 +118,14 @@ func (m *Model) handleHelp() tea.Cmd {
 	return nil
 }
 
-// handleEscape clears active filter or cancels nav plan
+// handleEscape clears active filter or cancels a pending search selection
 func (m *Model) handleEscape() tea.Cmd {
 	if top := m.ColumnStack.Top(); top != nil && top.IsFiltering() {
 		top.ClearFilter()
 		return nil
 	}
-	if m.navPlan != nil {
-		m.clearNavPlan()
+	if m.pendingSelect != nil {
+		m.pendingSelect = nil
 		return m.notify(NoticeInfo, "Navigation cancelled")
 	}
 	// Esc dismisses a persistent alert once the user has read it
@@ -154,9 +154,9 @@ func (m *Model) handleGlobalSearch() tea.Cmd {
 
 // handleDrillIn handles drilling into the selected item (l key)
 func (m *Model) handleDrillIn() tea.Cmd {
-	// Manual navigation cancels any pending search-navigation plan; a stale
-	// plan resuming on a later load would teleport the user
-	m.clearNavPlan()
+	// Manual navigation cancels any pending search selection; a stale
+	// selection resuming on a later load would teleport the user
+	m.pendingSelect = nil
 	top := m.ColumnStack.Top()
 	if top == nil {
 		return nil
@@ -175,7 +175,7 @@ func (m *Model) handleDrillIn() tea.Cmd {
 
 // handleEnter handles the enter key press
 func (m *Model) handleEnter() tea.Cmd {
-	m.clearNavPlan()
+	m.pendingSelect = nil
 	top := m.ColumnStack.Top()
 	if top == nil {
 		return nil
@@ -230,7 +230,7 @@ func (m *Model) handleRefresh() tea.Cmd {
 }
 
 func (m *Model) handleRefreshAll() tea.Cmd {
-	m.clearNavPlan()
+	m.pendingSelect = nil
 	cmds := []tea.Cmd{
 		m.loadResource(catalog.Resource{Kind: catalog.Libraries}, catalog.Refresh, false),
 		m.syncLibraries(catalog.Refresh),

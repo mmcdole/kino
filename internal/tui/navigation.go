@@ -10,13 +10,13 @@ import (
 	"github.com/mmcdole/kino/internal/tui/components"
 )
 
-type NavPlan struct {
-	Targets  []string
-	Step     int
-	AwaitKey string
+// pendingSelect selects id in the column showing key once that column has
+// content, then opens the item if open is set. Search results use it to reach
+// an item whose library may still be loading.
+type pendingSelect struct {
+	key, id string
+	open    bool
 }
-
-func (m *Model) clearNavPlan() { m.navPlan = nil }
 
 // columnOptions describes what a column of each collection kind offers.
 func columnOptions(kind catalog.Kind) components.ColumnOptions {
@@ -44,9 +44,6 @@ func (m *Model) pushColumn(r catalog.Resource, title string) tea.Cmd {
 	m.track(r)
 	if st := m.collection(r); st.Known {
 		col.ReplaceItems(domain.CloneItems(st.Snapshot.Items))
-	}
-	if m.navPlan != nil {
-		m.navPlan.AwaitKey = r.Key()
 	}
 	m.updateLayout()
 	return m.loadResource(r, catalog.Browse, false)
@@ -79,7 +76,7 @@ func (m *Model) drillSelected() tea.Cmd {
 }
 
 func (m *Model) handleBack() tea.Cmd {
-	m.clearNavPlan()
+	m.pendingSelect = nil
 	m.cancelPendingModal()
 	m.popTo(m.ColumnStack.Len() - 1)
 	return nil
@@ -98,39 +95,33 @@ func (m *Model) popTo(depth int) {
 	m.updateLayout()
 }
 
-func (m *Model) advanceNavPlanAfterLoad(key string, final bool) tea.Cmd {
-	p := m.navPlan
-	if p == nil || p.AwaitKey != key {
-		return nil
-	}
+// trySelect completes a pending selection in the column showing key. Until
+// the load is final the item may still arrive, so a miss keeps waiting.
+func (m *Model) trySelect(key string, final bool) tea.Cmd {
+	p := m.pendingSelect
 	col := m.ColumnStack.Top()
-	if col == nil || col.ContentID() != key {
-		m.clearNavPlan()
+	if p == nil || p.key != key || col == nil || col.ContentID() != key {
 		return nil
 	}
-	target := p.Targets[p.Step]
-	if target != "" && !col.SetSelectedByID(target) {
+	if !col.SetSelectedByID(p.id) {
 		if !final {
 			return nil
-		} // The fresh response may contain a newly added item.
-		m.clearNavPlan()
+		}
+		m.pendingSelect = nil
 		return m.notify(NoticeError, "Item not found (library may have changed)")
 	}
-	p.Step++
-	if p.Step == len(p.Targets) {
-		m.clearNavPlan()
+	m.pendingSelect = nil
+	if !p.open {
 		return nil
 	}
-	cmd := m.drillSelected()
-	if cmd == nil {
-		m.clearNavPlan()
-		return m.notify(NoticeError, "Navigation failed")
+	if cmd := m.drillSelected(); cmd != nil {
+		return cmd
 	}
-	return cmd
+	return m.notify(NoticeError, "Navigation failed")
 }
 
 func (m *Model) navigateToSearchResult(item search.Entry) tea.Cmd {
-	m.clearNavPlan()
+	m.pendingSelect = nil
 	m.cancelPendingModal()
 	m.popTo(1)
 	lib := m.findLibrary(item.LibraryID)
@@ -138,12 +129,9 @@ func (m *Model) navigateToSearchResult(item search.Entry) tea.Cmd {
 		return m.notify(NoticeError, "Library no longer available")
 	}
 	m.libraryColumn().SetSelectedByID(lib.ID)
-	targets := []string{item.Item.GetID()}
-	if item.Type == domain.MediaTypeShow {
-		targets = append(targets, "")
-	}
-	m.navPlan = &NavPlan{Targets: targets}
-	return m.pushColumn(catalog.LibraryResource(*lib), lib.Name)
+	r := catalog.LibraryResource(*lib)
+	m.pendingSelect = &pendingSelect{key: r.Key(), id: item.Item.GetID(), open: item.Type == domain.MediaTypeShow}
+	return tea.Batch(m.pushColumn(r, lib.Name), m.trySelect(r.Key(), false))
 }
 
 // Revalidate the navigation ancestry when an authoritative parent snapshot
@@ -163,7 +151,7 @@ func (m *Model) pruneNavigation() {
 			continue
 		}
 		m.popTo(i)
-		m.clearNavPlan()
+		m.pendingSelect = nil
 		m.notify(NoticeAlert, "Item no longer exists in this view — navigation reset")
 		return
 	}
