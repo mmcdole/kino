@@ -23,6 +23,8 @@ const (
 type Mutation struct {
 	Kind       MutationKind
 	ItemID     string
+	ShowID     string // parents of an episode, for watch count rollup
+	SeasonID   string
 	ItemIDs    []string
 	PlaylistID string
 	LibraryID  string
@@ -83,6 +85,7 @@ func (s *Service) Mutate(ctx context.Context, m Mutation) (Change, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if m.Kind == Watch {
+		watch := domain.WatchChange{ItemID: m.ItemID, ShowID: m.ShowID, SeasonID: m.SeasonID, Played: m.Played}
 		// Watch data can appear in several projections. Fence active reads before
 		// patching, so a response fetched before this write cannot undo it.
 		for key, r := range s.known {
@@ -101,7 +104,9 @@ func (s *Service) Mutate(ctx context.Context, m Mutation) (Change, error) {
 		}
 
 		if err == nil {
-			change.Warning = s.cache.PatchWatchState(m.ItemID, m.Played)
+			_, change.Warning = s.cache.Update(watch.IDs(), func(lists map[string]domain.CachedList) map[string]domain.CachedList {
+				return patchLists(lists, watch.Apply)
+			})
 		}
 		for key, revision := range change.Revisions {
 			if err == nil && change.Warning == nil && !s.invalid[key] {
@@ -213,4 +218,20 @@ func (s *Service) PlaylistMembership(ctx context.Context, itemID string) (Member
 		return Membership{}, errors.Join(failures...)
 	}
 	return result, nil
+}
+
+// patchLists adapts a domain rule over item lists to cached snapshots,
+// keeping each snapshot's fetch time and server version.
+func patchLists(lists map[string]domain.CachedList, apply func(map[string][]domain.ListItem) map[string][]domain.ListItem) map[string]domain.CachedList {
+	items := make(map[string][]domain.ListItem, len(lists))
+	for key, l := range lists {
+		items[key] = l.Items
+	}
+	changed := make(map[string]domain.CachedList)
+	for key, patched := range apply(items) {
+		l := lists[key]
+		l.Items = patched
+		changed[key] = l
+	}
+	return changed
 }

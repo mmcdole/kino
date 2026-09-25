@@ -31,6 +31,24 @@ func seedStore(t *testing.T, dir string) *Store {
 	return s
 }
 
+// watch applies a watch change the way the catalog does.
+func watch(s *Store, played bool) ([]string, error) {
+	change := domain.WatchChange{ItemID: "episode", ShowID: "show", SeasonID: "season", Played: played}
+	return s.Update(change.IDs(), func(lists map[string]domain.CachedList) map[string]domain.CachedList {
+		items := make(map[string][]domain.ListItem)
+		for key, l := range lists {
+			items[key] = l.Items
+		}
+		out := make(map[string]domain.CachedList)
+		for key, patched := range change.Apply(items) {
+			l := lists[key]
+			l.Items = patched
+			out[key] = l
+		}
+		return out
+	})
+}
+
 func TestWatchStateSnapshotsAreAtomicAndIdempotent(t *testing.T) {
 	for _, persistent := range []bool{false, true} {
 		t.Run(fmt.Sprint(persistent), func(t *testing.T) {
@@ -43,7 +61,7 @@ func TestWatchStateSnapshotsAreAtomicAndIdempotent(t *testing.T) {
 			var wg sync.WaitGroup
 			for range 32 {
 				wg.Go(func() {
-					if err := s.PatchWatchState("episode", true); err != nil {
+					if _, err := watch(s, true); err != nil {
 						t.Error(err)
 					}
 				})
@@ -65,7 +83,14 @@ func TestWatchStateSnapshotsAreAtomicAndIdempotent(t *testing.T) {
 			if shows.Items[0].(*domain.Show).UnwatchedCount != 4 || seasons.Items[0].(*domain.Season).UnwatchedCount != 4 {
 				t.Fatal("duplicate projections or callers double-counted the mutation")
 			}
-			if err := s.PatchWatchState("episode", false); err != nil {
+			saved, err := watch(s, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fmt.Sprint(saved) != "[episodes playlist seasons shows]" {
+				t.Fatalf("saved %v; unrelated snapshots were rewritten", saved)
+			}
+			if err != nil {
 				t.Fatal(err)
 			}
 			shows, _ = s.Load("shows")

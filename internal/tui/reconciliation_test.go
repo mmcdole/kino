@@ -90,7 +90,7 @@ func TestWatchCompletionAfterBackUpdatesParent(t *testing.T) {
 			t.Fatal("expected a fresh cache hit")
 		}
 	}
-	cmd := m.beginMutation(catalog.Mutation{Kind: catalog.Watch, ItemID: "episode", LibraryID: "a", Played: true})
+	cmd := m.beginMutation(catalog.Mutation{Kind: catalog.Watch, ItemID: "episode", ShowID: "show", SeasonID: "season", LibraryID: "a", Played: true})
 	next, _ := m.handleBack()
 	m = next.(Model)
 	m = updateModel(m, cmd())

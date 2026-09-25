@@ -19,11 +19,12 @@ type Backend interface {
 	MarkUnplayed(context.Context, string) error
 }
 
-// Cache supports concurrent reads and returns detached entity values.
+// Cache supports concurrent reads and returns detached entity values. Update
+// changes every snapshot mentioning one of the IDs in a single transaction.
 type Cache interface {
 	Load(string) (domain.CachedList, bool)
 	Save(string, domain.CachedList) error
-	PatchWatchState(string, bool) error
+	Update(ids []string, fn func(map[string]domain.CachedList) map[string]domain.CachedList) ([]string, error)
 }
 
 type flight struct {
