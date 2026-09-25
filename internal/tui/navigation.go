@@ -81,11 +81,11 @@ func (m *Model) drillSelected() tea.Cmd {
 	return nil
 }
 
-func (m Model) handleBack() (tea.Model, tea.Cmd) {
+func (m *Model) handleBack() tea.Cmd {
 	m.clearNavPlan()
 	m.cancelPendingModal()
 	if !m.ColumnStack.CanGoBack() {
-		return m, nil
+		return nil
 	}
 	top := m.ColumnStack.Top()
 	if r, ok := m.resource(top.ContentID()); ok {
@@ -94,7 +94,7 @@ func (m Model) handleBack() (tea.Model, tea.Cmd) {
 	}
 	m.ColumnStack.Pop()
 	m.updateLayout()
-	return m, nil
+	return nil
 }
 
 func (m *Model) advanceNavPlanAfterLoad(key string, final bool) tea.Cmd {

@@ -22,7 +22,7 @@ func (m *Model) track(r catalog.Resource) {
 	m.collections[r.Key()] = st
 }
 
-func (m Model) resource(key string) (catalog.Resource, bool) {
+func (m *Model) resource(key string) (catalog.Resource, bool) {
 	st, ok := m.collections[key]
 	return st.Resource, ok
 }

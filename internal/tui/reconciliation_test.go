@@ -71,8 +71,7 @@ func TestWatchCompletionAfterBackUpdatesParent(t *testing.T) {
 		m = await(t, m, svc, start(m.pushColumn(entry.r, "Content")))
 	}
 	cmd := m.beginMutation(catalog.Mutation{Kind: catalog.Watch, ItemID: "episode", ShowID: "show", SeasonID: "season", LibraryID: "a", Played: true})
-	next, _ := m.handleBack()
-	m = next.(Model)
+	m.handleBack()
 	m = await(t, m, svc, start(cmd))
 	if m.ColumnStack.Top().SelectedItem().(*domain.Season).UnwatchedCount != 0 || m.ColumnStack.Get(1).SelectedItem().(*domain.Show).UnwatchedCount != 0 {
 		t.Fatal("successful episode watch after Back leaves visible parent counts unchanged")
@@ -109,8 +108,7 @@ func TestSameRevisionDoesNotRebuildColumn(t *testing.T) {
 	if m.ColumnStack.Top().SelectedItem() != selected {
 		t.Fatal("an unchanged revision rebuilt the column")
 	}
-	next, _ := m.handleBack()
-	m = next.(Model)
+	m.handleBack()
 	m.pushColumn(r, "A")
 	if !m.ColumnStack.Top().HasContent() {
 		t.Fatal("reopened column did not show the retained snapshot")

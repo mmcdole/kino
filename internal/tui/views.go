@@ -15,7 +15,7 @@ func RenderSpinner(frame int) string {
 }
 
 // View renders the application
-func (m Model) View() string {
+func (m *Model) View() string {
 	if !m.Ready {
 		return "Loading..."
 	}
@@ -123,7 +123,7 @@ func (m Model) View() string {
 //   - Column-scoped work (loads, refreshes, failures) renders in the column.
 //   - The footer's left side is exclusively the notification slot: transient
 //     events and persistent alerts.
-func (m Model) renderFooter() string {
+func (m *Model) renderFooter() string {
 	// Left side: current notification, styled by kind
 	var left string
 	if m.notice.Text != "" {
@@ -187,7 +187,7 @@ func (m Model) renderFooter() string {
 }
 
 // renderHelp renders the help screen
-func (m Model) renderHelp() string {
+func (m *Model) renderHelp() string {
 	help := `
 NAVIGATION                      PLAYBACK
   j/k        Up/down               Enter  Play/resume
@@ -215,7 +215,7 @@ Press any key to return...
 }
 
 // renderLogoutConfirmation renders the logout confirmation modal
-func (m Model) renderLogoutConfirmation() string {
+func (m *Model) renderLogoutConfirmation() string {
 	modal := `
               Log Out?
 
@@ -231,7 +231,7 @@ func (m Model) renderLogoutConfirmation() string {
 }
 
 // renderDeletePlaylistConfirmation renders the playlist delete confirmation
-func (m Model) renderDeletePlaylistConfirmation() string {
+func (m *Model) renderDeletePlaylistConfirmation() string {
 	name := styles.Truncate(m.pendingDeletePlaylistName, 30)
 	modal := fmt.Sprintf(`
         Delete Playlist?

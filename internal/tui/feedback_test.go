@@ -16,7 +16,7 @@ func fetching(st catalog.State, attempt uint64) catalog.State {
 }
 
 // showSpinner publishes st and lets its indicator delay elapse.
-func showSpinner(m Model, st catalog.State) Model {
+func showSpinner(m *Model, st catalog.State) *Model {
 	m = publish(m, st)
 	return updateModel(m, ShowLoadingMsg{Key: st.Resource.Key(), Attempt: st.Attempt})
 }
@@ -118,8 +118,7 @@ func TestNetworkIndicatorTracksAllSubscribersAndNavigation(t *testing.T) {
 	if m.activeSyncCount() != 1 {
 		t.Fatal("one subscriber stopped another's indicator")
 	}
-	next, _ := m.handleBack()
-	m = next.(Model)
+	m.handleBack()
 	if m.activeSyncCount() != 0 {
 		t.Fatal("abandoned view left library spinning")
 	}
