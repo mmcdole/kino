@@ -274,8 +274,18 @@ func (c *Client) GetEpisodes(ctx context.Context, seasonID string) ([]*media.Ite
 	return mapEpisodes(resp.Items, c.baseURL), nil
 }
 
-// ResolvePlayableURL returns a direct playback URL for an item
-func (c *Client) ResolvePlayableURL(ctx context.Context, itemID string) (string, error) {
+// StartPlay returns an item's direct playback URL. The server keeps no play
+// to report on.
+func (c *Client) StartPlay(ctx context.Context, itemID string, at time.Duration) (media.Stream, error) {
+	u, err := c.playableURL(ctx, itemID)
+	if err != nil {
+		return media.Stream{}, err
+	}
+	return media.Stream{Parts: []media.StreamPart{{URL: u}}, Start: at}, nil
+}
+
+// playableURL returns a direct playback URL for an item
+func (c *Client) playableURL(ctx context.Context, itemID string) (string, error) {
 	// Get playback info to get the stream URL
 	query := url.Values{}
 	query.Set("UserId", c.userID)

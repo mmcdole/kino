@@ -371,18 +371,22 @@ func (i Inspector) renderShowInspector(show media.Show, width int) inspectorCont
 		header.WriteString("\n")
 	}
 
-	// Season/Episode counts and progress
-	header.WriteString(styles.DimStyle.Render(fmt.Sprintf("Seasons: %d", show.SeasonCount)))
-	header.WriteString("\n")
-	header.WriteString(styles.DimStyle.Render(fmt.Sprintf("Episodes: %d", show.EpisodeCount)))
-	header.WriteString("\n")
-
-	watched := show.EpisodeCount - show.UnwatchedCount
-	progress := 0.0
-	if show.EpisodeCount > 0 {
-		progress = float64(watched) / float64(show.EpisodeCount) * 100
+	// Season/Episode counts and progress; a server may give only the
+	// unwatched count
+	if show.SeasonCount > 0 {
+		header.WriteString(styles.DimStyle.Render(fmt.Sprintf("Seasons: %d", show.SeasonCount)))
+		header.WriteString("\n")
 	}
-	header.WriteString(styles.DimStyle.Render(fmt.Sprintf("Progress: %.0f%% (%d/%d)", progress, watched, show.EpisodeCount)))
+	if show.EpisodeCount == 0 {
+		header.WriteString(styles.DimStyle.Render(fmt.Sprintf("Unwatched episodes: %d", show.UnwatchedCount)))
+	} else {
+		header.WriteString(styles.DimStyle.Render(fmt.Sprintf("Episodes: %d", show.EpisodeCount)))
+		header.WriteString("\n")
+
+		watched := show.EpisodeCount - show.UnwatchedCount
+		progress := float64(watched) / float64(show.EpisodeCount) * 100
+		header.WriteString(styles.DimStyle.Render(fmt.Sprintf("Progress: %.0f%% (%d/%d)", progress, watched, show.EpisodeCount)))
+	}
 
 	// Body: summary
 	bodyStr := ""

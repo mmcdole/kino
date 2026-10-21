@@ -1,0 +1,7 @@
+{
+  "code": "F5WUFZ",
+  "expiresAt": "2026-10-18T05:46:43.342202805Z",
+  "interval": 2,
+  "linkUrl": "http://kivo.example:8484/link?code=F5WUFZ&server=01a130af-e6e0-70dd-9f97-553cd97c959e",
+  "secret": "device-secret"
+}

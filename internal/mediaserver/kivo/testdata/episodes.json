@@ -1,0 +1,160 @@
+{
+  "items": [
+    {
+      "addedAt": "2026-10-09T21:04:18.522Z",
+      "available": true,
+      "communityRating": 4.5,
+      "communityVotes": 26,
+      "durationMs": 2502848,
+      "episode": {
+        "airDate": "2026-02-08",
+        "number": 1,
+        "season": 1,
+        "seasonId": "01a1227b-265a-7176-b148-5e600aa5ff7f",
+        "seriesId": "01a1227b-2659-73c4-bfe5-6a8ae96b477e",
+        "seriesTitle": "The 'Burbs"
+      },
+      "id": "01a1227b-265a-7177-b4fe-40aa18f5d0df",
+      "images": {
+        "backdrop": {
+          "blurhash": "LFD9VO^*I=_30gxW%2Ip0}OFxWV?",
+          "height": 1080,
+          "id": "01a12283-a858-7028-8118-d1574d52b89e",
+          "width": 1920
+        },
+        "logo": {
+          "blurhash": "LDDR$8s-NI$~0j$~Rlaz9zj[R+NI",
+          "height": 373,
+          "id": "01a12283-a9ab-735a-b908-6b7956f8c0aa",
+          "width": 708
+        },
+        "poster": {
+          "blurhash": "TNF5aDJCRi4:M{s-15-UWBo#xbW=",
+          "height": 1688,
+          "id": "01a12283-a721-71a8-911c-386b62028245",
+          "width": 1125
+        },
+        "still": {
+          "blurhash": "LiN9%eR6t6~pxuRkjYxaRkazf6jF",
+          "height": 2160,
+          "id": "01a12283-a7d7-7023-9fd1-76b36de8f84a",
+          "width": 3840
+        }
+      },
+      "kind": "episode",
+      "matchState": "matched",
+      "title": "The Goddamn Brownies",
+      "userState": {
+        "favorite": false,
+        "lastPlayedAt": "2026-10-18T05:41:25.73Z",
+        "playCount": 0,
+        "played": false,
+        "positionMs": 730956
+      },
+      "year": 2026
+    },
+    {
+      "addedAt": "2026-10-09T21:04:18.529Z",
+      "available": true,
+      "communityRating": 3.1,
+      "communityVotes": 20,
+      "durationMs": 2436544,
+      "episode": {
+        "airDate": "2026-02-08",
+        "number": 2,
+        "season": 1,
+        "seasonId": "01a1227b-265a-7176-b148-5e600aa5ff7f",
+        "seriesId": "01a1227b-2659-73c4-bfe5-6a8ae96b477e",
+        "seriesTitle": "The 'Burbs"
+      },
+      "id": "01a1227b-2661-715e-a435-801d64720f9f",
+      "images": {
+        "backdrop": {
+          "blurhash": "LFD9VO^*I=_30gxW%2Ip0}OFxWV?",
+          "height": 1080,
+          "id": "01a12283-a858-7028-8118-d1574d52b89e",
+          "width": 1920
+        },
+        "logo": {
+          "blurhash": "LDDR$8s-NI$~0j$~Rlaz9zj[R+NI",
+          "height": 373,
+          "id": "01a12283-a9ab-735a-b908-6b7956f8c0aa",
+          "width": 708
+        },
+        "poster": {
+          "blurhash": "TNF5aDJCRi4:M{s-15-UWBo#xbW=",
+          "height": 1688,
+          "id": "01a12283-a721-71a8-911c-386b62028245",
+          "width": 1125
+        },
+        "still": {
+          "blurhash": "L89GN?-TRjW;}@xWR%jG^*NHR*Rk",
+          "height": 2160,
+          "id": "01a12283-a804-7393-a5f4-240a52c78d49",
+          "width": 3840
+        }
+      },
+      "kind": "episode",
+      "matchState": "matched",
+      "title": "Mind Your Own Business",
+      "userState": {
+        "favorite": false,
+        "playCount": 0,
+        "played": false
+      },
+      "year": 2026
+    },
+    {
+      "addedAt": "2026-10-09T21:04:18.536Z",
+      "available": true,
+      "communityRating": 3.667,
+      "communityVotes": 21,
+      "durationMs": 2944288,
+      "episode": {
+        "airDate": "2026-02-08",
+        "number": 3,
+        "season": 1,
+        "seasonId": "01a1227b-265a-7176-b148-5e600aa5ff7f",
+        "seriesId": "01a1227b-2659-73c4-bfe5-6a8ae96b477e",
+        "seriesTitle": "The 'Burbs"
+      },
+      "id": "01a1227b-2668-7087-9504-b2408beae6ac",
+      "images": {
+        "backdrop": {
+          "blurhash": "LFD9VO^*I=_30gxW%2Ip0}OFxWV?",
+          "height": 1080,
+          "id": "01a12283-a858-7028-8118-d1574d52b89e",
+          "width": 1920
+        },
+        "logo": {
+          "blurhash": "LDDR$8s-NI$~0j$~Rlaz9zj[R+NI",
+          "height": 373,
+          "id": "01a12283-a9ab-735a-b908-6b7956f8c0aa",
+          "width": 708
+        },
+        "poster": {
+          "blurhash": "TNF5aDJCRi4:M{s-15-UWBo#xbW=",
+          "height": 1688,
+          "id": "01a12283-a721-71a8-911c-386b62028245",
+          "width": 1125
+        },
+        "still": {
+          "blurhash": "L98M,HR*0gxF}@fPIVjZ={ayIooL",
+          "height": 2160,
+          "id": "01a12283-a95e-71f5-9839-0943df214df6",
+          "width": 3840
+        }
+      },
+      "kind": "episode",
+      "matchState": "matched",
+      "title": "Sardine?",
+      "userState": {
+        "favorite": false,
+        "playCount": 0,
+        "played": false
+      },
+      "year": 2026
+    }
+  ],
+  "total": 8
+}

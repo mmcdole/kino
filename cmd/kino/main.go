@@ -7,6 +7,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mmcdole/kino/internal/catalog"
@@ -41,6 +43,14 @@ func main() {
 
 	if showVersion {
 		fmt.Printf("kino %s\n", Version)
+		return
+	}
+
+	if flag.Arg(0) == player.SessionCommand {
+		if err := runPlaySession(); err != nil {
+			slog.Error("play session failed", "error", err)
+			os.Exit(1)
+		}
 		return
 	}
 
@@ -97,7 +107,11 @@ func run() error {
 	catalogSvc := catalog.NewService(ctx, client, cache)
 	defer catalogSvc.Close()
 	playback := player.New(cfg.Player.Command, cfg.Player.Args, cfg.Player.StartFlag, client, logger)
-	opts := tui.Options{ShowWatchStatus: cfg.UI.ShowWatchStatus, ShowLibraryCounts: cfg.UI.ShowLibraryCounts}
+	opts := tui.Options{
+		ShowWatchStatus:   cfg.UI.ShowWatchStatus,
+		ShowLibraryCounts: cfg.UI.ShowLibraryCounts,
+		NoPlaylists:       !catalogSvc.HasPlaylists(),
+	}
 	model := tui.NewModel(ctx, catalogSvc, playback, session{cfg}, search.NewIndex(), opts)
 
 	// Run the TUI
@@ -127,4 +141,30 @@ func run() error {
 	}
 	logger.Info("shutting down")
 	return nil
+}
+
+// runPlaySession follows one play the TUI started, from the player's launch
+// to its exit, reporting progress to the server. The TUI starts it with the
+// play on stdin; it outlives the TUI as the player does.
+func runPlaySession() error {
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+	logger, err := openLogger(&cfg.Logging)
+	if err != nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
+	slog.SetDefault(logger)
+	logger = logger.With("component", "play-session")
+
+	client, err := mediaserver.New(cfg, logger)
+	if err != nil {
+		fmt.Println("error " + err.Error())
+		return err
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer stop()
+	playback := player.New(cfg.Player.Command, cfg.Player.Args, cfg.Player.StartFlag, client, logger)
+	return playback.RunSession(ctx, os.Stdin, os.Stdout)
 }

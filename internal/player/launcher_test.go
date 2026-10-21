@@ -146,7 +146,7 @@ func TestParseRegistryStringQuotedExecutable(t *testing.T) {
 
 func TestPlayerArgs(t *testing.T) {
 	t.Run("PotPlayer URL precedes seek switch", func(t *testing.T) {
-		got := playerArgs(windowsPlayers[0], "http://media", 42)
+		got := playerArgs(windowsPlayers[0], []string{"http://media"}, 42, 1)
 		want := []string{"http://media", "/seek=42"}
 		if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
 			t.Fatalf("args = %#v, want %#v", got, want)
@@ -154,7 +154,7 @@ func TestPlayerArgs(t *testing.T) {
 	})
 
 	t.Run("configured PotPlayer keeps all switches after URL", func(t *testing.T) {
-		got := configuredPlayerArgs([]string{"/new"}, windowsPlayers[0], true, "http://media", []string{"/seek=42"})
+		got := configuredPlayerArgs([]string{"/new"}, windowsPlayers[0], true, []string{"http://media"}, []string{"/seek=42"})
 		want := []string{"http://media", "/new", "/seek=42"}
 		if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
 			t.Fatalf("args = %#v, want %#v", got, want)
@@ -179,13 +179,47 @@ func TestPlayerArgs(t *testing.T) {
 				if platform.separateInstance {
 					want = append([]string{"--no-one-instance"}, want...)
 				}
-				got := playerArgs(player, "http://media", 921)
+				got := playerArgs(player, []string{"http://media"}, 921, 1)
 				if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
 					t.Fatalf("resume args = %#v, want %#v", got, want)
 				}
-				if got := playerArgs(player, "http://media", 0); len(got) != 1 || got[0] != "http://media" {
+				if got := playerArgs(player, []string{"http://media"}, 0, 1); len(got) != 1 || got[0] != "http://media" {
 					t.Fatalf("play from start args = %#v, want only the URL", got)
 				}
+			}
+		})
+	}
+}
+
+func TestMediaArgs(t *testing.T) {
+	mpv := linuxPlayers[0]
+	vlc := linuxPlayers[1]
+	one := launchSpec{urls: []string{"http://a"}, offset: 90 * time.Second, ipc: "/run/kino.sock"}
+	parts := launchSpec{urls: []string{"http://a", "http://b"}, offset: 90 * time.Second, ipc: "/run/kino.sock"}
+	for _, tc := range []struct {
+		name   string
+		player playerDef
+		exe    string
+		spec   launchSpec
+		want   []string
+		ipc    bool
+	}{
+		{"mpv listens on the socket", mpv, "/usr/bin/mpv", one,
+			[]string{"--start=90", "--input-ipc-server=/run/kino.sock", "http://a"}, true},
+		{"a Windows mpv from WSL can't reach a unix socket", mpv, "/mnt/c/mpv/mpv.exe", one,
+			[]string{"--start=90", "http://a"}, false},
+		{"VLC has no IPC", vlc, "/usr/bin/vlc", one,
+			[]string{"--no-one-instance", "--start-time=90", "http://a"}, false},
+		{"mpv starts only the first part at the offset", mpv, "/usr/bin/mpv", parts,
+			[]string{"--input-ipc-server=/run/kino.sock", "--{", "--start=90", "http://a", "--}", "http://b"}, true},
+		{"a session without a socket asks for none", mpv, "/usr/bin/mpv", launchSpec{urls: []string{"http://a"}},
+			[]string{"http://a"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			media, ipc := mediaArgs(tc.player, tc.spec, tc.exe)
+			got := playerArgs(tc.player, media, int(tc.spec.offset.Seconds()), len(tc.spec.urls))
+			if strings.Join(got, "\x00") != strings.Join(tc.want, "\x00") || ipc != tc.ipc {
+				t.Fatalf("args = %#v (ipc %t), want %#v (ipc %t)", got, ipc, tc.want, tc.ipc)
 			}
 		})
 	}
@@ -306,10 +340,11 @@ func TestRedactTokens(t *testing.T) {
 		"--start=30",
 		"http://server:8096/Videos/1/stream.mkv?Static=true&api_key=SECRET1",
 		"http://server:32400/library/parts/2/file.mkv?X-Plex-Token=SECRET2&other=1",
+		"http://kivo:8484/api/v1/plays/SECRET3/files/0",
 	}
 	out := redactTokens(in)
 	joined := strings.Join(out, " ")
-	if strings.Contains(joined, "SECRET1") || strings.Contains(joined, "SECRET2") {
+	if strings.Contains(joined, "SECRET1") || strings.Contains(joined, "SECRET2") || strings.Contains(joined, "SECRET3") {
 		t.Fatalf("token leaked: %q", joined)
 	}
 	if !strings.Contains(joined, "api_key=REDACTED") || !strings.Contains(joined, "X-Plex-Token=REDACTED") {
@@ -367,7 +402,7 @@ func TestInstalledMacOSVLCAcceptsResumeArguments(t *testing.T) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		args := playerArgs(player, "--version", 921)
+		args := playerArgs(player, []string{"--version"}, 921, 1)
 		output, err := exec.CommandContext(ctx, binary, args...).CombinedOutput()
 		if err != nil {
 			t.Fatalf("VLC rejected resume arguments: %v\n%s", err, output)

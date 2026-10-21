@@ -18,6 +18,7 @@ type ServerType string
 const (
 	Plex     ServerType = "plex"
 	Jellyfin ServerType = "jellyfin"
+	Kivo     ServerType = "kivo"
 )
 
 // Config holds all application configuration
@@ -32,11 +33,11 @@ type Config struct {
 
 // ServerConfig holds media server configuration
 type ServerConfig struct {
-	Type     ServerType `mapstructure:"type"`      // "plex" or "jellyfin"
+	Type     ServerType `mapstructure:"type"`      // "plex", "jellyfin" or "kivo"
 	URL      string     `mapstructure:"url"`       // Server URL
-	Token    string     `mapstructure:"token"`     // Plex token OR Jellyfin API key
-	UserID   string     `mapstructure:"user_id"`   // Jellyfin only
-	Username string     `mapstructure:"username"`  // Jellyfin only (display)
+	Token    string     `mapstructure:"token"`     // Plex token, Jellyfin API key or Kivo session token
+	UserID   string     `mapstructure:"user_id"`   // Jellyfin and Kivo
+	Username string     `mapstructure:"username"`  // Jellyfin and Kivo (display)
 	DeviceID string     `mapstructure:"device_id"` // Unique per-install device identifier
 }
 

@@ -20,7 +20,7 @@ func TestPlaylistFreshnessExpiresWithoutDiscardingOfflineFallback(t *testing.T) 
 }
 
 type watchBackend struct {
-	Backend
+	playlistServer
 	watch func(context.Context) error
 }
 
@@ -73,7 +73,7 @@ func TestUncertainWatchWriteRequiresRevalidation(t *testing.T) {
 
 func TestWatchPatchDoesNotPromoteInvalidCachedPayload(t *testing.T) {
 	svc, cache := testService(t, fakeBackend{
-		Backend: watchBackend{watch: func(context.Context) error { return nil }},
+		playlistServer: watchBackend{watch: func(context.Context) error { return nil }},
 		movies: func(context.Context) ([]*media.Item, int, error) {
 			return []*media.Item{{ID: "movie", Title: "Current"}}, 1, nil
 		},

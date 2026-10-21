@@ -17,6 +17,7 @@ import (
 	"github.com/mmcdole/kino/internal/media"
 	"github.com/mmcdole/kino/internal/mediaserver"
 	"github.com/mmcdole/kino/internal/mediaserver/jellyfin"
+	"github.com/mmcdole/kino/internal/mediaserver/kivo"
 	"github.com/mmcdole/kino/internal/mediaserver/plex"
 	"github.com/mmcdole/kino/internal/tui/styles"
 )
@@ -84,6 +85,8 @@ func runSetupFlow(cfg *config.Config, logger *slog.Logger) error {
 		result, err = signInPlex(ctx, cfg.Server.DeviceID, logger)
 	case config.Jellyfin:
 		result, err = signInJellyfin(ctx, serverURL, cfg.Server.DeviceID, logger)
+	case config.Kivo:
+		result, err = signInKivo(ctx, serverURL, cfg.Server.DeviceID, logger)
 	default:
 		err = fmt.Errorf("unknown server type: %s", serverType)
 	}
@@ -150,6 +153,8 @@ func detectServerWithSpinner(serverURL string) (config.ServerType, error) {
 				serverName = "Plex Media Server"
 			case config.Jellyfin:
 				serverName = "Jellyfin"
+			case config.Kivo:
+				serverName = "Kivo"
 			}
 			fmt.Printf("✓ Detected: %s\n", serverName)
 
@@ -197,6 +202,41 @@ func signInPlex(ctx context.Context, deviceID string, logger *slog.Logger) (*med
 
 	// Plex API calls need only the token.
 	return &media.Credentials{Token: token}, nil
+}
+
+// signInKivo links this install by device code: the user approves the code
+// in Kivo's web client, at /link or another signed-in app.
+func signInKivo(ctx context.Context, serverURL, deviceID string, logger *slog.Logger) (*media.Credentials, error) {
+	auth := kivo.NewAuthClient(serverURL, logger)
+	name := "kino"
+	if host, err := os.Hostname(); err == nil && host != "" {
+		name = "kino on " + host
+	}
+
+	fmt.Println()
+	fmt.Println("Starting sign-in...")
+
+	code, err := auth.StartDeviceCode(ctx, name, deviceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start sign-in: %w", err)
+	}
+
+	fmt.Println()
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Printf("  Go to: %s\n", code.LinkURL)
+	fmt.Printf("  Or enter code %s in a signed-in Kivo app\n", code.Code)
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println()
+	fmt.Println("Waiting for approval...")
+
+	result, err := auth.WaitForDeviceCode(ctx, code)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println()
+	fmt.Println("Authentication successful!")
+	return result, nil
 }
 
 // signInJellyfin prompts for a username and password and signs in.

@@ -1,0 +1,47 @@
+{
+  "items": [
+    {
+      "id": "01a12224-94d8-7144-81b1-87d8b41f390d",
+      "itemCount": 1999,
+      "kind": "movies",
+      "name": "Movies",
+      "pinned": true
+    },
+    {
+      "id": "01a1357c-0563-70ee-ab2c-960145aebefd",
+      "itemCount": 527,
+      "kind": "movies",
+      "name": "Movies Kids",
+      "pinned": true
+    },
+    {
+      "id": "01a12269-7594-712d-ab86-3dfe2b2f068b",
+      "itemCount": 515,
+      "kind": "shows",
+      "name": "TV",
+      "pinned": true
+    },
+    {
+      "id": "01a1357c-60e1-7195-a312-6d36c83ace87",
+      "itemCount": 101,
+      "kind": "shows",
+      "name": "TV Kids",
+      "pinned": true
+    },
+    {
+      "id": "01a122f9-815f-7351-b839-38f6e4b06bec",
+      "itemCount": 44,
+      "kind": "shows",
+      "name": "Anime",
+      "pinned": true
+    },
+    {
+      "id": "01a12e46-4a5b-71cb-be7e-787e1ab934f3",
+      "itemCount": 190,
+      "kind": "audiobooks",
+      "name": "Audiobooks",
+      "pinned": true
+    }
+  ],
+  "total": 6
+}

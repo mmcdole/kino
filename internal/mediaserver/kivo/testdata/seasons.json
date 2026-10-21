@@ -1,0 +1,46 @@
+{
+  "items": [
+    {
+      "addedAt": "2026-10-09T21:04:18.522Z",
+      "available": true,
+      "id": "01a1227b-265a-7176-b148-5e600aa5ff7f",
+      "images": {
+        "backdrop": {
+          "blurhash": "LFD9VO^*I=_30gxW%2Ip0}OFxWV?",
+          "height": 1080,
+          "id": "01a12283-a858-7028-8118-d1574d52b89e",
+          "width": 1920
+        },
+        "logo": {
+          "blurhash": "LDDR$8s-NI$~0j$~Rlaz9zj[R+NI",
+          "height": 373,
+          "id": "01a12283-a9ab-735a-b908-6b7956f8c0aa",
+          "width": 708
+        },
+        "poster": {
+          "blurhash": "TNF5aDJCRi4:M{s-15-UWBo#xbW;",
+          "height": 1688,
+          "id": "01a12283-a763-7371-9dbc-93f1e8f814cd",
+          "width": 1125
+        }
+      },
+      "kind": "season",
+      "matchState": "matched",
+      "season": {
+        "episodeCount": 8,
+        "number": 1,
+        "seriesId": "01a1227b-2659-73c4-bfe5-6a8ae96b477e",
+        "seriesTitle": "The 'Burbs",
+        "unplayedCount": 8
+      },
+      "title": "Season 1",
+      "userState": {
+        "favorite": false,
+        "playCount": 0,
+        "played": false
+      },
+      "year": 2026
+    }
+  ],
+  "total": 1
+}

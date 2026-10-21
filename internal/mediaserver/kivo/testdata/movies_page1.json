@@ -1,0 +1,85 @@
+{
+  "items": [
+    {
+      "addedAt": "2026-10-09T19:31:44.044Z",
+      "available": true,
+      "communityRating": 6.758,
+      "communityVotes": 1438,
+      "contentRating": "PG",
+      "durationMs": 6100386,
+      "id": "01a12226-652c-73a4-a643-b38ce4d0889a",
+      "images": {
+        "backdrop": {
+          "blurhash": "LJDTn-yGs;tR05x_ERRj?cxt%MRj",
+          "height": 2160,
+          "id": "01a1222c-6359-7041-ac42-513971fc220b",
+          "width": 3840
+        },
+        "logo": {
+          "blurhash": "L69E{1ExEvS1,IfkNsoN1XsASMR$",
+          "height": 293,
+          "id": "01a1222c-6522-716e-9713-3891329ca924",
+          "width": 783
+        },
+        "poster": {
+          "blurhash": "TYDcj.kDjv0KaeV[-oV?kVM_f5oe",
+          "height": 3000,
+          "id": "01a1222c-61ab-71b7-a3bc-9aeb3e00592b",
+          "width": 2000
+        }
+      },
+      "kind": "movie",
+      "matchState": "matched",
+      "title": "The 'Burbs",
+      "userState": {
+        "favorite": true,
+        "lastPlayedAt": "2026-10-18T05:41:01.886Z",
+        "playCount": 0,
+        "played": false,
+        "positionMs": 2744111
+      },
+      "year": 1989
+    },
+    {
+      "addedAt": "2026-10-09T19:29:45.908Z",
+      "available": true,
+      "communityRating": 6.7,
+      "communityVotes": 846,
+      "contentRating": "PG",
+      "durationMs": 6389408,
+      "id": "01a12224-97b4-7226-b214-7e0612223e29",
+      "images": {
+        "backdrop": {
+          "blurhash": "LC7e0f%i9DI8x_x]WBITR+k9t7jG",
+          "height": 2160,
+          "id": "01a12224-9e59-7138-b59d-808dd7d9d427",
+          "width": 3840
+        },
+        "logo": {
+          "blurhash": "LHAv,zoLt6t6E2oft6oe0Loeofoe",
+          "height": 90,
+          "id": "01a12224-a14d-71f8-b502-714a3e2a74f8",
+          "width": 782
+        },
+        "poster": {
+          "blurhash": "TA7Ub%.AIS%j%OR%MvWUxuITM{oJ",
+          "height": 1500,
+          "id": "01a12224-9c7b-702a-bc02-93dd5f4526e4",
+          "width": 1000
+        }
+      },
+      "kind": "movie",
+      "matchState": "matched",
+      "title": "*batteries not included",
+      "userState": {
+        "favorite": true,
+        "lastPlayedAt": "2026-10-13T15:36:53.811Z",
+        "playCount": 0,
+        "played": false
+      },
+      "year": 1987
+    }
+  ],
+  "next": "eyJsIjoidGl0bGUiLCJ0IjoiKmJhdHRlcmllcyBub3QgaW5jbHVkZWQiLCJpIjoiMDFhMTIyMjQtOTdiNC03MjI2LWIyMTQtN2UwNjEyMjIzZTI5In0",
+  "total": 1999
+}

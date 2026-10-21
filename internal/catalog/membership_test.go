@@ -11,7 +11,7 @@ import (
 )
 
 type playlistBackend struct {
-	Backend
+	playlistServer
 	items     func(context.Context, string) ([]*media.Item, error)
 	playlists []*media.Playlist
 }
@@ -48,3 +48,20 @@ func TestMembershipRevalidatesEvenFreshCachedItems(t *testing.T) {
 		t.Fatalf("membership trusted stale cached absence: %+v %v", result, err)
 	}
 }
+
+// A server without playlists says so on every playlist load and write rather
+// than looking like one with none.
+func TestServerWithoutPlaylists(t *testing.T) {
+	svc, _ := testService(t, withoutPlaylists{})
+	if svc.HasPlaylists() {
+		t.Fatal("backend without playlist methods reported playlists")
+	}
+	if _, err := svc.Load(context.Background(), Resource{Kind: Playlists}, Revalidate); !errors.Is(err, ErrNoPlaylists) {
+		t.Fatalf("load: %v", err)
+	}
+	if _, err := svc.Mutate(context.Background(), Mutation{Kind: MutationCreatePlaylist, Title: "x"}); !errors.Is(err, ErrNoPlaylists) {
+		t.Fatalf("create: %v", err)
+	}
+}
+
+type withoutPlaylists struct{ Backend }

@@ -66,13 +66,13 @@ func (c WatchChange) Apply(lists map[string][]ListItem) map[string][]ListItem {
 			case *Show:
 				if v.ID == c.ShowID {
 					s := *v
-					s.UnwatchedCount = min(max(s.UnwatchedCount+delta, 0), s.EpisodeCount)
+					s.UnwatchedCount = adjustUnwatched(s.UnwatchedCount, delta, s.EpisodeCount)
 					patched = &s
 				}
 			case *Season:
 				if v.ID == c.SeasonID {
 					s := *v
-					s.UnwatchedCount = min(max(s.UnwatchedCount+delta, 0), s.EpisodeCount)
+					s.UnwatchedCount = adjustUnwatched(s.UnwatchedCount, delta, s.EpisodeCount)
 					patched = &s
 				}
 			}
@@ -87,4 +87,14 @@ func (c WatchChange) Apply(lists map[string][]ListItem) map[string][]ListItem {
 		}
 	}
 	return changed
+}
+
+// adjustUnwatched applies delta to an unwatched count, bounded by the episode
+// count when it is known (non-zero; Kivo's series cards don't carry it).
+func adjustUnwatched(unwatched, delta, episodes int) int {
+	unwatched = max(unwatched+delta, 0)
+	if episodes > 0 {
+		unwatched = min(unwatched, episodes)
+	}
+	return unwatched
 }

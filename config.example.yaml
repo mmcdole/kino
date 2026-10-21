@@ -2,17 +2,17 @@
 # Copy this file to ~/.config/kino/config.yaml
 
 # Server Configuration
-# Supports both Plex and Jellyfin backends
+# Supports Plex, Jellyfin and Kivo backends
 server:
-  # Server type: "plex" or "jellyfin" (auto-detected during setup)
+  # Server type: "plex", "jellyfin" or "kivo" (auto-detected during setup)
   type: "plex"
   # URL of your media server
   url: "http://192.168.1.100:32400"
   # Authentication token (auto-populated after authentication)
   token: "YOUR_TOKEN"
-  # Jellyfin only: User ID (auto-populated during auth)
+  # Jellyfin and Kivo: User ID (auto-populated during auth)
   # user_id: ""
-  # Jellyfin only: Username for display (auto-populated during auth)
+  # Jellyfin and Kivo: Username for display (auto-populated during auth)
   # username: ""
   # Unique per-install device identifier (auto-generated; do not share
   # between installs — servers revoke tokens when a device ID is reused)

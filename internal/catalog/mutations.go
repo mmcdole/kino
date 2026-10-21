@@ -70,6 +70,9 @@ func (s *Service) Mutate(ctx context.Context, m Mutation) (Change, error) {
 		return Change{}, err
 	}
 	change := Change{Mutation: m}
+	if m.Kind != MutationWatch && s.playlists == nil {
+		return change, ErrNoPlaylists
+	}
 	var err error
 	switch m.Kind {
 	case MutationWatch:
@@ -79,13 +82,13 @@ func (s *Service) Mutate(ctx context.Context, m Mutation) (Change, error) {
 			err = s.backend.MarkUnplayed(ctx, m.ItemID)
 		}
 	case MutationCreatePlaylist:
-		change.Playlist, err = s.backend.CreatePlaylist(ctx, m.Title, m.itemIDs())
+		change.Playlist, err = s.playlists.CreatePlaylist(ctx, m.Title, m.itemIDs())
 	case MutationAddToPlaylist:
-		err = s.backend.AddToPlaylist(ctx, m.PlaylistID, m.itemIDs())
+		err = s.playlists.AddToPlaylist(ctx, m.PlaylistID, m.itemIDs())
 	case MutationRemoveFromPlaylist:
-		err = s.backend.RemoveFromPlaylist(ctx, m.PlaylistID, m.ItemID)
+		err = s.playlists.RemoveFromPlaylist(ctx, m.PlaylistID, m.ItemID)
 	case MutationDeletePlaylist:
-		err = s.backend.DeletePlaylist(ctx, m.PlaylistID)
+		err = s.playlists.DeletePlaylist(ctx, m.PlaylistID)
 	default:
 		return change, fmt.Errorf("unknown mutation %d", m.Kind)
 	}

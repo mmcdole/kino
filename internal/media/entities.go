@@ -100,8 +100,8 @@ type Show struct {
 	Year           int    // First air year
 	AddedAt        int64  // Unix timestamp when added to library
 	UpdatedAt      int64  // Unix timestamp when last updated
-	SeasonCount    int    // Total number of seasons
-	EpisodeCount   int    // Total number of episodes
+	SeasonCount    int    // Total number of seasons; zero when the server doesn't say
+	EpisodeCount   int    // Total number of episodes; zero when the server doesn't say
 	UnwatchedCount int    // Number of unwatched episodes
 
 	// Rating (0-10 scale, audience/community rating)

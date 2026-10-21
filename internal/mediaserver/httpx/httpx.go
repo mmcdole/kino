@@ -77,17 +77,31 @@ func (c *Client) Do(ctx context.Context, r Request) ([]byte, error) {
 		case status == http.StatusNotFound:
 			return nil, media.ErrItemNotFound
 		case status >= 500:
-			lastErr = fmt.Errorf("server error: %d - %s", status, truncate(body))
+			lastErr = &StatusError{Status: status, Body: body}
 			c.Logger.Warn("server error", "backend", c.Name, "status", status, "method", r.Method, "path", r.Path, "attempt", attempt)
 		case status >= 200 && status < 300:
 			return body, nil
 		default:
 			c.Logger.Error("request error", "backend", c.Name, "status", status, "path", r.Path, "body", truncate(body))
-			return nil, fmt.Errorf("unexpected status code: %d", status)
+			return nil, &StatusError{Status: status, Body: body}
 		}
 	}
 	c.Logger.Error("request failed", "backend", c.Name, "error", lastErr, "method", r.Method, "path", r.Path)
 	return nil, lastErr
+}
+
+// StatusError is a response Do could not map to a media error. Body is kept
+// so a backend can decode the server's own error document.
+type StatusError struct {
+	Status int
+	Body   []byte
+}
+
+func (e *StatusError) Error() string {
+	if e.Status >= 500 {
+		return fmt.Sprintf("server error: %d - %s", e.Status, truncate(e.Body))
+	}
+	return fmt.Sprintf("unexpected status code: %d", e.Status)
 }
 
 func (c *Client) send(ctx context.Context, target string, r Request) ([]byte, int, error) {

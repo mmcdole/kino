@@ -36,11 +36,15 @@ func (s *Service) fetch(ctx context.Context, r Resource, progress progressFunc) 
 	case Episodes:
 		items, err := s.backend.GetEpisodes(ctx, r.ID)
 		return media.ListItems(items), err
-	case Playlists:
-		items, err := s.backend.GetPlaylists(ctx)
-		return media.ListItems(items), err
-	case PlaylistItems:
-		items, err := s.backend.GetPlaylistItems(ctx, r.ID)
+	case Playlists, PlaylistItems:
+		if s.playlists == nil {
+			return nil, ErrNoPlaylists
+		}
+		if r.Kind == PlaylistItems {
+			items, err := s.playlists.GetPlaylistItems(ctx, r.ID)
+			return media.ListItems(items), err
+		}
+		items, err := s.playlists.GetPlaylists(ctx)
 		return media.ListItems(items), err
 	default:
 		return nil, fmt.Errorf("unknown resource kind %d", r.Kind)

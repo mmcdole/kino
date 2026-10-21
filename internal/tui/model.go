@@ -36,6 +36,7 @@ type Session interface {
 type Options struct {
 	ShowWatchStatus   bool
 	ShowLibraryCounts bool
+	NoPlaylists       bool // the server has none: no Playlists row or playlist actions
 }
 
 // Model is the Bubble Tea model for the whole application.

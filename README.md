@@ -2,7 +2,7 @@
 
 ![Kino Demo](demo.gif?v=3)
 
-> A fast terminal client for browsing and playing media from Plex and Jellyfin servers
+> A fast terminal client for browsing and playing media from Plex, Jellyfin and Kivo servers
 
 ## Features
 
@@ -31,7 +31,9 @@ Launch Kino and follow the interactive setup:
 kino
 ```
 
-You'll be prompted to enter your server URL. Kino automatically detects whether it's a Plex or Jellyfin server and guides you through the appropriate authentication.
+You'll be prompted to enter your server URL. Kino automatically detects whether it's a Plex, Jellyfin or Kivo server and guides you through the appropriate authentication. Kivo signs in by code: approve it at the link kino prints, or in any signed-in Kivo app.
+
+With Kivo, kino reports where you are as you watch, so your resume point follows you to Kivo's other apps. That needs mpv (or IINA or Celluloid, which are built on it); other players play, but leave the resume point where it was. Kivo's audiobooks and videos libraries aren't shown yet.
 
 ## Usage
 
