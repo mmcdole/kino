@@ -1,0 +1,23 @@
+{
+  "code": "streamLimit",
+  "plays": [
+    {
+      "client": "Living Room",
+      "id": "01a14d87-75e8-70b0-9d7b-07bcce2ea635",
+      "startedAt": "2026-10-18T05:30:00Z",
+      "title": "Dune",
+      "workId": "01a12226-652c-73a4-a643-b38ce4d0889b"
+    },
+    {
+      "client": "iPhone",
+      "id": "01a14d87-75e8-70b0-9d7b-07bcce2ea636",
+      "startedAt": "2026-10-18T05:35:00Z",
+      "title": "Severance",
+      "workId": "01a12226-652c-73a4-a643-b38ce4d0889c"
+    }
+  ],
+  "requestId": "0000000000000001",
+  "status": 409,
+  "title": "Conflict",
+  "type": "about:blank"
+}

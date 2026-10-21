@@ -65,3 +65,21 @@ func TestWatchChangeLeavesInputUntouched(t *testing.T) {
 		t.Fatal("Apply modified its input")
 	}
 }
+
+// A show whose server doesn't give its episode count (zero) keeps counting
+// from its unwatched count instead of dropping to zero, which reads as watched.
+func TestWatchChangeUnknownEpisodeCount(t *testing.T) {
+	lists := map[string][]ListItem{
+		"episodes": {&Item{ID: "e", Type: TypeEpisode, ShowID: "show"}},
+		"shows":    {&Show{ID: "show", UnwatchedCount: 8}},
+	}
+	got := WatchChange{ItemID: "e", ShowID: "show", Played: true}.Apply(lists)
+	show := got["shows"][0].(*Show)
+	if show.UnwatchedCount != 7 || show.WatchStatus() == WatchStatusWatched {
+		t.Fatalf("show after one episode watched: unwatched %d, status %v", show.UnwatchedCount, show.WatchStatus())
+	}
+	got = WatchChange{ItemID: "e", ShowID: "show", Played: false}.Apply(got)
+	if show := got["shows"][0].(*Show); show.UnwatchedCount != 8 {
+		t.Fatalf("unwatch: unwatched %d, want 8", show.UnwatchedCount)
+	}
+}

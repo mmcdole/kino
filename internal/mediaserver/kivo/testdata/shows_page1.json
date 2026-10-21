@@ -1,0 +1,87 @@
+{
+  "items": [
+    {
+      "addedAt": "2026-10-09T21:04:18.521Z",
+      "available": true,
+      "communityRating": 5.341,
+      "communityVotes": 82,
+      "contentRating": "TV-MA",
+      "id": "01a1227b-2659-73c4-bfe5-6a8ae96b477e",
+      "images": {
+        "backdrop": {
+          "blurhash": "LFD9VO^*I=_30gxW%2Ip0}OFxWV?",
+          "height": 1080,
+          "id": "01a12283-a858-7028-8118-d1574d52b89e",
+          "width": 1920
+        },
+        "logo": {
+          "blurhash": "LDDR$8s-NI$~0j$~Rlaz9zj[R+NI",
+          "height": 373,
+          "id": "01a12283-a9ab-735a-b908-6b7956f8c0aa",
+          "width": 708
+        },
+        "poster": {
+          "blurhash": "TNF5aDJCRi4:M{s-15-UWBo#xbW=",
+          "height": 1688,
+          "id": "01a12283-a721-71a8-911c-386b62028245",
+          "width": 1125
+        }
+      },
+      "kind": "series",
+      "matchState": "matched",
+      "series": {
+        "unplayedCount": 8
+      },
+      "title": "The 'Burbs",
+      "userState": {
+        "favorite": false,
+        "lastPlayedAt": "2026-10-18T05:41:25.73Z",
+        "playCount": 0,
+        "played": false
+      },
+      "year": 2026
+    },
+    {
+      "addedAt": "2026-10-09T20:45:24.272Z",
+      "available": true,
+      "communityRating": 7.1,
+      "communityVotes": 22,
+      "contentRating": "TV-14",
+      "id": "01a12269-d7b0-737a-8aee-56fea0f224cc",
+      "images": {
+        "backdrop": {
+          "blurhash": "LQK18b-:NXR$_L%2M{odtJWqakxG",
+          "height": 2160,
+          "id": "01a13815-8bf3-731e-b6c5-6736560a0369",
+          "width": 3840
+        },
+        "logo": {
+          "blurhash": "LILXVz?bxut7~q%MRjM{-;%Mt7WB",
+          "height": 1205,
+          "id": "01a12269-f51d-734a-82cb-b268a36c955c",
+          "width": 2897
+        },
+        "poster": {
+          "blurhash": "TIKm:{%3N=?ws;ov-.M{sED,NcV_",
+          "height": 3000,
+          "id": "01a12269-f18a-7021-882d-d1429e7da403",
+          "width": 2000
+        }
+      },
+      "kind": "series",
+      "matchState": "matched",
+      "series": {
+        "unplayedCount": 81
+      },
+      "title": "1000-lb Sisters",
+      "userState": {
+        "favorite": false,
+        "playCount": 0,
+        "played": false
+      },
+      "year": 2020
+    }
+  ],
+  "next": "eyJsIjoidGl0bGUiLCJ0IjoiMTAwMC1sYiBTaXN0ZXJzIiwiaSI6IjAxYTEyMjY5LWQ3YjAtNzM3YS04YWVlLTU2ZmVhMGYyMjRjYyJ9",
+  "total": 515
+}

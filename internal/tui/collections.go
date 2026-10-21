@@ -135,13 +135,16 @@ func (m *Model) project(snapshot catalog.Snapshot) tea.Cmd {
 	return nil
 }
 
-// syncLibraries loads every library and the playlists in the background.
+// syncLibraries loads every library, and the playlists when the server has
+// them, in the background.
 func (m *Model) syncLibraries(policy catalog.Policy) tea.Cmd {
 	var cmds []tea.Cmd
 	for _, lib := range m.libraries {
 		cmds = append(cmds, m.loadResource(catalog.LibraryResource(lib), policy, true))
 	}
-	cmds = append(cmds, m.loadResource(catalog.Resource{Kind: catalog.Playlists}, policy, true))
+	if !m.opts.NoPlaylists {
+		cmds = append(cmds, m.loadResource(catalog.Resource{Kind: catalog.Playlists}, policy, true))
+	}
 	return tea.Batch(cmds...)
 }
 

@@ -8,7 +8,7 @@ seasons, episodes, playlists, and playlist items follow this path.
 flowchart LR
     UI["Bubble Tea model"] -->|request + context| Cmd["Asynchronous command"]
     Cmd --> Catalog["Catalog service"]
-    Catalog --> Backend["Plex / Jellyfin adapter"]
+    Catalog --> Backend["Plex / Jellyfin / Kivo adapter"]
     Catalog --> Cache["Snapshot store"]
     Catalog -->|cached / progress / final| Cmd
     Cmd -->|scoped message| UI
@@ -36,9 +36,17 @@ flowchart LR
   read promotion. Payload, fetch time, and server version are written together.
 - **Search index:** detached library snapshots ordered by revision. Index updates
   and queries run in commands; search uses the currently available library list.
-- **Playback service:** URL resolution, a 15-second operation deadline, cancellable
-  player discovery, and process launch. Launched players have independent lifetimes;
-  child processes are reaped asynchronously.
+- **Playback service:** starting the play, a 15-second operation deadline,
+  cancellable player discovery, and process launch. Launched players have
+  independent lifetimes. A play the server keeps (Kivo's, which expire without
+  heartbeats) goes to a `kino play-session` process instead, which lives as long
+  as the player: it follows mpv-family players over their IPC socket, reports
+  progress every 10 seconds and on pause, seek and end, falls back to a
+  transcode once when the player fails before playing, and stops the play with
+  its last position. Plex and Jellyfin keep no plays and are launched directly.
+- **Optional backend capabilities:** playlists (`catalog.PlaylistBackend`) and
+  play reporting (`player.Tracker`) are interfaces a backend implements or
+  doesn't; the TUI hides playlist rows and actions for a server without them.
 
 ## Requests and ownership
 

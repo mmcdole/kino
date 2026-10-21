@@ -1,0 +1,81 @@
+{
+  "items": [
+    {
+      "addedAt": "2026-10-09T19:29:45.858Z",
+      "available": true,
+      "communityRating": 7.01,
+      "communityVotes": 8987,
+      "contentRating": "PG-13",
+      "durationMs": 6214816,
+      "id": "01a12224-9782-7109-bb62-65bd5939ffd5",
+      "images": {
+        "backdrop": {
+          "blurhash": "LD7LS=%zH@RPyCoyVtae8xMeofoz",
+          "height": 2160,
+          "id": "01a12224-9ecb-73ed-bc6e-50b1dbb5d54e",
+          "width": 3840
+        },
+        "logo": {
+          "blurhash": "LgODh5?b%MD%~qM{%MWB~q%MRjt7",
+          "height": 3077,
+          "id": "01a12224-a21d-7219-8b40-b8f797c538ad",
+          "width": 4981
+        },
+        "poster": {
+          "blurhash": "T784-y%f4U?[x[MyOmS#Mz.5%LIV",
+          "height": 3000,
+          "id": "01a12224-9c8e-71bf-885b-1211dd66962d",
+          "width": 2000
+        }
+      },
+      "kind": "movie",
+      "matchState": "matched",
+      "title": "10 Cloverfield Lane",
+      "userState": {
+        "favorite": false,
+        "playCount": 0,
+        "played": false
+      },
+      "year": 2016
+    },
+    {
+      "addedAt": "2026-10-09T19:29:45.863Z",
+      "available": true,
+      "communityRating": 7.6,
+      "communityVotes": 9192,
+      "contentRating": "PG-13",
+      "durationMs": 5856458,
+      "id": "01a12224-9787-71d4-bac0-39092ceaeace",
+      "images": {
+        "backdrop": {
+          "blurhash": "LwNTq7t7~qkAxaWBbbt7?bozM{ay",
+          "height": 2160,
+          "id": "01a12224-9e02-706f-b751-790a535291c0",
+          "width": 3840
+        },
+        "logo": {
+          "blurhash": "LoJH:1Sz9ZxavmkVS{aL4WRjozjc",
+          "height": 147,
+          "id": "01a12224-a052-715c-a2e7-14ae9c9426c5",
+          "width": 188
+        },
+        "poster": {
+          "blurhash": "ThOfiWod.8~DWXt,xu%MRjNabHjb",
+          "height": 1500,
+          "id": "01a12224-9c63-70db-974e-85d861540c37",
+          "width": 1000
+        }
+      },
+      "kind": "movie",
+      "matchState": "matched",
+      "title": "10 Things I Hate About You",
+      "userState": {
+        "favorite": false,
+        "playCount": 0,
+        "played": false
+      },
+      "year": 1999
+    }
+  ],
+  "next": "eyJsIjoidGl0bGUiLCJ0IjoiMTAgVGhpbmdzIEkgSGF0ZSBBYm91dCBZb3UiLCJpIjoiMDFhMTIyMjQtOTc4Ny03MWQ0LWJhYzAtMzkwOTJjZWFlYWNlIn0"
+}

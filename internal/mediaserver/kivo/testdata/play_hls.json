@@ -1,0 +1,111 @@
+{
+  "audioTrackId": "384d60ee-7032-7db4-db11-ec8f3bc2b90e",
+  "bitrateBps": 3833982,
+  "chapters": [
+    {
+      "endMs": 129000,
+      "startMs": 0,
+      "title": "Chapter 01"
+    },
+    {
+      "endMs": 161000,
+      "marker": "intro",
+      "startMs": 129000,
+      "title": "Intro"
+    },
+    {
+      "endMs": 2437000,
+      "startMs": 161000,
+      "title": "Chapter 03"
+    },
+    {
+      "endMs": 2502848,
+      "marker": "credits",
+      "startMs": 2437000,
+      "title": "End Credits"
+    }
+  ],
+  "decision": {
+    "summary": "directStream",
+    "tracks": [
+      {
+        "method": "directStream",
+        "reason": "containerUnsupported",
+        "trackId": "a15a8bbd-faa6-e5d5-4627-8b148a686979",
+        "type": "video"
+      },
+      {
+        "method": "directStream",
+        "reason": "containerUnsupported",
+        "trackId": "384d60ee-7032-7db4-db11-ec8f3bc2b90e",
+        "type": "audio"
+      }
+    ]
+  },
+  "delivery": {
+    "method": "hls",
+    "url": "plays/01a14d87-7637-70cf-8ea0-9b4e5599a774/hls/index.m3u8"
+  },
+  "dialogueBoost": {
+    "cost": "audioAsAac",
+    "enabled": false
+  },
+  "durationMs": 2502848,
+  "id": "01a14d87-7637-70cf-8ea0-9b4e5599a774",
+  "local": true,
+  "parts": [
+    {
+      "durationMs": 2502848
+    }
+  ],
+  "previews": {
+    "ready": false
+  },
+  "startMs": 730956,
+  "subtitleTracks": [
+    {
+      "onSwitch": "newPlay",
+      "trackId": "fb2d6c6e-5672-bc1e-a2cd-2b4e6323882f"
+    },
+    {
+      "onSwitch": "newPlay",
+      "trackId": "2e72bc6f-630d-35d7-0a02-a2ac7c009a15"
+    },
+    {
+      "onSwitch": "newPlay",
+      "trackId": "0e40e0fd-99d8-5995-c72b-4210adfdfed6"
+    },
+    {
+      "onSwitch": "newPlay",
+      "trackId": "505b85bf-0764-e592-6296-445d797c09f8"
+    }
+  ],
+  "subtitles": [
+    {
+      "format": "vtt",
+      "ready": false,
+      "trackId": "fb2d6c6e-5672-bc1e-a2cd-2b4e6323882f",
+      "url": "plays/01a14d87-7637-70cf-8ea0-9b4e5599a774/subtitles/fb2d6c6e-5672-bc1e-a2cd-2b4e6323882f.vtt"
+    },
+    {
+      "format": "vtt",
+      "ready": false,
+      "trackId": "2e72bc6f-630d-35d7-0a02-a2ac7c009a15",
+      "url": "plays/01a14d87-7637-70cf-8ea0-9b4e5599a774/subtitles/2e72bc6f-630d-35d7-0a02-a2ac7c009a15.vtt"
+    },
+    {
+      "format": "vtt",
+      "ready": false,
+      "trackId": "0e40e0fd-99d8-5995-c72b-4210adfdfed6",
+      "url": "plays/01a14d87-7637-70cf-8ea0-9b4e5599a774/subtitles/0e40e0fd-99d8-5995-c72b-4210adfdfed6.vtt"
+    },
+    {
+      "format": "vtt",
+      "ready": false,
+      "trackId": "505b85bf-0764-e592-6296-445d797c09f8",
+      "url": "plays/01a14d87-7637-70cf-8ea0-9b4e5599a774/subtitles/505b85bf-0764-e592-6296-445d797c09f8.vtt"
+    }
+  ],
+  "versionId": "01a1227b-2536-7329-9358-47d8f799b2c7",
+  "workId": "01a1227b-265a-7177-b4fe-40aa18f5d0df"
+}

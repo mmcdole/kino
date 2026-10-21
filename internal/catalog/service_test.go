@@ -11,8 +11,14 @@ import (
 	"github.com/mmcdole/kino/internal/store"
 )
 
-type fakeBackend struct {
+// playlistServer is a backend with playlists, for fakes to embed.
+type playlistServer interface {
 	Backend
+	PlaylistBackend
+}
+
+type fakeBackend struct {
+	playlistServer
 	movies    func(context.Context) ([]*media.Item, int, error)
 	libraries func(context.Context) ([]media.Library, error)
 	count     func(context.Context) (int, error)

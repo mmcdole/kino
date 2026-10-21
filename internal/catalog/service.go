@@ -47,6 +47,7 @@ type flight struct {
 // published state, and applies writes to the server and the cache.
 type Service struct {
 	backend     Backend
+	playlists   PlaylistBackend // nil when the server has none
 	cache       Cache
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -104,12 +105,16 @@ func (c *collection) fence() uint64 {
 	return c.revision
 }
 
+// HasPlaylists reports whether the server has playlists.
+func (s *Service) HasPlaylists() bool { return s.playlists != nil }
+
 // NewService starts a catalog whose work ends when ctx is done or Close is
 // called.
 func NewService(ctx context.Context, backend Backend, cache Cache) *Service {
 	ctx, cancel := context.WithCancel(ctx)
+	playlists, _ := backend.(PlaylistBackend)
 	return &Service{
-		backend: backend, cache: cache, ctx: ctx, cancel: cancel,
+		backend: backend, playlists: playlists, cache: cache, ctx: ctx, cancel: cancel,
 		mutations:   make(chan struct{}, 1),
 		collections: make(map[string]*collection),
 		changed:     make(map[string]struct{}),

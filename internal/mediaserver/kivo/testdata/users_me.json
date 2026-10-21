@@ -1,0 +1,11 @@
+{
+  "admin": true,
+  "id": "01a12224-94d2-7026-bcfb-88e482440be4",
+  "limits": {},
+  "playback": {
+    "bookSpeed": 1,
+    "rememberTracks": true,
+    "subtitleMode": "forced"
+  },
+  "username": "viewer"
+}

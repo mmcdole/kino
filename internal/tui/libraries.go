@@ -25,6 +25,9 @@ func playlistsLibraryEntry() media.Library {
 func (m *Model) allLibraryEntries() []media.Library {
 	entries := make([]media.Library, 0, len(m.libraries)+1)
 	entries = append(entries, m.libraries...)
+	if m.opts.NoPlaylists {
+		return entries
+	}
 	return append(entries, playlistsLibraryEntry())
 }
 
