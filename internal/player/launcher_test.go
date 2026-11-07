@@ -253,6 +253,21 @@ func TestLookupSeekFlagForAbsoluteWindowsPath(t *testing.T) {
 	}
 }
 
+// PotPlayer can't open fragmented-MP4 HLS, so its plays ask for files; an
+// unknown player keeps HLS.
+func TestPlaysHLS(t *testing.T) {
+	for command, want := range map[string]bool{
+		`/mnt/c/Program Files/DAUM/PotPlayer/PotPlayerMini64.exe`: false,
+		"mpv":        true,
+		"someplayer": true,
+	} {
+		l := newLauncher(command, nil, "", nil)
+		if got := l.playsHLS(context.Background()); got != want {
+			t.Errorf("playsHLS(%q) = %t, want %t", command, got, want)
+		}
+	}
+}
+
 func TestExpandWindowsEnvironment(t *testing.T) {
 	t.Setenv("ProgramFiles", `D:\Applications`)
 	got := expandWindowsEnvironment(context.Background(), `%ProgramFiles%\VideoLAN\VLC\vlc.exe`, false)
