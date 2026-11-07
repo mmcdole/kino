@@ -311,7 +311,7 @@ func (c *Client) GetEpisodes(ctx context.Context, seasonID string) ([]*media.Ite
 
 // StartPlay returns an item's direct playback URL. The server keeps no play
 // to report on.
-func (c *Client) StartPlay(ctx context.Context, itemID string, at time.Duration) (media.Stream, error) {
+func (c *Client) StartPlay(ctx context.Context, itemID string, at time.Duration, _ bool) (media.Stream, error) {
 	u, err := c.playableURL(ctx, itemID)
 	if err != nil {
 		return media.Stream{}, err

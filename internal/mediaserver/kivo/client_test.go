@@ -133,7 +133,7 @@ func TestMarkPlayedPatchesUserState(t *testing.T) {
 // the play's media URLs, which are relative to /api/v1/.
 func TestStartPlayFile(t *testing.T) {
 	c, fake, base := testClient(t, map[string]route{"POST /plays": {201, "play_file.json"}})
-	stream, err := c.StartPlay(context.Background(), episode, 730956*time.Millisecond)
+	stream, err := c.StartPlay(context.Background(), episode, 730956*time.Millisecond, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,12 +153,27 @@ func TestStartPlayFile(t *testing.T) {
 
 func TestStartPlayHLS(t *testing.T) {
 	c, _, base := testClient(t, map[string]route{"POST /plays": {201, "play_hls.json"}})
-	stream, err := c.StartPlay(context.Background(), episode, 0)
+	stream, err := c.StartPlay(context.Background(), episode, 0, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(stream.Parts) != 1 || !strings.HasPrefix(stream.Parts[0].URL, base+"/api/v1/plays/") || !strings.HasSuffix(stream.Parts[0].URL, "/hls/index.m3u8") {
 		t.Fatalf("hls stream = %+v", stream)
+	}
+}
+
+// A player without HLS says so, and the server sends files only.
+func TestStartPlayWithoutHLS(t *testing.T) {
+	c, fake, _ := testClient(t, map[string]route{"POST /plays": {201, "play_file.json"}})
+	if _, err := c.StartPlay(context.Background(), episode, 0, false); err != nil {
+		t.Fatal(err)
+	}
+	var sent playCreate
+	if err := json.Unmarshal(fake.requests()[0].body, &sent); err != nil {
+		t.Fatal(err)
+	}
+	if sent.Capabilities.HLS || !playerCapabilities.HLS {
+		t.Fatalf("start request hls = %t, shared capabilities hls = %t", sent.Capabilities.HLS, playerCapabilities.HLS)
 	}
 }
 
@@ -176,7 +191,7 @@ func TestStartPlayRefusals(t *testing.T) {
 	} {
 		t.Run(tc.fixture, func(t *testing.T) {
 			c, _, _ := testClient(t, map[string]route{"POST /plays": {tc.status, tc.fixture}})
-			_, err := c.StartPlay(context.Background(), episode, 0)
+			_, err := c.StartPlay(context.Background(), episode, 0, true)
 			if !errors.Is(err, media.ErrPlaybackRefused) || err.Error() != tc.want {
 				t.Fatalf("err = %v, want refusal %q", err, tc.want)
 			}

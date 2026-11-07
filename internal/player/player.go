@@ -17,9 +17,10 @@ import (
 )
 
 // Starter is the backend operation playback consumes. A backend whose plays
-// need reporting also implements Tracker.
+// need reporting also implements Tracker. hls says whether the player can
+// open an HLS stream.
 type Starter interface {
-	StartPlay(ctx context.Context, itemID string, at time.Duration) (media.Stream, error)
+	StartPlay(ctx context.Context, itemID string, at time.Duration, hls bool) (media.Stream, error)
 }
 
 // SessionCommand is the hidden kino subcommand that runs a play session.
@@ -65,7 +66,7 @@ func (s *Player) Resume(ctx context.Context, item media.Item) error {
 func (s *Player) playItem(ctx context.Context, item media.Item, offset time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	stream, err := s.starter.StartPlay(ctx, item.ID, offset)
+	stream, err := s.starter.StartPlay(ctx, item.ID, offset, s.launcher.playsHLS(ctx))
 	if err != nil {
 		s.logger.Error("failed to start play", "error", err, "itemID", item.ID)
 		return err

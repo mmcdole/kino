@@ -103,6 +103,17 @@ func (r running) release() {
 	}
 }
 
+// playsHLS reports whether the player start would launch can open HLS. An
+// unknown player and the system handler are assumed to.
+func (l *launcher) playsHLS(ctx context.Context) bool {
+	if l.command != "" {
+		definition, _ := l.lookupPlayerDef(l.command)
+		return !definition.NoHLS
+	}
+	player, found := l.detectPlayer(ctx)
+	return !found || !player.Definition.NoHLS
+}
+
 // start launches the configured, auto-detected or system player.
 func (l *launcher) start(ctx context.Context, spec launchSpec) (running, error) {
 	if err := ctx.Err(); err != nil {

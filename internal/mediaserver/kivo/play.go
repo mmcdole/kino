@@ -37,9 +37,12 @@ var playerCapabilities = capabilities{
 	Subtitles: []string{"vtt", "ass", "pgs"},
 }
 
-// StartPlay starts a play of a work at a position on its timeline.
-func (c *Client) StartPlay(ctx context.Context, itemID string, at time.Duration) (media.Stream, error) {
-	req := playCreate{WorkID: itemID, PositionMs: at.Milliseconds(), Capabilities: playerCapabilities}
+// StartPlay starts a play of a work at a position on its timeline. Without
+// hls the server sends only files: a work that needs a transcode is refused.
+func (c *Client) StartPlay(ctx context.Context, itemID string, at time.Duration, hls bool) (media.Stream, error) {
+	caps := playerCapabilities
+	caps.HLS = hls
+	req := playCreate{WorkID: itemID, PositionMs: at.Milliseconds(), Capabilities: caps}
 	var resp playStarted
 	if err := c.send(ctx, http.MethodPost, "/plays", req, &resp); err != nil {
 		return media.Stream{}, err

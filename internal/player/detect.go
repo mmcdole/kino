@@ -23,6 +23,9 @@ type playerDef struct {
 	// PerFileOptions is mpv's --{ ... --}, which starts one file of several
 	// at an offset.
 	PerFileOptions bool
+	// NoHLS marks a player that can't open HLS with fragmented MP4, the only
+	// HLS Kivo makes, so its plays ask for the file instead.
+	NoHLS bool
 }
 
 // resolvedPlayer keeps the player identity separate from the executable path.
@@ -58,12 +61,14 @@ var windowsPlayers = []playerDef{
 		Binary:        "PotPlayerMini64.exe",
 		SeekFlag:      "/seek=%d",
 		URLBeforeSeek: true,
+		NoHLS:         true,
 		ProgramPaths:  []string{`DAUM\PotPlayer\PotPlayerMini64.exe`},
 	},
 	{
 		Binary:        "PotPlayerMini.exe",
 		SeekFlag:      "/seek=%d",
 		URLBeforeSeek: true,
+		NoHLS:         true,
 		ProgramPaths:  []string{`DAUM\PotPlayer\PotPlayerMini.exe`},
 	},
 	{Binary: "mpv.exe", SeekFlag: "--start=%d", ProgramPaths: []string{`mpv\mpv.exe`}},

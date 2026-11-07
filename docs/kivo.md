@@ -63,6 +63,12 @@ subtitles `vtt ass pgs`. Dolby Vision is left out, because how a DV-only stream
 looks depends on the player's video output, so the server decides. A file the
 player still can't open takes the fallback path.
 
+PotPlayer can't open Kivo's HLS (fragmented MP4) and answers "failed to
+connect", so a play for it declares no HLS. The server then sends the file and
+serves a subtitle that the stream would have carried as a separate file. A
+work that needs a transcode is refused rather than sent as a stream PotPlayer
+can't open.
+
 Multi-part `file` plays start at the part holding the position, using mpv's
 per-file options (`--{ --start=S part --}`). Heartbeats are on the joined
 timeline. This is covered by tests; there was no multi-part video on the test
