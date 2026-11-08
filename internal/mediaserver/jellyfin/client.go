@@ -48,7 +48,7 @@ func NewClient(baseURL, token, userID, deviceID string, logger *slog.Logger) *Cl
 		BaseURL: c.baseURL,
 		HTTP:    &http.Client{Timeout: defaultTimeout},
 		Header: func(h http.Header) {
-			h.Set("X-Emby-Authorization", buildAuthHeader(c.token, c.deviceID))
+			h.Set("Authorization", buildAuthHeader(c.token, c.deviceID))
 		},
 		Retries:    maxRetries,
 		RetryDelay: baseRetryDelay,
@@ -299,9 +299,10 @@ func (c *Client) ResolvePlayableURL(ctx context.Context, itemID string) (string,
 	source := resp.MediaSources[0]
 
 	// Build direct stream URL
-	// Format: /Videos/{itemId}/stream.{container}?static=true&api_key={token}
-	streamURL := fmt.Sprintf("%s/Videos/%s/stream.%s?Static=true&api_key=%s",
-		c.baseURL, itemID, source.Container, c.token)
+	// Format: /Videos/{itemId}/stream.{container}?Static=true&ApiKey={token}&api_key={token}
+	// Both spellings are sent so older and newer servers each find the one they accept.
+	streamURL := fmt.Sprintf("%s/Videos/%s/stream.%s?Static=true&ApiKey=%s&api_key=%s",
+		c.baseURL, itemID, source.Container, c.token, c.token)
 
 	return streamURL, nil
 }

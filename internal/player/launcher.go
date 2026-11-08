@@ -31,7 +31,7 @@ func lookPathOK(binary string) bool {
 }
 
 // tokenParamRe matches credential query parameters in stream URLs
-var tokenParamRe = regexp.MustCompile(`(?i)((?:api_key|X-Plex-Token)=)[^&\s"']+`)
+var tokenParamRe = regexp.MustCompile(`(?i)([?&](?:api_key|apikey|X-Plex-Token)=)[^&\s"']+`)
 
 // redactTokens masks credential query parameters before anything containing
 // a stream URL reaches the log file.
