@@ -9,10 +9,10 @@
       "episode": {
         "airDate": "2026-02-08",
         "number": 1,
-        "season": 1,
         "seasonId": "01a1227b-265a-7176-b148-5e600aa5ff7f",
         "seriesId": "01a1227b-2659-73c4-bfe5-6a8ae96b477e",
-        "seriesTitle": "The 'Burbs"
+        "seriesTitle": "The 'Burbs",
+        "seasonNumber": 1
       },
       "id": "01a1227b-265a-7177-b4fe-40aa18f5d0df",
       "images": {
@@ -45,9 +45,7 @@
       "matchState": "matched",
       "title": "The Goddamn Brownies",
       "userState": {
-        "favorite": false,
         "lastPlayedAt": "2026-10-18T05:41:25.73Z",
-        "playCount": 0,
         "played": false,
         "positionMs": 730956
       },
@@ -62,10 +60,10 @@
       "episode": {
         "airDate": "2026-02-08",
         "number": 2,
-        "season": 1,
         "seasonId": "01a1227b-265a-7176-b148-5e600aa5ff7f",
         "seriesId": "01a1227b-2659-73c4-bfe5-6a8ae96b477e",
-        "seriesTitle": "The 'Burbs"
+        "seriesTitle": "The 'Burbs",
+        "seasonNumber": 1
       },
       "id": "01a1227b-2661-715e-a435-801d64720f9f",
       "images": {
@@ -98,8 +96,6 @@
       "matchState": "matched",
       "title": "Mind Your Own Business",
       "userState": {
-        "favorite": false,
-        "playCount": 0,
         "played": false
       },
       "year": 2026
@@ -113,10 +109,10 @@
       "episode": {
         "airDate": "2026-02-08",
         "number": 3,
-        "season": 1,
         "seasonId": "01a1227b-265a-7176-b148-5e600aa5ff7f",
         "seriesId": "01a1227b-2659-73c4-bfe5-6a8ae96b477e",
-        "seriesTitle": "The 'Burbs"
+        "seriesTitle": "The 'Burbs",
+        "seasonNumber": 1
       },
       "id": "01a1227b-2668-7087-9504-b2408beae6ac",
       "images": {
@@ -149,12 +145,9 @@
       "matchState": "matched",
       "title": "Sardine?",
       "userState": {
-        "favorite": false,
-        "playCount": 0,
         "played": false
       },
       "year": 2026
     }
-  ],
-  "total": 8
+  ]
 }

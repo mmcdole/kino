@@ -29,6 +29,37 @@ func testClient(t *testing.T, routes map[string]route) (*Client, *fakeKivo, stri
 	return c, fake, srv.URL
 }
 
+func assertWorkQuery(t *testing.T, r recorded, library, kind string, offset, limit int) {
+	t.Helper()
+	var body struct {
+		Query struct {
+			Kinds []string `json:"kinds"`
+		} `json:"query"`
+		Library string `json:"library"`
+		Offset  int    `json:"offset"`
+		Limit   int    `json:"limit"`
+	}
+	if err := json.Unmarshal(r.body, &body); err != nil {
+		t.Fatal(err)
+	}
+	if r.method != "POST" || r.path != "/works/query" || r.query != "" ||
+		body.Library != library || strings.Join(body.Query.Kinds, ",") != kind || body.Offset != offset || body.Limit != limit {
+		t.Fatalf("work query = %s %s?%s %s", r.method, r.path, r.query, r.body)
+	}
+}
+
+func TestLibraryWorkCount(t *testing.T) {
+	c, _, _ := testClient(t, map[string]route{"GET /libraries": {200, "libraries.json"}})
+	count, err := c.GetLibraryItemCount(context.Background(), movieLib, "movie")
+	if err != nil || count != 1999 {
+		t.Fatalf("library count = %d, %v", count, err)
+	}
+	_, err = c.GetLibraryItemCount(context.Background(), "missing", "movie")
+	if !errors.Is(err, media.ErrItemNotFound) {
+		t.Fatalf("missing library = %v", err)
+	}
+}
+
 // Audiobooks libraries have no columns in kino, so they're left out.
 func TestLibrariesLeaveOutAudiobooks(t *testing.T) {
 	c, _, _ := testClient(t, map[string]route{"GET /libraries": {200, "libraries.json"}})
@@ -49,7 +80,7 @@ func TestLibrariesLeaveOutAudiobooks(t *testing.T) {
 // Kivo sends a browse's total on its first page only; the client keeps it
 // for later pages so the catalog's progress stays right.
 func TestBrowseKeepsFirstPageTotal(t *testing.T) {
-	c, fake, _ := testClient(t, map[string]route{"GET /works": {200, "movies_page1.json"}})
+	c, fake, _ := testClient(t, map[string]route{"POST /works/query": {200, "movies_page1.json"}})
 	ctx := context.Background()
 	movies, total, err := c.GetMovies(ctx, movieLib, 0, 2)
 	if err != nil {
@@ -62,11 +93,9 @@ func TestBrowseKeepsFirstPageTotal(t *testing.T) {
 	if m.Title != "The 'Burbs" || m.Year != 1989 || m.ViewOffset != 2744111*time.Millisecond || m.IsPlayed || m.LibraryID != movieLib || m.Type != media.TypeMovie {
 		t.Fatalf("movie mapped as %+v", m)
 	}
-	if q := fake.requests()[0].query; !strings.Contains(q, "offset=0") || !strings.Contains(q, "libraryId="+movieLib) {
-		t.Fatalf("browse query = %s", q)
-	}
+	assertWorkQuery(t, fake.requests()[0], movieLib, "movie", 0, 2)
 
-	fake.routes["GET /works"] = route{200, "movies_page2.json"}
+	fake.routes["POST /works/query"] = route{200, "movies_page2.json"}
 	_, total, err = c.GetMovies(ctx, movieLib, 2, 2)
 	if err != nil {
 		t.Fatal(err)
@@ -74,16 +103,18 @@ func TestBrowseKeepsFirstPageTotal(t *testing.T) {
 	if total != 1999 {
 		t.Fatalf("second page total = %d, want the first page's", total)
 	}
+	assertWorkQuery(t, fake.requests()[1], movieLib, "movie", 2, 2)
 }
 
 // A series card has the unplayed count but not the episode count, which
 // stays zero (unknown) rather than made up.
 func TestShowsCarryUnplayedCountOnly(t *testing.T) {
-	c, _, _ := testClient(t, map[string]route{"GET /works": {200, "shows_page1.json"}})
+	c, fake, _ := testClient(t, map[string]route{"POST /works/query": {200, "shows_page1.json"}})
 	shows, total, err := c.GetShows(context.Background(), showLib, 0, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertWorkQuery(t, fake.requests()[0], showLib, "series", 0, 2)
 	s := shows[0]
 	if total != 515 || s.Title != "The 'Burbs" || s.UnwatchedCount != 8 || s.EpisodeCount != 0 {
 		t.Fatalf("show mapped as %+v (total %d)", s, total)
@@ -91,7 +122,7 @@ func TestShowsCarryUnplayedCountOnly(t *testing.T) {
 }
 
 func TestSeasonsAndEpisodes(t *testing.T) {
-	c, fake, _ := testClient(t, map[string]route{"GET /works": {200, "seasons.json"}})
+	c, fake, _ := testClient(t, map[string]route{"GET /works/" + seriesID + "/children": {200, "seasons.json"}})
 	ctx := context.Background()
 	seasons, err := c.GetSeasons(ctx, seriesID)
 	if err != nil {
@@ -100,11 +131,11 @@ func TestSeasonsAndEpisodes(t *testing.T) {
 	if len(seasons) != 1 || seasons[0].SeasonNum != 1 || seasons[0].EpisodeCount != 8 || seasons[0].ShowID != seriesID {
 		t.Fatalf("seasons = %+v", seasons[0])
 	}
-	if q := fake.requests()[0].query; q != "parentId="+seriesID {
+	if q := fake.requests()[0].query; q != "" {
 		t.Fatalf("children query = %s", q)
 	}
 
-	fake.routes["GET /works"] = route{200, "episodes.json"}
+	fake.routes["GET /works/"+seasonID+"/children"] = route{200, "episodes.json"}
 	eps, err := c.GetEpisodes(ctx, seasonID)
 	if err != nil {
 		t.Fatal(err)
@@ -146,8 +177,19 @@ func TestStartPlayFile(t *testing.T) {
 	if err := json.Unmarshal(fake.requests()[0].body, &sent); err != nil {
 		t.Fatal(err)
 	}
-	if sent.WorkID != episode || sent.PositionMs != 730956 || !sent.Capabilities.HLS || len(sent.Capabilities.Containers) == 0 {
+	if sent.WorkID != episode || sent.PositionMs != 730956 || len(sent.Capabilities.File.Containers) == 0 {
 		t.Fatalf("start request = %+v", sent)
+	}
+	for _, v := range sent.Capabilities.Video {
+		if strings.Join(v.Delivery, ",") != "file,stream" {
+			t.Fatalf("video delivery = %v", v.Delivery)
+		}
+	}
+	if strings.Join(sent.Capabilities.Video[1].HDR, ",") != "hdr10,hlg" {
+		t.Fatalf("HEVC HDR = %v", sent.Capabilities.Video[1].HDR)
+	}
+	if sent.Capabilities.Subtitles[0].Codec != "webvtt" || sent.Capabilities.Subtitles[4].Codec != "hdmv_pgs_subtitle" {
+		t.Fatalf("subtitle capabilities = %+v", sent.Capabilities.Subtitles)
 	}
 }
 
@@ -157,7 +199,7 @@ func TestStartPlayHLS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(stream.Parts) != 1 || !strings.HasPrefix(stream.Parts[0].URL, base+"/api/v1/plays/") || !strings.HasSuffix(stream.Parts[0].URL, "/hls/index.m3u8") {
+	if len(stream.Parts) != 1 || stream.Parts[0].URL != base+"/api/v1/plays/01a14d87-7637-70cf-8ea0-9b4e5599a774/hls/index.m3u8" || stream.Parts[0].Duration != 2502848*time.Millisecond || stream.Start != 730956*time.Millisecond {
 		t.Fatalf("hls stream = %+v", stream)
 	}
 }
@@ -172,8 +214,25 @@ func TestStartPlayWithoutHLS(t *testing.T) {
 	if err := json.Unmarshal(fake.requests()[0].body, &sent); err != nil {
 		t.Fatal(err)
 	}
-	if sent.Capabilities.HLS || !playerCapabilities.HLS {
-		t.Fatalf("start request hls = %t, shared capabilities hls = %t", sent.Capabilities.HLS, playerCapabilities.HLS)
+	for _, v := range sent.Capabilities.Video {
+		if strings.Join(v.Delivery, ",") != "file" {
+			t.Fatalf("video delivery = %v", v.Delivery)
+		}
+	}
+	for _, a := range sent.Capabilities.Audio {
+		if strings.Join(a.Delivery, ",") != "file" {
+			t.Fatalf("audio delivery = %v", a.Delivery)
+		}
+	}
+	for _, sub := range sent.Capabilities.Subtitles {
+		if strings.Join(sub.Delivery, ",") != "file" {
+			t.Fatalf("subtitle delivery = %v", sub.Delivery)
+		}
+	}
+	if strings.Join(playerCapabilities.Video[0].Delivery, ",") != "file,stream" ||
+		strings.Join(playerCapabilities.Audio[0].Delivery, ",") != "file,stream" ||
+		strings.Join(playerCapabilities.Subtitles[0].Delivery, ",") != "file,stream" {
+		t.Fatal("file-only play changed shared capabilities")
 	}
 }
 

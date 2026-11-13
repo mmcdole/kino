@@ -32,9 +32,7 @@
       "matchState": "matched",
       "title": "The 'Burbs",
       "userState": {
-        "favorite": true,
         "lastPlayedAt": "2026-10-18T05:41:01.886Z",
-        "playCount": 0,
         "played": false,
         "positionMs": 2744111
       },
@@ -72,14 +70,11 @@
       "matchState": "matched",
       "title": "*batteries not included",
       "userState": {
-        "favorite": true,
         "lastPlayedAt": "2026-10-13T15:36:53.811Z",
-        "playCount": 0,
         "played": false
       },
       "year": 1987
     }
   ],
-  "next": "eyJsIjoidGl0bGUiLCJ0IjoiKmJhdHRlcmllcyBub3QgaW5jbHVkZWQiLCJpIjoiMDFhMTIyMjQtOTdiNC03MjI2LWIyMTQtN2UwNjEyMjIzZTI5In0",
   "total": 1999
 }

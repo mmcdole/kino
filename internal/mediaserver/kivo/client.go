@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -32,7 +31,7 @@ type Client struct {
 	api     httpx.Client
 	logger  *slog.Logger
 
-	// totals remembers each library's item count from its first page; Kivo
+	// totals remembers each library's work count from its first page; Kivo
 	// sends the total only there.
 	mu     sync.Mutex
 	totals map[string]int
@@ -111,15 +110,10 @@ func (c *Client) GetLibraries(ctx context.Context) ([]media.Library, error) {
 
 // browse returns one page of a library's top-level works and the library's
 // total.
-func (c *Client) browse(ctx context.Context, libID string, offset, limit int) ([]work, int, error) {
-	query := url.Values{}
-	query.Set("libraryId", libID)
-	query.Set("offset", strconv.Itoa(offset))
-	if limit > 0 {
-		query.Set("limit", strconv.Itoa(min(limit, 200)))
-	}
+func (c *Client) browse(ctx context.Context, libID string, kinds []string, offset, limit int) ([]work, int, error) {
+	req := workQueryRequest{Query: workQuery{Kinds: kinds}, Library: libID, Offset: offset, Limit: limit}
 	var resp workPage
-	if err := c.get(ctx, "/works", query, &resp); err != nil {
+	if err := c.send(ctx, http.MethodPost, "/works/query", req, &resp); err != nil {
 		return nil, 0, err
 	}
 	c.mu.Lock()
@@ -128,20 +122,16 @@ func (c *Client) browse(ctx context.Context, libID string, offset, limit int) ([
 		c.totals[libID] = *resp.Total
 	}
 	total, known := c.totals[libID]
-	if resp.Next == "" {
-		total = offset + len(resp.Items) // the last page
-	} else if !known {
-		total = 0
+	if !known && (len(resp.Items) == 0 || (limit > 0 && len(resp.Items) < limit)) {
+		total = offset + len(resp.Items)
 	}
 	return resp.Items, total, nil
 }
 
 // children returns all of a series' seasons or a season's episodes.
 func (c *Client) children(ctx context.Context, parentID string) ([]work, error) {
-	query := url.Values{}
-	query.Set("parentId", parentID)
 	var resp workPage
-	if err := c.get(ctx, "/works", query, &resp); err != nil {
+	if err := c.get(ctx, "/works/"+url.PathEscape(parentID)+"/children", nil, &resp); err != nil {
 		return nil, err
 	}
 	return resp.Items, nil
@@ -149,7 +139,7 @@ func (c *Client) children(ctx context.Context, parentID string) ([]work, error) 
 
 // GetMovies returns a page of a movies library.
 func (c *Client) GetMovies(ctx context.Context, libID string, offset, limit int) ([]*media.Item, int, error) {
-	works, total, err := c.browse(ctx, libID, offset, limit)
+	works, total, err := c.browse(ctx, libID, []string{"movie"}, offset, limit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -162,7 +152,7 @@ func (c *Client) GetMovies(ctx context.Context, libID string, offset, limit int)
 
 // GetShows returns a page of a shows library.
 func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) ([]*media.Show, int, error) {
-	works, total, err := c.browse(ctx, libID, offset, limit)
+	works, total, err := c.browse(ctx, libID, []string{"series"}, offset, limit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -176,7 +166,7 @@ func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) 
 // GetMixedContent returns a page of movies and series. GetLibraries lists no
 // mixed libraries for Kivo; this maps whatever cards a library holds.
 func (c *Client) GetMixedContent(ctx context.Context, libID string, offset, limit int) ([]media.ListItem, int, error) {
-	works, total, err := c.browse(ctx, libID, offset, limit)
+	works, total, err := c.browse(ctx, libID, []string{"movie", "series", "video"}, offset, limit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -200,7 +190,7 @@ func (c *Client) GetLibraryItemCount(ctx context.Context, libID, _ string) (int,
 	}
 	for _, l := range resp.Items {
 		if l.ID == libID {
-			return l.ItemCount, nil
+			return l.WorkCount, nil
 		}
 	}
 	return 0, media.ErrItemNotFound

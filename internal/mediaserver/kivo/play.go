@@ -16,32 +16,51 @@ import (
 // DV-only stream looks depends on the player's video output, so the server
 // decides. A file the player still can't open falls back to a transcode.
 var playerCapabilities = capabilities{
-	Containers: []string{"mkv", "mp4", "webm", "avi", "ts", "mov"},
-	HLS:        true,
+	File: fileCapabilities{Containers: []string{"mkv", "mp4", "webm", "avi", "ts", "mov"}},
 	Video: []videoCapability{
-		{Codec: "h264", MaxBitDepth: 10},
-		{Codec: "hevc", MaxBitDepth: 10, DynamicRanges: []string{"hdr10", "hlg"}},
-		{Codec: "av1", MaxBitDepth: 10, DynamicRanges: []string{"hdr10", "hlg"}},
-		{Codec: "vp9", MaxBitDepth: 10},
+		{Codec: "h264", Delivery: []string{"file", "stream"}, MaxBitDepth: 10},
+		{Codec: "hevc", Delivery: []string{"file", "stream"}, MaxBitDepth: 10, HDR: []string{"hdr10", "hlg"}},
+		{Codec: "av1", Delivery: []string{"file", "stream"}, MaxBitDepth: 10, HDR: []string{"hdr10", "hlg"}},
+		{Codec: "vp9", Delivery: []string{"file", "stream"}, MaxBitDepth: 10},
 	},
 	Audio: []audioCapability{
-		{Codec: "aac", MaxChannels: 8},
-		{Codec: "ac3", MaxChannels: 8},
-		{Codec: "eac3", MaxChannels: 8},
-		{Codec: "opus", MaxChannels: 8},
-		{Codec: "flac", MaxChannels: 8},
-		{Codec: "mp3", MaxChannels: 2},
-		{Codec: "truehd", MaxChannels: 8},
-		{Codec: "dts", MaxChannels: 8},
+		{Codec: "aac", Delivery: []string{"file", "stream"}, MaxChannels: 8},
+		{Codec: "ac3", Delivery: []string{"file", "stream"}, MaxChannels: 8},
+		{Codec: "eac3", Delivery: []string{"file", "stream"}, MaxChannels: 8},
+		{Codec: "opus", Delivery: []string{"file", "stream"}, MaxChannels: 8},
+		{Codec: "flac", Delivery: []string{"file", "stream"}, MaxChannels: 8},
+		{Codec: "mp3", Delivery: []string{"file", "stream"}, MaxChannels: 2},
+		{Codec: "truehd", Delivery: []string{"file", "stream"}, MaxChannels: 8},
+		{Codec: "dts", Delivery: []string{"file", "stream"}, MaxChannels: 8},
 	},
-	Subtitles: []string{"vtt", "ass", "pgs"},
+	Subtitles: []subtitleCapability{
+		{Codec: "webvtt", Delivery: []string{"file", "stream"}},
+		{Codec: "subrip", Delivery: []string{"file"}},
+		{Codec: "ass", Delivery: []string{"file"}},
+		{Codec: "mov_text", Delivery: []string{"file"}},
+		{Codec: "hdmv_pgs_subtitle", Delivery: []string{"file"}},
+		{Codec: "dvd_subtitle", Delivery: []string{"file"}},
+	},
 }
 
 // StartPlay starts a play of a work at a position on its timeline. Without
 // hls the server sends only files: a work that needs a transcode is refused.
 func (c *Client) StartPlay(ctx context.Context, itemID string, at time.Duration, hls bool) (media.Stream, error) {
 	caps := playerCapabilities
-	caps.HLS = hls
+	if !hls {
+		caps.Video = append([]videoCapability(nil), caps.Video...)
+		for i := range caps.Video {
+			caps.Video[i].Delivery = []string{"file"}
+		}
+		caps.Audio = append([]audioCapability(nil), caps.Audio...)
+		for i := range caps.Audio {
+			caps.Audio[i].Delivery = []string{"file"}
+		}
+		caps.Subtitles = append([]subtitleCapability(nil), caps.Subtitles...)
+		for i := range caps.Subtitles {
+			caps.Subtitles[i].Delivery = []string{"file"}
+		}
+	}
 	req := playCreate{WorkID: itemID, PositionMs: at.Milliseconds(), Capabilities: caps}
 	var resp playStarted
 	if err := c.send(ctx, http.MethodPost, "/plays", req, &resp); err != nil {
@@ -80,13 +99,13 @@ func (c *Client) FallbackPlay(ctx context.Context, playID string, at time.Durati
 func (c *Client) stream(p playStarted) media.Stream {
 	abs := func(u string) string { return c.baseURL + apiPrefix + "/" + strings.TrimPrefix(u, "/") }
 	s := media.Stream{PlayID: p.ID, Start: millis(p.StartMs)}
-	if p.Delivery.Method == "file" && len(p.Parts) > 0 {
+	if p.Delivery == "file" && len(p.Parts) > 0 {
 		for _, part := range p.Parts {
 			s.Parts = append(s.Parts, media.StreamPart{URL: abs(part.URL), Duration: millis(part.DurationMs)})
 		}
 		return s
 	}
-	s.Parts = []media.StreamPart{{URL: abs(p.Delivery.URL), Duration: millis(p.DurationMs)}}
+	s.Parts = []media.StreamPart{{URL: abs(p.URL), Duration: millis(p.DurationMs)}}
 	return s
 }
 
@@ -135,8 +154,16 @@ func reasonText(reason string) string {
 		return "the server hasn't indexed the file yet"
 	case "noTracks":
 		return "it has nothing to play"
-	case "videoCodecUnsupported", "audioCodecUnsupported", "containerUnsupported":
+	case "fileUnplayable":
 		return "its format can't be played or converted"
+	case "subtitleUnplayable":
+		return "its subtitles can't be played or converted"
+	case "subtitlesUnavailable":
+		return "the server couldn't prepare its subtitles"
+	case "planUnreadable":
+		return "the server couldn't read its playback plan"
+	case "downloadsNotAllowed":
+		return "downloads aren't allowed for this account"
 	case "":
 		return "the server gave no reason"
 	default:

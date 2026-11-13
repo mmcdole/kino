@@ -23,14 +23,24 @@ type library struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Kind      string `json:"kind"` // movies, shows, videos, audiobooks
-	ItemCount int    `json:"itemCount"`
+	WorkCount int    `json:"workCount"`
 }
 
-// workPage is GET /api/v1/works. Total is on a browse's first page only.
+// workPage holds queried works or children. Total is on a query's first page only.
 type workPage struct {
 	Items []work `json:"items"`
 	Total *int   `json:"total"`
-	Next  string `json:"next"`
+}
+
+type workQueryRequest struct {
+	Query   workQuery `json:"query"`
+	Library string    `json:"library"`
+	Offset  int       `json:"offset"`
+	Limit   int       `json:"limit,omitempty"`
+}
+
+type workQuery struct {
+	Kinds []string `json:"kinds"`
 }
 
 // work is a WorkSummary card; kind-specific data is under the kind's name.
@@ -56,7 +66,7 @@ type work struct {
 		UnplayedCount int    `json:"unplayedCount"`
 	} `json:"season"`
 	Episode *struct {
-		Season      int    `json:"season"`
+		Season      int    `json:"seasonNumber"`
 		Number      int    `json:"number"`
 		SeriesID    string `json:"seriesId"`
 		SeriesTitle string `json:"seriesTitle"`
@@ -81,22 +91,32 @@ type playCreate struct {
 }
 
 type capabilities struct {
-	Containers []string          `json:"containers"`
-	HLS        bool              `json:"hls"`
-	Video      []videoCapability `json:"video"`
-	Audio      []audioCapability `json:"audio"`
-	Subtitles  []string          `json:"subtitles"`
+	File      fileCapabilities     `json:"file"`
+	Video     []videoCapability    `json:"video"`
+	Audio     []audioCapability    `json:"audio"`
+	Subtitles []subtitleCapability `json:"subtitles"`
+}
+
+type fileCapabilities struct {
+	Containers []string `json:"containers"`
 }
 
 type videoCapability struct {
-	Codec         string   `json:"codec"`
-	MaxBitDepth   int      `json:"maxBitDepth,omitempty"`
-	DynamicRanges []string `json:"dynamicRanges,omitempty"`
+	Codec       string   `json:"codec"`
+	Delivery    []string `json:"delivery"`
+	MaxBitDepth int      `json:"maxBitDepth,omitempty"`
+	HDR         []string `json:"hdr,omitempty"`
 }
 
 type audioCapability struct {
-	Codec       string `json:"codec"`
-	MaxChannels int    `json:"maxChannels,omitempty"`
+	Codec       string   `json:"codec"`
+	Delivery    []string `json:"delivery"`
+	MaxChannels int      `json:"maxChannels"`
+}
+
+type subtitleCapability struct {
+	Codec    string   `json:"codec"`
+	Delivery []string `json:"delivery"`
 }
 
 // playStarted is the response to starting a play or falling back. Media URLs
@@ -105,11 +125,9 @@ type playStarted struct {
 	ID         string `json:"id"`
 	StartMs    int64  `json:"startMs"`
 	DurationMs int64  `json:"durationMs"`
-	Delivery   struct {
-		Method string `json:"method"` // file or hls
-		URL    string `json:"url"`
-	} `json:"delivery"`
-	Parts []struct {
+	Delivery   string `json:"delivery"` // file or stream
+	URL        string `json:"url"`
+	Parts      []struct {
 		DurationMs int64  `json:"durationMs"`
 		URL        string `json:"url"` // file delivery only
 	} `json:"parts"`

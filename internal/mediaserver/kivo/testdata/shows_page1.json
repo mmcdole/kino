@@ -34,9 +34,7 @@
       },
       "title": "The 'Burbs",
       "userState": {
-        "favorite": false,
         "lastPlayedAt": "2026-10-18T05:41:25.73Z",
-        "playCount": 0,
         "played": false
       },
       "year": 2026
@@ -75,13 +73,10 @@
       },
       "title": "1000-lb Sisters",
       "userState": {
-        "favorite": false,
-        "playCount": 0,
         "played": false
       },
       "year": 2020
     }
   ],
-  "next": "eyJsIjoidGl0bGUiLCJ0IjoiMTAwMC1sYiBTaXN0ZXJzIiwiaSI6IjAxYTEyMjY5LWQ3YjAtNzM3YS04YWVlLTU2ZmVhMGYyMjRjYyJ9",
   "total": 515
 }
