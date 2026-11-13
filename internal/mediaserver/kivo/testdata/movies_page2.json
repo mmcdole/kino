@@ -32,8 +32,6 @@
       "matchState": "matched",
       "title": "10 Cloverfield Lane",
       "userState": {
-        "favorite": false,
-        "playCount": 0,
         "played": false
       },
       "year": 2016
@@ -70,12 +68,9 @@
       "matchState": "matched",
       "title": "10 Things I Hate About You",
       "userState": {
-        "favorite": false,
-        "playCount": 0,
         "played": false
       },
       "year": 1999
     }
-  ],
-  "next": "eyJsIjoidGl0bGUiLCJ0IjoiMTAgVGhpbmdzIEkgSGF0ZSBBYm91dCBZb3UiLCJpIjoiMDFhMTIyMjQtOTc4Ny03MWQ0LWJhYzAtMzkwOTJjZWFlYWNlIn0"
+  ]
 }

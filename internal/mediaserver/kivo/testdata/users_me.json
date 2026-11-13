@@ -5,7 +5,8 @@
   "playback": {
     "bookSpeed": 1,
     "rememberTracks": true,
-    "subtitleMode": "forced"
+    "subtitleMode": "forced",
+    "autoplayNext": true
   },
   "username": "viewer"
 }

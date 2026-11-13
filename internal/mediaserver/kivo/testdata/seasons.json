@@ -35,12 +35,9 @@
       },
       "title": "Season 1",
       "userState": {
-        "favorite": false,
-        "playCount": 0,
         "played": false
       },
       "year": 2026
     }
-  ],
-  "total": 1
+  ]
 }

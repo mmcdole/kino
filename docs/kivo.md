@@ -10,9 +10,9 @@ against a real server.
 A Kivo play is something the server keeps:
 
 - `POST /plays` takes the work, a position and the client's capabilities. It
-  returns the play's ID and its media (`file` parts with range requests, or an
-  `hls` playlist), relative to `/api/v1/`. The play ID in those URLs is their
-  credential, so the player needs no auth header.
+  returns the play's ID and its media (`file` parts with range requests, or a
+  `stream` HLS playlist at `url`), relative to `/api/v1/`. The play ID in
+  those URLs is their credential, so the player needs no auth header.
 - `PATCH /plays/{id}` is the heartbeat: every 10 s, and on pause, seek and end.
 - A play with no heartbeat **and** no media request for 2 minutes expires, and
   its media URLs stop working. A player paused past that on a buffered file
@@ -59,15 +59,20 @@ dir and `/tmp` that fits.
 
 Containers `mkv mp4 webm avi ts mov`, HLS, video `h264 hevc av1 vp9` up to
 10-bit with HDR10 and HLG, audio `aac ac3 eac3 opus flac mp3 truehd dts`, and
-subtitles `vtt ass pgs`. Dolby Vision is left out, because how a DV-only stream
-looks depends on the player's video output, so the server decides. A file the
+subtitles `webvtt subrip ass mov_text hdmv_pgs_subtitle dvd_subtitle`. Dolby
+Vision is left out, because how a DV-only stream looks depends on the player's video output, so the server decides. A file the
 player still can't open takes the fallback path.
 
+Capabilities use `file.containers`, per-codec `delivery` lists and `hdr`
+for video ranges. Only WebVTT is declared as a streamed subtitle; the other
+subtitle codecs are read inside files. External subtitle delivery and file
+track selection are left undeclared because kino doesn't apply the server's
+track choices to the player.
+
 PotPlayer can't open Kivo's HLS (fragmented MP4) and answers "failed to
-connect", so a play for it declares no HLS. The server then sends the file and
-serves a subtitle that the stream would have carried as a separate file. A
-work that needs a transcode is refused rather than sent as a stream PotPlayer
-can't open.
+connect", so a play for it declares only `file` delivery on every codec.
+A work that requires streamed delivery is refused rather than sent as a
+stream PotPlayer can't open.
 
 Multi-part `file` plays start at the part holding the position, using mpv's
 per-file options (`--{ --start=S part --}`). Heartbeats are on the joined
@@ -79,9 +84,9 @@ server.
 | kino | Kivo |
 | --- | --- |
 | libraries | `GET /libraries`: `movies` and `shows`. `audiobooks` and `videos` (folders of loose videos) have no columns in kino and are left out. |
-| movies, shows | `GET /works?libraryId=&offset=&limit=`. The total comes on the first page only, so the client keeps it for later pages. |
-| seasons, episodes | `GET /works?parentId=` |
-| item count | `Library.itemCount` |
+| movies, shows | `POST /works/query` with `library`, `query.kinds`, `offset` and `limit`. The total comes on the first page only, so the client keeps it for later pages; there is no `next` cursor. |
+| seasons, episodes | `GET /works/{id}/children`; episode metadata uses `seasonNumber`. |
+| item count | `Library.workCount` |
 | mark played, unplayed | `PATCH /works/{id}/user-state {played}` |
 
 A series card carries its unplayed count but not its episode or season count.
@@ -91,7 +96,8 @@ watched after one episode, and the inspector shows "Unwatched episodes: N"
 for such a show. If Kivo adds `episodeCount` to the series card, the full
 progress line comes back with no kino change.
 
-Kivo has no playlists. The playlist methods moved out of `catalog.Backend` into
+Kivo has manual and smart lists, which kino does not yet expose as playlists.
+The playlist methods moved out of `catalog.Backend` into
 `catalog.PlaylistBackend`. For a backend without them, the catalog returns
 `ErrNoPlaylists`, and the TUI drops the Playlists row and the playlist modal.
 
@@ -100,7 +106,7 @@ Kivo has no playlists. The playlist methods moved out of `catalog.Backend` into
 `GET /api/v1/server` (signed out) detects Kivo. It is probed before Jellyfin
 and Plex because it is the most specific check. Sign-in uses a device code:
 `POST /device-codes {name: "kino on <host>", kind: app, clientId: device_id}`,
-with no platform. Kivo made `platform` optional for this (Kivo `3b6d0aec`).
+with no platform; the API accepts platform identity through request headers.
 kino prints the `/link` URL and code, polls at the given interval, and reads
 `/users/me` for the user ID and name. A denied code (`403`) or an expired one
 (`410`) ends the setup with that reason.
@@ -122,7 +128,9 @@ log play IDs.
 ## How it was checked
 
 - **Fixtures** in `internal/mediaserver/kivo/testdata` were recorded from a
-  real server (Kivo `a7edf8d3`), trimmed and scrubbed. The streamLimit,
+  real server (Kivo `a7edf8d3`), trimmed and scrubbed, then adapted to the
+  API at `a352108` (2026-11-12). These adapted fixtures are contract-checked,
+  not new live-server recordings. The streamLimit,
   transcodeBusy, noFallback and 401 problem documents and the approved
   session were written from the spec.
 - **Contract:** the tests' fake server checks every request the client sends,
@@ -135,7 +143,7 @@ log play IDs.
   first frame, pause, seek timing, end, one fallback then a stop, no fallback
   left, a play the server ended, a signal, multi-part positions, a blind
   player and a failed launch.
-- **On the live server**, with mpv 0.41:
+- **Original live-server verification**, with mpv 0.41 (before the API update):
   - setup detected Kivo and approved the device code;
   - the TUI listed only the video libraries;
   - resuming an episode showed `kino on <host>` in Now playing, with the
@@ -153,8 +161,8 @@ log play IDs.
   list revalidates (restart, or `r`). Resuming again before that starts from
   the older point. Plex and Jellyfin have the same gap, but there the server
   never learned the new position anyway.
-- Subtitle files Kivo lists beside the media (`subtitles`) aren't passed to the
-  player. Direct-play files carry their own, and HLS streams carry the ones
-  marked `stream`.
+- External subtitle choices in Kivo's `tracks` aren't passed to the player.
+  File plays use the player's own track defaults; streamed plays carry the
+  server's selected audio and subtitles, burning subtitles in when needed.
 - IPC is unix-socket only. Windows players, including a Windows mpv under WSL,
   run blind.

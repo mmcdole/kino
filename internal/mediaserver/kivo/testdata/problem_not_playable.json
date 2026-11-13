@@ -1,7 +1,7 @@
 {
   "code": "notPlayable",
   "detail": "not playable on this client",
-  "reason": "videoCodecUnsupported",
+  "reason": "fileUnplayable",
   "requestId": "b9c9f9e56ad850e0",
   "status": 409,
   "title": "Conflict",
