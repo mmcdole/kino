@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"os/exec"
 	"strings"
 	"sync/atomic"
@@ -117,7 +118,7 @@ func newRig(t *testing.T, ipc bool) (*sessionRig, *session) {
 	s := &session{
 		tracker: rig.tracker,
 		logger:  slog.New(slog.DiscardHandler),
-		ipcDir:  t.TempDir(),
+		ipcDir:  shortTempDir(t),
 		ticker:  func(time.Duration) (<-chan time.Time, func()) { return rig.beat, func() {} },
 		now:     func() time.Time { return time.Unix(0, rig.clock.Load()) },
 	}
@@ -153,6 +154,18 @@ func newRig(t *testing.T, ipc bool) (*sessionRig, *session) {
 		return running{ipc: true}, nil
 	}
 	return rig, s
+}
+
+// shortTempDir is a test directory whose socket paths fit the unix limit;
+// t.TempDir is too deep on macOS.
+func shortTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp(socketDir(), "kt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }
 
 func (r *sessionRig) run(s *session, ctx context.Context, stream media.Stream) {
