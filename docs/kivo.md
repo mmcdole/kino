@@ -88,6 +88,12 @@ server.
 | seasons, episodes | `GET /works/{id}/children`; episode metadata uses `seasonNumber`. |
 | item count | `Library.workCount` |
 | mark played, unplayed | `PATCH /works/{id}/user-state {played}` |
+| synopsis | Episodes: `episode.overview` in a season's children. Movies and shows: `GET /works/{id}`, while the inspector is open. |
+
+Kivo's cards leave out the synopsis, because its own clients show it only on a
+detail page. kino asks for a movie's or show's once the selection rests for
+150 ms under an open inspector (`catalog.SummaryBackend`), and remembers it,
+or that there is none, for the session.
 
 A series card carries its unplayed count but not its episode or season count.
 `Show.EpisodeCount` stays zero, meaning unknown. The watch roll-up no longer

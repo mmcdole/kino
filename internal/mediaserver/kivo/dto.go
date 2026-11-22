@@ -71,7 +71,13 @@ type work struct {
 		SeriesID    string `json:"seriesId"`
 		SeriesTitle string `json:"seriesTitle"`
 		SeasonID    string `json:"seasonId"`
+		Overview    string `json:"overview"` // in a season's children only
 	} `json:"episode"`
+}
+
+// workDetail is GET /api/v1/works/{id}; kino reads only the synopsis.
+type workDetail struct {
+	Overview string `json:"overview"`
 }
 
 type userState struct {

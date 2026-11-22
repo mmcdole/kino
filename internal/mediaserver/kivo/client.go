@@ -137,6 +137,15 @@ func (c *Client) children(ctx context.Context, parentID string) ([]work, error) 
 	return resp.Items, nil
 }
 
+// GetSummary returns a work's synopsis, which only its detail carries.
+func (c *Client) GetSummary(ctx context.Context, itemID string) (string, error) {
+	var resp workDetail
+	if err := c.get(ctx, "/works/"+url.PathEscape(itemID), nil, &resp); err != nil {
+		return "", err
+	}
+	return resp.Overview, nil
+}
+
 // GetMovies returns a page of a movies library.
 func (c *Client) GetMovies(ctx context.Context, libID string, offset, limit int) ([]*media.Item, int, error) {
 	works, total, err := c.browse(ctx, libID, []string{"movie"}, offset, limit)

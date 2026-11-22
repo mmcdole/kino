@@ -60,6 +60,7 @@ func mapItem(w work, libID string) *media.Item {
 		item.SeasonNum = e.Season
 		item.EpisodeNum = e.Number
 		item.ParentID = e.SeasonID
+		item.Summary = e.Overview
 	}
 	return item
 }

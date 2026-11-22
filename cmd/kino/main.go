@@ -111,6 +111,7 @@ func run() error {
 		ShowWatchStatus:   cfg.UI.ShowWatchStatus,
 		ShowLibraryCounts: cfg.UI.ShowLibraryCounts,
 		NoPlaylists:       !catalogSvc.HasPlaylists(),
+		FetchSummaries:    catalogSvc.FetchesSummaries(),
 	}
 	model := tui.NewModel(ctx, catalogSvc, playback, session{cfg}, search.NewIndex(), opts)
 

@@ -141,7 +141,7 @@ func TestSeasonsAndEpisodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := eps[0]
-	if e.Type != media.TypeEpisode || e.ShowID != seriesID || e.ParentID != seasonID || e.SeasonNum != 1 || e.EpisodeNum != 1 || e.ViewOffset != 730956*time.Millisecond {
+	if e.Type != media.TypeEpisode || e.ShowID != seriesID || e.ParentID != seasonID || e.SeasonNum != 1 || e.EpisodeNum != 1 || e.ViewOffset != 730956*time.Millisecond || e.Summary == "" {
 		t.Fatalf("episode mapped as %+v", e)
 	}
 }
@@ -378,5 +378,21 @@ func TestDeviceCodeDeniedOrExpired(t *testing.T) {
 		if !errors.Is(err, want) {
 			t.Errorf("%d: err = %v, want %v", status, err, want)
 		}
+	}
+}
+
+// A work's synopsis is on its detail only.
+func TestGetSummaryReadsWorkDetail(t *testing.T) {
+	const movie = "01a1227b-2659-73c4-bfe5-6a8ae96b4000"
+	c, fake, _ := testClient(t, map[string]route{"GET /works/" + movie: {200, "work_detail.json"}})
+	text, err := c.GetSummary(context.Background(), movie)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(text, "A suburban man") {
+		t.Fatalf("summary = %q", text)
+	}
+	if r := fake.requests()[0]; r.method != "GET" || r.query != "" {
+		t.Fatalf("request = %s %s?%s", r.method, r.path, r.query)
 	}
 }
