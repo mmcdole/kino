@@ -2,7 +2,7 @@
 # Copy this file to ~/.config/kino/config.yaml
 
 # Server Configuration
-# Supports Plex, Jellyfin and Kivo backends
+# Supports Kivo (https://github.com/kivodev/kivo), Plex and Jellyfin backends
 server:
   # Server type: "plex", "jellyfin" or "kivo" (auto-detected during setup)
   type: "plex"
