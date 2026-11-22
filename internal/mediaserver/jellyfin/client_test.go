@@ -127,15 +127,67 @@ func TestRemoveFromPlaylistUsesEntryID(t *testing.T) {
 func TestDeviceIDInAuthHeader(t *testing.T) {
 	var header string
 	c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		header = r.Header.Get("X-Emby-Authorization")
+		header = r.Header.Get("Authorization")
 		w.Write([]byte(`{"Items":[],"TotalRecordCount":0}`))
 	}))
 	if _, err := c.GetLibraries(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	want := `DeviceId="dev1"`
-	if !strings.Contains(header, want) {
-		t.Fatalf("auth header missing %s: %q", want, header)
+	for _, want := range []string{`MediaBrowser `, `DeviceId="dev1"`, `Token="tok"`} {
+		if !strings.Contains(header, want) {
+			t.Fatalf("auth header missing %s: %q", want, header)
+		}
+	}
+}
+
+// Jellyfin 12 rejects the legacy X-Emby-Authorization header by default, so
+// login must use the standard Authorization header.
+func TestAuthenticateUsesAuthorizationHeader(t *testing.T) {
+	var header, legacy string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		header = r.Header.Get("Authorization")
+		legacy = r.Header.Get("X-Emby-Authorization")
+		w.Write([]byte(`{"AccessToken":"tok","User":{"Id":"u1","Name":"jack"}}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	creds, err := Authenticate(context.Background(), srv.URL, "dev1", "jack", "pw", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if creds.Token != "tok" {
+		t.Fatalf("token = %q, want tok", creds.Token)
+	}
+	if !strings.HasPrefix(header, "MediaBrowser ") || !strings.Contains(header, `DeviceId="dev1"`) {
+		t.Fatalf("Authorization header = %q", header)
+	}
+	if strings.Contains(header, "Token=") {
+		t.Fatalf("login header carries a token: %q", header)
+	}
+	if legacy != "" {
+		t.Fatalf("legacy X-Emby-Authorization header sent: %q", legacy)
+	}
+}
+
+// Stream URLs carry both token spellings so old and new servers accept them.
+func TestPlayableURLCarriesBothTokenSpellings(t *testing.T) {
+	c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"MediaSources":[{"Container":"mkv"}]}`))
+	}))
+	got, err := c.ResolvePlayableURL(context.Background(), "item1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := url.Parse(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.Path != "/Videos/item1/stream.mkv" {
+		t.Fatalf("path = %q", u.Path)
+	}
+	q := u.Query()
+	if q.Get("ApiKey") != "tok" || q.Get("api_key") != "tok" {
+		t.Fatalf("query = %q, want ApiKey=tok and api_key=tok", u.RawQuery)
 	}
 }
 

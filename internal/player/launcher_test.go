@@ -306,14 +306,19 @@ func TestRedactTokens(t *testing.T) {
 		"--start=30",
 		"http://server:8096/Videos/1/stream.mkv?Static=true&api_key=SECRET1",
 		"http://server:32400/library/parts/2/file.mkv?X-Plex-Token=SECRET2&other=1",
+		"http://server:8096/Videos/3/stream.mkv?Static=true&ApiKey=SECRET3&api_key=SECRET4",
+		"http://server/x?myapikey=keep",
 	}
 	out := redactTokens(in)
 	joined := strings.Join(out, " ")
-	if strings.Contains(joined, "SECRET1") || strings.Contains(joined, "SECRET2") {
+	if strings.Contains(joined, "SECRET") {
 		t.Fatalf("token leaked: %q", joined)
 	}
-	if !strings.Contains(joined, "api_key=REDACTED") || !strings.Contains(joined, "X-Plex-Token=REDACTED") {
+	if !strings.Contains(joined, "api_key=REDACTED") || !strings.Contains(joined, "X-Plex-Token=REDACTED") || !strings.Contains(joined, "ApiKey=REDACTED") {
 		t.Fatalf("redaction markers missing: %q", joined)
+	}
+	if out[4] != in[4] {
+		t.Fatalf("non-credential param redacted: %q", out[4])
 	}
 	if out[0] != "--start=30" {
 		t.Fatalf("non-URL arg mangled: %q", out[0])
