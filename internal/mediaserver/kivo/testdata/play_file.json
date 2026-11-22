@@ -1,0 +1,58 @@
+{
+  "bitrateBps": 3833982,
+  "chapters": [
+    {
+      "endMs": 129000,
+      "startMs": 0,
+      "title": "Chapter 01"
+    },
+    {
+      "endMs": 161000,
+      "marker": "intro",
+      "startMs": 129000,
+      "title": "Intro"
+    },
+    {
+      "endMs": 2437000,
+      "startMs": 161000,
+      "title": "Chapter 03"
+    },
+    {
+      "endMs": 2502848,
+      "marker": "credits",
+      "startMs": 2437000,
+      "title": "End Credits"
+    }
+  ],
+  "delivery": "file",
+  "dialogueBoost": {
+    "enabled": false
+  },
+  "durationMs": 2502848,
+  "id": "01a14d87-75e8-70b0-9d7b-07bcce2ea634",
+  "local": true,
+  "parts": [
+    {
+      "durationMs": 2502848,
+      "url": "plays/01a14d87-75e8-70b0-9d7b-07bcce2ea634/files/0"
+    }
+  ],
+  "startMs": 730956,
+  "versionId": "01a1227b-2536-7329-9358-47d8f799b2c7",
+  "workId": "01a1227b-265a-7177-b4fe-40aa18f5d0df",
+  "url": "plays/01a14d87-75e8-70b0-9d7b-07bcce2ea634/files/0",
+  "tracks": [
+    {
+      "trackId": "a15a8bbd-faa6-e5d5-4627-8b148a686979",
+      "type": "video",
+      "selected": true,
+      "delivery": "file"
+    },
+    {
+      "trackId": "384d60ee-7032-7db4-db11-ec8f3bc2b90e",
+      "type": "audio",
+      "selected": true,
+      "delivery": "file"
+    }
+  ]
+}

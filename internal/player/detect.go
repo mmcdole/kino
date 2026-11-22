@@ -17,6 +17,15 @@ type playerDef struct {
 	ResumeArgs    []string // Additional auto-detection arguments used only when resuming
 	URLBeforeSeek bool     // Some players (notably PotPlayer) expect the media URL before switches
 	ProgramPaths  []string // Conventional paths relative to Windows Program Files roots
+	// IPCFlag makes the player listen for JSON IPC on a socket (%s), as mpv
+	// does; empty for players without it.
+	IPCFlag string
+	// PerFileOptions is mpv's --{ ... --}, which starts one file of several
+	// at an offset.
+	PerFileOptions bool
+	// NoHLS marks a player that can't open HLS with fragmented MP4, the only
+	// HLS Kivo makes, so its plays ask for the file instead.
+	NoHLS bool
 }
 
 // resolvedPlayer keeps the player identity separate from the executable path.
@@ -31,17 +40,17 @@ type resolvedPlayer struct {
 // Linux and Windows VLC need a separate instance to honor resume offsets.
 // macOS VLC does not support the one-instance option.
 var linuxPlayers = []playerDef{
-	{Binary: "mpv", SeekFlag: "--start=%d"},
+	{Binary: "mpv", SeekFlag: "--start=%d", IPCFlag: "--input-ipc-server=%s", PerFileOptions: true},
 	{Binary: "vlc", SeekFlag: "--start-time=%d", ResumeArgs: []string{"--no-one-instance"}},
-	{Binary: "celluloid", SeekFlag: "--mpv-start=%d"},
+	{Binary: "celluloid", SeekFlag: "--mpv-start=%d", IPCFlag: "--mpv-input-ipc-server=%s"},
 	{Binary: "haruna", SeekFlag: "--start=%d"},
 	{Binary: "smplayer", SeekFlag: "-ss %d"},
 	{Binary: "mplayer", SeekFlag: "-ss %d"},
 }
 
 var darwinPlayers = []playerDef{
-	{Binary: "iina", SeekFlag: "--mpv-start=%d"},
-	{Binary: "mpv", SeekFlag: "--start=%d"},
+	{Binary: "iina", SeekFlag: "--mpv-start=%d", IPCFlag: "--mpv-input-ipc-server=%s"},
+	{Binary: "mpv", SeekFlag: "--start=%d", IPCFlag: "--input-ipc-server=%s", PerFileOptions: true},
 	{Binary: "vlc", SeekFlag: "--start-time=%d"},
 }
 
@@ -52,12 +61,14 @@ var windowsPlayers = []playerDef{
 		Binary:        "PotPlayerMini64.exe",
 		SeekFlag:      "/seek=%d",
 		URLBeforeSeek: true,
+		NoHLS:         true,
 		ProgramPaths:  []string{`DAUM\PotPlayer\PotPlayerMini64.exe`},
 	},
 	{
 		Binary:        "PotPlayerMini.exe",
 		SeekFlag:      "/seek=%d",
 		URLBeforeSeek: true,
+		NoHLS:         true,
 		ProgramPaths:  []string{`DAUM\PotPlayer\PotPlayerMini.exe`},
 	},
 	{Binary: "mpv.exe", SeekFlag: "--start=%d", ProgramPaths: []string{`mpv\mpv.exe`}},

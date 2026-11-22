@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"errors"
 
 	"github.com/mmcdole/kino/internal/media"
 )
@@ -22,16 +23,22 @@ type Backend interface {
 	// don't reliably change when items are added.
 	GetLibraryItemCount(ctx context.Context, libID, libType string) (int, error)
 
+	MarkPlayed(ctx context.Context, itemID string) error
+	MarkUnplayed(ctx context.Context, itemID string) error
+}
+
+// PlaylistBackend is a Backend whose server has playlists.
+type PlaylistBackend interface {
 	GetPlaylists(ctx context.Context) ([]*media.Playlist, error)
 	GetPlaylistItems(ctx context.Context, playlistID string) ([]*media.Item, error)
 	CreatePlaylist(ctx context.Context, title string, itemIDs []string) (*media.Playlist, error)
 	AddToPlaylist(ctx context.Context, playlistID string, itemIDs []string) error
 	RemoveFromPlaylist(ctx context.Context, playlistID string, itemID string) error
 	DeletePlaylist(ctx context.Context, playlistID string) error
-
-	MarkPlayed(ctx context.Context, itemID string) error
-	MarkUnplayed(ctx context.Context, itemID string) error
 }
+
+// ErrNoPlaylists is a playlist load or write on a server without playlists.
+var ErrNoPlaylists = errors.New("this server has no playlists")
 
 // Cache supports concurrent reads and returns detached entity values. Update
 // changes every snapshot mentioning one of the IDs in a single transaction.

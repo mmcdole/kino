@@ -7,14 +7,18 @@ import (
 	"github.com/mmcdole/kino/internal/catalog"
 	"github.com/mmcdole/kino/internal/config"
 	"github.com/mmcdole/kino/internal/mediaserver/jellyfin"
+	"github.com/mmcdole/kino/internal/mediaserver/kivo"
 	"github.com/mmcdole/kino/internal/mediaserver/plex"
 	"github.com/mmcdole/kino/internal/player"
 )
 
-// Server is everything the application needs from a media server: catalog browsing and mutations, and playable URL resolution.
+// Server is everything the application needs from a media server: catalog
+// browsing and mutations, and starting plays. Some servers also have
+// playlists (catalog.PlaylistBackend) or keep plays to report on
+// (player.Tracker).
 type Server interface {
 	catalog.Backend
-	player.URLResolver
+	player.Starter
 }
 
 // New returns the client for the configured server type.
@@ -40,6 +44,9 @@ func New(cfg *config.Config, logger *slog.Logger) (Server, error) {
 			return nil, fmt.Errorf("Jellyfin requires user ID")
 		}
 		return jellyfin.NewClient(cfg.Server.URL, cfg.Server.Token, cfg.Server.UserID, cfg.Server.DeviceID, logger), nil
+
+	case config.Kivo:
+		return kivo.NewClient(cfg.Server.URL, cfg.Server.Token, logger), nil
 
 	default:
 		return nil, fmt.Errorf("unknown server type: %s", cfg.Server.Type)

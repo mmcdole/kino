@@ -313,6 +313,9 @@ func (m *Model) handlePlaylistModal() tea.Cmd {
 	if top == nil {
 		return nil
 	}
+	if m.opts.NoPlaylists {
+		return m.notify(noticeInfo, "This server has no playlists")
+	}
 	item := top.SelectedMediaItem()
 	if item == nil {
 		return m.notAvailableHere("Playlists (space)")

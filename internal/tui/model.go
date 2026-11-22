@@ -18,6 +18,7 @@ type Catalog interface {
 	Updates(context.Context) ([]catalog.State, error)
 	Mutate(context.Context, catalog.Mutation) (catalog.Change, error)
 	PlaylistMembership(context.Context, string) (catalog.Membership, error)
+	Summary(context.Context, string) (string, error)
 }
 
 // Playback opens a media item in an external player.
@@ -36,6 +37,8 @@ type Session interface {
 type Options struct {
 	ShowWatchStatus   bool
 	ShowLibraryCounts bool
+	NoPlaylists       bool // the server has none: no Playlists row or playlist actions
+	FetchSummaries    bool // listings leave out synopses: the inspector asks for them
 }
 
 // Model is the Bubble Tea model for the whole application.
@@ -73,6 +76,10 @@ type Model struct {
 	searchSeq     uint64
 	pendingSelect *pendingSelect
 	confirmDelete *media.Playlist // the playlist overlayConfirmDelete asks about
+
+	summaries     map[string]string // fetched synopses by item ID; "" when it has none
+	summaryWanted string            // the inspected item whose synopsis is due
+	summarySeq    uint64
 }
 
 func NewModel(ctx context.Context, svc Catalog, playback Playback, session Session, index *search.Index, opts Options) *Model {
@@ -87,6 +94,7 @@ func NewModel(ctx context.Context, svc Catalog, playback Playback, session Sessi
 		requests:      newRequests(ctx),
 		collections:   make(map[string]catalog.State),
 		indicators:    make(map[string]uint64),
+		summaries:     make(map[string]string),
 	}
 	root := catalog.Resource{Kind: catalog.Libraries}
 	col := components.NewListColumn("Libraries", components.ColumnOptions{})
@@ -109,6 +117,7 @@ func (m *Model) Init() tea.Cmd {
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmd := m.update(msg)
 	m.updateInspector()
+	cmd = tea.Batch(cmd, m.wantSummary())
 	// The spinner only ticks while something on screen animates, so an idle
 	// window does not redraw.
 	if !m.ticking && m.animating() {
@@ -188,6 +197,11 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case searchResultsMsg:
 		m.showSearchResults(msg)
 		return nil
+	case summaryDebounceMsg:
+		return m.startSummary(msg)
+	case summaryMsg:
+		m.finishSummary(msg)
+		return nil
 	case searchIndexChangedMsg:
 		if m.overlay == overlaySearch {
 			return m.scheduleSearch()
@@ -228,7 +242,7 @@ func (m *Model) pendingActions() int {
 
 func (m *Model) updateInspector() {
 	if col := m.columns.Top(); col != nil {
-		m.inspector.SetItem(col.SelectedItem())
+		m.inspector.SetItem(m.withSummary(col.SelectedItem()))
 	} else {
 		m.inspector.SetItem(nil)
 	}

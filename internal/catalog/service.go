@@ -46,18 +46,21 @@ type flight struct {
 // Service owns every collection's cached snapshot, server fetch and
 // published state, and applies writes to the server and the cache.
 type Service struct {
-	backend     Backend
-	cache       Cache
-	ctx         context.Context
-	cancel      context.CancelFunc
-	wg          sync.WaitGroup
-	mu          sync.Mutex // request ownership and revisions; never held across I/O
-	commit      sync.Mutex // orders cache writes: fetch commits and mutation reconciliation
-	mutations   chan struct{}
-	collections map[string]*collection
-	changed     map[string]struct{} // keys published since the last Updates
-	signal      chan struct{}
-	now         func() time.Time
+	backend        Backend
+	playlists      PlaylistBackend // nil when the server has none
+	summaryBackend SummaryBackend  // nil when listings carry summaries
+	summaries      summaries
+	cache          Cache
+	ctx            context.Context
+	cancel         context.CancelFunc
+	wg             sync.WaitGroup
+	mu             sync.Mutex // request ownership and revisions; never held across I/O
+	commit         sync.Mutex // orders cache writes: fetch commits and mutation reconciliation
+	mutations      chan struct{}
+	collections    map[string]*collection
+	changed        map[string]struct{} // keys published since the last Updates
+	signal         chan struct{}
+	now            func() time.Time
 }
 
 // collection is everything the catalog tracks about one collection key.
@@ -104,12 +107,17 @@ func (c *collection) fence() uint64 {
 	return c.revision
 }
 
+// HasPlaylists reports whether the server has playlists.
+func (s *Service) HasPlaylists() bool { return s.playlists != nil }
+
 // NewService starts a catalog whose work ends when ctx is done or Close is
 // called.
 func NewService(ctx context.Context, backend Backend, cache Cache) *Service {
 	ctx, cancel := context.WithCancel(ctx)
+	playlists, _ := backend.(PlaylistBackend)
+	summaryBackend, _ := backend.(SummaryBackend)
 	return &Service{
-		backend: backend, cache: cache, ctx: ctx, cancel: cancel,
+		backend: backend, playlists: playlists, summaryBackend: summaryBackend, cache: cache, ctx: ctx, cancel: cancel,
 		mutations:   make(chan struct{}, 1),
 		collections: make(map[string]*collection),
 		changed:     make(map[string]struct{}),

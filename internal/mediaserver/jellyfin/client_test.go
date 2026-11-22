@@ -174,7 +174,7 @@ func TestPlayableURLCarriesBothTokenSpellings(t *testing.T) {
 	c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"MediaSources":[{"Container":"mkv"}]}`))
 	}))
-	got, err := c.ResolvePlayableURL(context.Background(), "item1")
+	got, err := c.playableURL(context.Background(), "item1")
 	if err != nil {
 		t.Fatal(err)
 	}

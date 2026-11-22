@@ -1,0 +1,8 @@
+{
+  "code": "transcodeBusy",
+  "reason": "storageFull",
+  "requestId": "0000000000000002",
+  "status": 503,
+  "title": "Service Unavailable",
+  "type": "about:blank"
+}
