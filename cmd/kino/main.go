@@ -46,6 +46,14 @@ func main() {
 		return
 	}
 
+	if name := flag.Arg(0); menuCommands[name] {
+		if err := runMenuCommand(name, flag.Args()[1:]); err != nil {
+			reportError(err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if flag.Arg(0) == player.SessionCommand {
 		if err := runPlaySession(); err != nil {
 			slog.Error("play session failed", "error", err)
@@ -86,27 +94,14 @@ func run() error {
 		// no need to make the user run kino a second time
 	}
 
-	// Create media source client
-	client, err := mediaserver.New(cfg, logger)
+	a, err := newApp(cfg, logger)
 	if err != nil {
-		return fmt.Errorf("failed to create media client: %w", err)
+		return err
 	}
-
-	// The disk cache enables offline browsing; without it, cache in memory.
-	var cache snapshotCache
-	if disk, err := store.OpenDisk(store.Dir(cfg.Server.URL, cfg.Server.UserID)); err == nil {
-		cache = disk
-	} else {
-		logger.Warn("store unavailable, continuing memory-only", "error", err)
-		cache = store.NewMemory()
-	}
-	defer cache.Close()
-
+	defer a.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	catalogSvc := catalog.NewService(ctx, client, cache)
-	defer catalogSvc.Close()
-	playback := player.New(cfg.Player.Command, cfg.Player.Args, cfg.Player.StartFlag, client, logger)
+	catalogSvc, playback, cache := a.catalog, a.playback, a.cache
 	opts := tui.Options{
 		ShowWatchStatus:   cfg.UI.ShowWatchStatus,
 		ShowLibraryCounts: cfg.UI.ShowLibraryCounts,
@@ -142,6 +137,66 @@ func run() error {
 	}
 	logger.Info("shutting down")
 	return nil
+}
+
+// app is a configured server client with its cache, catalog and player.
+type app struct {
+	cfg      *config.Config
+	client   mediaserver.Server
+	cache    snapshotCache
+	catalog  *catalog.Service
+	playback *player.Player
+	cancel   context.CancelFunc
+}
+
+// newApp connects the configured server to the cache, catalog and player.
+func newApp(cfg *config.Config, logger *slog.Logger) (*app, error) {
+	client, err := mediaserver.New(cfg, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create media client: %w", err)
+	}
+	// The disk cache enables offline browsing; without it, cache in memory.
+	var cache snapshotCache
+	if disk, err := store.OpenDisk(store.Dir(cfg.Server.URL, cfg.Server.UserID)); err == nil {
+		cache = disk
+	} else {
+		logger.Warn("store unavailable, continuing memory-only", "error", err)
+		cache = store.NewMemory()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	return &app{
+		cfg:      cfg,
+		client:   client,
+		cache:    cache,
+		catalog:  catalog.NewService(ctx, client, cache),
+		playback: player.New(cfg.Player.Command, cfg.Player.Args, cfg.Player.StartFlag, client, logger),
+		cancel:   cancel,
+	}, nil
+}
+
+// openApp loads the config and opens the app for a command that can't run
+// kino's interactive sign-in.
+func openApp() (*app, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+	logger, err := openLogger(&cfg.Logging)
+	if err != nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
+	slog.SetDefault(logger)
+	if !cfg.IsConfigured() {
+		return nil, fmt.Errorf("not signed in: run kino once to set up a server")
+	}
+	return newApp(cfg, logger)
+}
+
+// Close stops the catalog's work and closes the cache. Closing twice is safe.
+func (a *app) Close() error {
+	a.cancel()
+	a.catalog.Close()
+	return a.cache.Close()
 }
 
 // runPlaySession follows one play the TUI started, from the player's launch

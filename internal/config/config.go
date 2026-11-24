@@ -26,6 +26,7 @@ type Config struct {
 	Server  ServerConfig  `mapstructure:"server"`
 	Player  PlayerConfig  `mapstructure:"player"`
 	UI      UIConfig      `mapstructure:"ui"`
+	Menu    MenuConfig    `mapstructure:"menu"`
 	Logging LoggingConfig `mapstructure:"logging"`
 
 	v *viper.Viper // the instance Load read; Save writes through it
@@ -46,6 +47,11 @@ type PlayerConfig struct {
 	Command   string   `mapstructure:"command"`
 	Args      []string `mapstructure:"args"`
 	StartFlag string   `mapstructure:"start_flag"` // e.g., "--start=%d" or "--start-time=%d"
+}
+
+// MenuConfig holds launcher mode (kino pick) configuration
+type MenuConfig struct {
+	Command []string `mapstructure:"command"` // dmenu-style launcher argv, e.g. ["fuzzel", "--dmenu"]; detected when empty
 }
 
 // UIConfig holds UI configuration

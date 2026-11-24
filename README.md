@@ -12,6 +12,7 @@
 -  Watch status tracking and smart resume
 -  Inspector panel for detailed metadata
 -  Fast, cached browsing with progressive loading
+-  Launcher mode for vicinae, fuzzel, rofi, wofi and dmenu
 
 ## Quick Start
 
@@ -61,6 +62,15 @@ With Kivo, kino reports where you are as you watch, so your resume point follows
 | `?` | Show help |
 | `L` | Logout |
 | `q` / `Ctrl+c` | Quit |
+
+### Launcher Mode
+
+`kino pick` lists your movies and shows in a dmenu-style launcher (vicinae,
+fuzzel, rofi, wofi or dmenu) and plays the one you choose. Movies resume from
+the saved position. Shows open an episode list with the next unwatched episode
+first. `kino pick --url` prints the stream URL instead of playing.
+
+See [docs/launcher.md](docs/launcher.md) for setup.
 
 ## Configuration
 

@@ -28,6 +28,11 @@ player:
   # Flag for specifying start time; %d is replaced with elapsed seconds
   # start_flag: "--start=%d"
 
+# Launcher mode (kino pick)
+# menu:
+#   # dmenu-style launcher; detected when unset (vicinae, fuzzel, rofi, wofi, dmenu)
+#   command: ["fuzzel", "--dmenu"]
+
 # User Interface Configuration
 ui:
   # Show watch status indicators (watched/unwatched/in-progress)
